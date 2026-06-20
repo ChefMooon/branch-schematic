@@ -18,7 +18,7 @@ function Index() {
 
     return (
     <main className="container">
-      <h1>Welcome to Tauri Basic Template</h1>
+      <h1>Welcome to Branch Schematic</h1>
 
       <form
         className="row"

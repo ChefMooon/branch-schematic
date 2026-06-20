@@ -10,7 +10,7 @@ fn greet(name: &str) -> String {
 }
 
 fn read_bool_setting(app: &tauri::AppHandle, column: &str) -> bool {
-    let db_path = app.path().app_config_dir().unwrap_or_default().join("tauri-basic-template.db");
+    let db_path = app.path().app_config_dir().unwrap_or_default().join("branch-schematic.db");
     let db_url = format!("sqlite:{}", db_path.to_string_lossy());
 
     tauri::async_runtime::block_on(async move {
@@ -148,7 +148,7 @@ pub fn run() {
         )
         .plugin(
             tauri_plugin_sql::Builder::default()
-                .add_migrations("sqlite:tauri-basic-template.db", migrations)
+                .add_migrations("sqlite:branch-schematic.db", migrations)
                 .build(),
         )
         .plugin(tauri_plugin_opener::init())

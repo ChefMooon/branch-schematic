@@ -19,7 +19,7 @@ function DatabasePage() {
 
     async function getUsers() {
     try {
-        const db = await Database.load("sqlite:tauri-basic-template.db");
+        const db = await Database.load("sqlite:branch-schematic.db");
         const dbUsers = await db.select<User[]>("SELECT * FROM users");
 
         setError("");
@@ -34,7 +34,7 @@ function DatabasePage() {
     async function setUser(user: Omit<User, "id">) {
     try {
         setIsLoadingUsers(true);
-        const db = await Database.load("sqlite:tauri-basic-template.db");
+        const db = await Database.load("sqlite:branch-schematic.db");
 
         await db.execute("INSERT INTO users (name) VALUES ($1)", [
         user.name,
@@ -50,7 +50,7 @@ function DatabasePage() {
     async function clearUsers() {
     try {
         setIsLoadingUsers(true);
-        const db = await Database.load("sqlite:tauri-basic-template.db");
+        const db = await Database.load("sqlite:branch-schematic.db");
         await db.execute("DELETE FROM users");
         getUsers().then(() => setIsLoadingUsers(false));
     } catch (error) {

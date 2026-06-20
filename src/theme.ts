@@ -22,7 +22,7 @@ export function applyTheme(preference: ThemePreference): ResolvedTheme {
 
 export async function loadThemePreference(): Promise<ThemePreference> {
   try {
-    const db = await Database.load('sqlite:tauri-basic-template.db');
+    const db = await Database.load('sqlite:branch-schematic.db');
     const rows: Array<{ theme?: string | null }> = await db.select('SELECT theme FROM settings WHERE id = 1');
     const savedTheme = rows[0]?.theme;
 
@@ -38,7 +38,7 @@ export async function loadThemePreference(): Promise<ThemePreference> {
 
 export async function saveThemePreference(preference: ThemePreference): Promise<void> {
   try {
-    const db = await Database.load('sqlite:tauri-basic-template.db');
+    const db = await Database.load('sqlite:branch-schematic.db');
     await db.execute('UPDATE settings SET theme = ? WHERE id = 1', [preference]);
   } catch (error) {
     console.error('Failed to save theme preference:', error);
