@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
-import { Handle, Position, NodeProps, Node } from '@xyflow/react';
+import { Handle, Position, NodeProps, Node, useViewport } from '@xyflow/react';
 
 // Define explicit types matching our mock data
-type BranchCardNode = Node<{
+export type BranchCardNode = Node<{
   title: string;
   status: 'Active' | 'Draft' | 'Archived';
   content: string;
@@ -32,6 +32,9 @@ function useAppThemeMode() {
 export function BranchCard({ data }: NodeProps<BranchCardNode>) {
   const themeMode = useAppThemeMode();
   const isDark = themeMode === 'dark';
+
+  const { zoom } = useViewport();
+  const showDetails = zoom >= 0.5;
 
   const cardStyle: React.CSSProperties = {
     width: 288,
@@ -72,15 +75,10 @@ export function BranchCard({ data }: NodeProps<BranchCardNode>) {
 
   return (
     <div style={cardStyle}>
-      {/* Target connection point (Left side) */}
-      <Handle
-        type="target"
-        position={Position.Left}
-        style={handleStyle}
-      />
+      <Handle type="target" position={Position.Left} style={handleStyle} />
 
       {/* Card Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: showDetails ? 8 : 0 }}>
         <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600, color: isDark ? '#f9fafb' : '#111827', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {data.title}
         </h3>
@@ -89,17 +87,14 @@ export function BranchCard({ data }: NodeProps<BranchCardNode>) {
         </span>
       </div>
 
-      {/* Card Body */}
-      <p style={{ margin: 0, fontSize: 12, lineHeight: 1.5, color: isDark ? '#d1d5db' : '#4b5563' }}>
-        {data.content}
-      </p>
+      {/* Conditional LoD Body Rendering */}
+      {showDetails && (
+        <p style={{ margin: 0, fontSize: 12, lineHeight: 1.5, color: isDark ? '#d1d5db' : '#4b5563' }}>
+          {data.content}
+        </p>
+      )}
 
-      {/* Source connection point (Right side) */}
-      <Handle
-        type="source"
-        position={Position.Right}
-        style={handleStyle}
-      />
+      <Handle type="source" position={Position.Right} style={handleStyle} />
     </div>
   );
 }

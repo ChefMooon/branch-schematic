@@ -35,6 +35,27 @@ async fn get_active_tracked_paths(
         .map_err(|error| error.to_string())
 }
 
+#[tauri::command]
+async fn get_workspace_nodes(
+    state: tauri::State<'_, DbState>,
+) -> Result<Vec<db::WorkspaceNodeRow>, String> {
+    db::fetch_workspace_nodes(&state.0)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+async fn update_card_position(
+    state: tauri::State<'_, DbState>,
+    id: String,
+    x: f64,
+    y: f64,
+) -> Result<(), String> {
+    db::update_canvas_card_position(&state.0, &id, x, y)
+        .await
+        .map_err(|error| error.to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -127,6 +148,8 @@ pub fn run() {
             git::create_git_branch,
             watch_project_directory,
             get_active_tracked_paths,
+            get_workspace_nodes,
+            update_card_position,
             git::add_new_tracked_path,
             git::untrack_repository,
             git::get_tracked_workspaces,
