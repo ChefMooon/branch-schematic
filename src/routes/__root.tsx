@@ -39,7 +39,7 @@ const RootLayout = () => {
       <AppLayout>
         {/* Sub-pages such as /branch-map and /database mount exactly here! */}
         <Outlet />
-        <TanStackRouterDevtools />
+        <TanStackRouterDevtools position="bottom-right" />
       </AppLayout>
     </NotificationProvider>
   );
