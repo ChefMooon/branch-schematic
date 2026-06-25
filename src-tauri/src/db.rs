@@ -1,5 +1,15 @@
-use sqlx::SqlitePool;
+use serde::Serialize;
+use sqlx::{FromRow, SqlitePool};
 use tauri_plugin_sql::{Migration, MigrationKind};
+
+#[derive(Debug, Serialize, Clone, FromRow)]
+pub struct TrackedPathRow {
+    pub id: String,
+    pub display_name: String,
+    pub absolute_path: String,
+    pub remote_url: Option<String>,
+    pub is_active: i64,
+}
 
 pub const DB_NAME: &str = "branch-schematic.db";
 pub const DB_URL: &str = "sqlite:branch-schematic.db";
@@ -135,6 +145,16 @@ pub fn should_start_minimized(app: &tauri::AppHandle) -> bool {
     read_bool_setting(app, "start_minimized")
 }
 
+pub async fn fetch_active_tracked_paths(pool: &SqlitePool) -> Result<Vec<TrackedPathRow>, sqlx::Error> {
+    let rows = sqlx::query_as::<_, TrackedPathRow>(
+        "SELECT id, display_name, absolute_path, remote_url, is_active FROM tracked_paths WHERE is_active = 1 ORDER BY display_name ASC"
+    )
+    .fetch_all(pool)
+    .await?;
+
+    Ok(rows)
+}
+
 // Place this at the very bottom of src/db.rs
 
 #[cfg(test)]
@@ -157,6 +177,38 @@ mod tests {
         sqlx::query("PRAGMA foreign_keys = ON;").execute(&pool).await.unwrap();
 
         pool
+    }
+
+    #[test]
+    fn test_fetch_active_tracked_paths_returns_only_active_rows() {
+        tauri::async_runtime::block_on(async {
+            let pool = setup_test_db().await;
+
+            sqlx::query(
+                "INSERT INTO tracked_paths (id, display_name, absolute_path, remote_url, is_active) VALUES (?, 'Active Repo', '/tmp/active', 'https://example.com/active.git', 1);"
+            )
+            .bind("active-path")
+            .execute(&pool)
+            .await
+            .unwrap();
+
+            sqlx::query(
+                "INSERT INTO tracked_paths (id, display_name, absolute_path, remote_url, is_active) VALUES (?, 'Inactive Repo', '/tmp/inactive', 'https://example.com/inactive.git', 0);"
+            )
+            .bind("inactive-path")
+            .execute(&pool)
+            .await
+            .unwrap();
+
+            let tracked_paths = fetch_active_tracked_paths(&pool).await.unwrap();
+
+            assert_eq!(tracked_paths.len(), 1);
+            assert_eq!(tracked_paths[0].id, "active-path");
+            assert_eq!(tracked_paths[0].display_name, "Active Repo");
+            assert_eq!(tracked_paths[0].absolute_path, "/tmp/active");
+
+            pool.close().await;
+        });
     }
 
     #[test]

@@ -2,15 +2,8 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useEffect, useState } from "react";
 import Database from "@tauri-apps/plugin-sql";
 import { invoke } from "@tauri-apps/api/core";
+import { useWorkspaceStore } from "../stores/workspace-store";
 import { TrackedPath, CachedBranch, DiscoveredBranch } from "../types/git";
-
-// Structures returning from scan_local_repository
-type CommitLog = {
-  hash: string;
-  author: string;
-  summary: string;
-  timestamp: number;
-};
 
 export const Route = createFileRoute('/database')({
   component: DatabasePage,
@@ -33,6 +26,7 @@ function DatabasePage() {
 
   const [message, setMessage] = useState<string>("");
   const [error, setError] = useState<string>("");
+  const { addRepo, removeRepo, hydrateFromBackend } = useWorkspaceStore();
 
   async function refreshCacheData() {
     try {
@@ -81,6 +75,9 @@ function DatabasePage() {
         absolutePath: newPath,
       });
 
+      addRepo({ id: pathUuid, display_name: newDisplayName, absolute_path: newPath, is_active: 1 });
+      await hydrateFromBackend();
+
       setMessage(`Success: Daemon is now watching ${newDisplayName}`);
       setNewPath("");
       setNewDisplayName("");
@@ -124,6 +121,9 @@ function DatabasePage() {
       
       await db.execute("UPDATE tracked_paths SET is_active = 0 WHERE id = $1", [pathId]);
       await db.execute("DELETE FROM cached_git_branches WHERE path_id = $1", [pathId]);
+
+      removeRepo(pathId);
+      await hydrateFromBackend();
 
       setMessage(`Unmounted repository: ${displayName}`);
       refreshCacheData();

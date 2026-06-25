@@ -1,12 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from '@tanstack/react-router';
-import Database from "@tauri-apps/plugin-sql";
-
-type TrackedPath = {
-  id: string;
-  display_name: string;
-  absolute_path: string;
-};
+import { useWorkspaceStore } from '../../stores/workspace-store';
 
 interface AppLayoutProps {
   children: React.ReactNode;
@@ -36,38 +30,21 @@ function useLayoutThemeMode() {
 
 export function AppLayout({ children }: AppLayoutProps) {
   const [isProjectHubOpen, setIsProjectHubOpen] = useState(false);
-  const [mountedRepos, setMountedRepos] = useState<TrackedPath[]>([]);
-  const [activeRepo, setActiveRepo] = useState<TrackedPath | null>(null);
-  
+
   const navigate = useNavigate();
   const location = useLocation();
   const themeMode = useLayoutThemeMode();
-  const isDark = themeMode === 'dark'; 
+  const isDark = themeMode === 'dark';
+  const { repos, activeRepoId, hydrateFromBackend, selectRepo } = useWorkspaceStore();
+  const activeRepo = repos.find((repo) => repo.id === activeRepoId) ?? null;
 
   const sidebarWidth = 64;
   const headerHeight = 60;
   const hubDrawerWidth = 320;
 
-  async function loadActiveWorkspaceRepos() {
-    try {
-      const db = await Database.load("sqlite:branch-schematic.db");
-      const activePaths = await db.select<TrackedPath[]>(
-        "SELECT id, display_name, absolute_path FROM tracked_paths WHERE is_active = 1"
-      );
-      setMountedRepos(activePaths);
-      if (activePaths.length > 0 && !activeRepo) {
-        setActiveRepo(activePaths[0]);
-      }
-    } catch (err) {
-      console.error("Error reading tracked workspace paths:", err);
-    }
-  }
-
   useEffect(() => {
-    if (isProjectHubOpen) { loadActiveWorkspaceRepos(); }
-  }, [isProjectHubOpen]);
-
-  useEffect(() => { loadActiveWorkspaceRepos(); }, []);
+    void hydrateFromBackend();
+  }, [hydrateFromBackend]);
 
   // --- Layout Theme-Aware Styles ---
   const containerStyle: React.CSSProperties = {
@@ -222,13 +199,13 @@ export function AppLayout({ children }: AppLayoutProps) {
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          {mountedRepos.map((repo) => {
+          {repos.map((repo) => {
             const isSelected = activeRepo?.id === repo.id;
             return (
               <div 
                 key={repo.id}
                 onClick={() => {
-                  setActiveRepo(repo);
+                  selectRepo(repo);
                   setIsProjectHubOpen(false);
                 }}
                 style={{ 

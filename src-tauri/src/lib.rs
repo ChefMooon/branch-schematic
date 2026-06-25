@@ -25,6 +25,13 @@ async fn watch_project_directory(
     Ok(())
 }
 
+#[tauri::command]
+async fn get_active_tracked_paths(state: tauri::State<'_, DbState>) -> Result<Vec<db::TrackedPathRow>, String> {
+    db::fetch_active_tracked_paths(&state.0)
+        .await
+        .map_err(|error| error.to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -109,7 +116,8 @@ pub fn run() {
             git::scan_local_repository,
             git::execute_git_checkout,
             git::create_git_branch,
-            watch_project_directory
+            watch_project_directory,
+            get_active_tracked_paths
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
