@@ -52,7 +52,31 @@ function MapWorkspace() {
   const hydrateWorkspaceNodes = useCanvasStore((state) => state.hydrateWorkspaceNodes);
 
   useEffect(() => {
-    void hydrateWorkspaceNodes();
+    async function initializeAndHydrate() {
+      try {
+        // 1. Fetch all repositories marked active in your database
+        const activePaths = await invoke<any[]>('get_active_tracked_paths');
+        
+        // 2. Safely ensure background watchers are running for each path
+        for (const path of activePaths) {
+          try {
+            await invoke('watch_project_directory', {
+              pathId: path.id,
+              absolutePath: path.absolute_path,
+            });
+          } catch (watchError) {
+            console.error(`Failed starting watcher loop for ${path.absolute_path}:`, watchError);
+          }
+        }
+      } catch (err) {
+        console.error('Failed to look up active tracked paths:', err);
+      } finally {
+        // 3. Trigger canvas layout data hydration loop
+        void hydrateWorkspaceNodes();
+      }
+    }
+
+    initializeAndHydrate();
   }, [hydrateWorkspaceNodes]);
 
   const handleNodeDragStop: OnNodeDrag<BranchCardNode> = async (_event, node) => {

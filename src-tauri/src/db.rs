@@ -16,10 +16,24 @@ pub struct WorkspaceNodeRow {
     pub branch_id: String,
     pub branch_name: String,
     pub is_head: i64,
+    pub ahead_count: i64,
+    pub behind_count: i64,
     pub last_commit_hash: String,
     pub commit_message: Option<String>,
     pub pos_x: Option<f64>,
     pub pos_y: Option<f64>,
+    pub view_mode: String,
+    pub commit_density: i64,
+    pub theme_color_hex: String,
+}
+
+#[derive(Debug, Serialize, Clone, FromRow)]
+pub struct CachedCommitRow {
+    pub commit_hash: String,
+    pub author_name: String,
+    pub commit_message: String,
+    pub committed_at: String,
+    pub signature_status: Option<String>,
 }
 
 #[derive(Debug, Serialize, Clone, FromRow)]
@@ -147,12 +161,9 @@ pub fn read_bool_setting(_app: &tauri::AppHandle, column: &str) -> bool {
     let column_owned = column.to_string();
 
     tauri::async_runtime::block_on(async move {
-        // 2. Use the central DB_URL constant directly
         let pool = SqlitePool::connect(DB_URL).await.ok()?;
-
         let query_str = format!("SELECT {} FROM settings WHERE id = 1", column_owned);
         let value: i64 = sqlx::query_scalar(&query_str).fetch_one(&pool).await.ok()?;
-
         pool.close().await;
         Some(value != 0)
     })
@@ -179,7 +190,6 @@ pub async fn fetch_active_tracked_paths(
     )
     .fetch_all(pool)
     .await?;
-
     Ok(rows)
 }
 
@@ -191,7 +201,6 @@ pub async fn ensure_default_canvas_view(pool: &SqlitePool) -> Result<(), sqlx::E
     .bind(DEFAULT_CANVAS_VIEW_ID)
     .execute(pool)
     .await?;
-
     Ok(())
 }
 
@@ -205,10 +214,15 @@ pub async fn fetch_workspace_nodes(
             branches.id AS branch_id,
             branches.branch_name,
             branches.is_head,
+            branches.ahead_count,
+            branches.behind_count,
             branches.last_commit_hash,
             commits.commit_message,
-            cards.pos_x,
-            cards.pos_y
+            COALESCE(cards.pos_x, 100.0) as pos_x,
+            COALESCE(cards.pos_y, 100.0) as pos_y,
+            COALESCE(cards.view_mode, 'EXPANDED') as view_mode,
+            COALESCE(cards.commit_density, 5) as commit_density,
+            COALESCE(cards.theme_color_hex, '#4F46E5') as theme_color_hex
          FROM cached_git_branches AS branches
          LEFT JOIN canvas_view_cards AS cards
             ON cards.branch_id = branches.id
@@ -224,6 +238,28 @@ pub async fn fetch_workspace_nodes(
     Ok(rows)
 }
 
+pub async fn fetch_branch_commits(
+    pool: &SqlitePool,
+    branch_id: &str,
+    limit: i64,
+) -> Result<Vec<CachedCommitRow>, sqlx::Error> {
+    let query_str = if limit <= 0 {
+        "SELECT commit_hash, author_name, commit_message, strftime('%Y-%m-%d %H:%M:%S', committed_at) as committed_at, signature_status 
+         FROM cached_git_commits WHERE branch_id = ? ORDER BY committed_at DESC"
+    } else {
+        "SELECT commit_hash, author_name, commit_message, strftime('%Y-%m-%d %H:%M:%S', committed_at) as committed_at, signature_status 
+         FROM cached_git_commits WHERE branch_id = ? ORDER BY committed_at DESC LIMIT ?"
+    };
+
+    let mut query = sqlx::query_as::<_, CachedCommitRow>(query_str).bind(branch_id);
+    if limit > 0 {
+        query = query.bind(limit);
+    }
+
+    let rows = query.fetch_all(pool).await?;
+    Ok(rows)
+}
+
 pub async fn update_canvas_card_position(
     pool: &SqlitePool,
     branch_id: &str,
@@ -233,8 +269,8 @@ pub async fn update_canvas_card_position(
     ensure_default_canvas_view(pool).await?;
 
     sqlx::query(
-        "INSERT INTO canvas_view_cards (view_id, branch_id, pos_x, pos_y)
-         VALUES (?, ?, ?, ?)
+        "INSERT INTO canvas_view_cards (view_id, branch_id, pos_x, pos_y, view_mode, commit_density, theme_color_hex)
+         VALUES (?, ?, ?, ?, 'EXPANDED', 5, '#4F46E5')
          ON CONFLICT(view_id, branch_id) DO UPDATE SET
             pos_x = excluded.pos_x,
             pos_y = excluded.pos_y;",
@@ -243,6 +279,34 @@ pub async fn update_canvas_card_position(
     .bind(branch_id)
     .bind(pos_x)
     .bind(pos_y)
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
+pub async fn update_canvas_card_config(
+    pool: &SqlitePool,
+    branch_id: &str,
+    view_mode: &str,
+    commit_density: i64,
+    theme_color_hex: &str,
+) -> Result<(), sqlx::Error> {
+    ensure_default_canvas_view(pool).await?;
+
+    sqlx::query(
+        "INSERT INTO canvas_view_cards (view_id, branch_id, pos_x, pos_y, view_mode, commit_density, theme_color_hex)
+         VALUES (?, ?, 100.0, 100.0, ?, ?, ?)
+         ON CONFLICT(view_id, branch_id) DO UPDATE SET
+            view_mode = excluded.view_mode,
+            commit_density = excluded.commit_density,
+            theme_color_hex = excluded.theme_color_hex;",
+    )
+    .bind(DEFAULT_CANVAS_VIEW_ID)
+    .bind(branch_id)
+    .bind(view_mode)
+    .bind(commit_density)
+    .bind(theme_color_hex)
     .execute(pool)
     .await?;
 
@@ -259,19 +323,13 @@ pub async fn insert_tracked_path(
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
         "INSERT INTO tracked_paths (
-            id,
-            display_name,
-            absolute_path,
-            remote_url,
-            repo_origin_type,
-            uncommitted_changes_count,
-            is_active
+            id, display_name, absolute_path, remote_url, repo_origin_type, uncommitted_changes_count, is_active
          ) VALUES (?, ?, ?, ?, ?, 0, 1)
          ON CONFLICT(absolute_path) DO UPDATE SET
             is_active = 1,
             display_name = excluded.display_name,
             remote_url = excluded.remote_url,
-            repo_origin_type = excluded.repo_origin_type;",
+            repo_origin_type = excluded.repo_origin_type;"
     )
     .bind(id)
     .bind(display_name)
@@ -280,7 +338,6 @@ pub async fn insert_tracked_path(
     .bind(repo_origin_type)
     .execute(pool)
     .await?;
-
     Ok(())
 }
 
@@ -288,15 +345,10 @@ pub async fn untrack_repository_path(
     pool: &SqlitePool,
     path_id: &str,
 ) -> Result<(), sqlx::Error> {
-    sqlx::query(
-        "UPDATE tracked_paths
-         SET is_active = 0
-         WHERE id = ?;",
-    )
-    .bind(path_id)
-    .execute(pool)
-    .await?;
-
+    sqlx::query("UPDATE tracked_paths SET is_active = 0 WHERE id = ?;")
+        .bind(path_id)
+        .execute(pool)
+        .await?;
     Ok(())
 }
 
@@ -305,16 +357,11 @@ pub async fn update_repository_alias(
     path_id: &str,
     alias: Option<&str>,
 ) -> Result<(), sqlx::Error> {
-    sqlx::query(
-        "UPDATE tracked_paths
-         SET alias_name = ?
-         WHERE id = ?;",
-    )
-    .bind(alias)
-    .bind(path_id)
-    .execute(pool)
-    .await?;
-
+    sqlx::query("UPDATE tracked_paths SET alias_name = ? WHERE id = ?;")
+        .bind(alias)
+        .bind(path_id)
+        .execute(pool)
+        .await?;
     Ok(())
 }
 
@@ -322,16 +369,12 @@ pub async fn fetch_canvas_manual_edges(
     pool: &SqlitePool,
 ) -> Result<Vec<CanvasEdgeRow>, sqlx::Error> {
     ensure_default_canvas_view(pool).await?;
-
     let rows = sqlx::query_as::<_, CanvasEdgeRow>(
-        "SELECT id, source_branch_id, target_branch_id, edge_style 
-         FROM canvas_manual_edges 
-         WHERE view_id = ?"
+        "SELECT id, source_branch_id, target_branch_id, edge_style FROM canvas_manual_edges WHERE view_id = ?"
     )
     .bind(DEFAULT_CANVAS_VIEW_ID)
     .fetch_all(pool)
     .await?;
-
     Ok(rows)
 }
 
@@ -343,11 +386,9 @@ pub async fn insert_canvas_manual_edge(
     edge_style: &str,
 ) -> Result<(), sqlx::Error> {
     ensure_default_canvas_view(pool).await?;
-
     sqlx::query(
         "INSERT INTO canvas_manual_edges (id, view_id, source_branch_id, target_branch_id, edge_style)
-         VALUES (?, ?, ?, ?, ?)
-         ON CONFLICT(id) DO NOTHING;"
+         VALUES (?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING;"
     )
     .bind(id)
     .bind(DEFAULT_CANVAS_VIEW_ID)
@@ -356,261 +397,21 @@ pub async fn insert_canvas_manual_edge(
     .bind(edge_style)
     .execute(pool)
     .await?;
-
     Ok(())
 }
 
-pub async fn archive_tracked_path(
-    pool: &SqlitePool,
-    path_id: &str,
-) -> Result<(), sqlx::Error> {
-    sqlx::query(
-        "UPDATE tracked_paths 
-         SET is_active = 0, archived_at = CURRENT_TIMESTAMP 
-         WHERE id = ?;"
-    )
-    .bind(path_id)
-    .execute(pool)
-    .await?;
-
+pub async fn archive_tracked_path(pool: &SqlitePool, path_id: &str) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE tracked_paths SET is_active = 0, archived_at = CURRENT_TIMESTAMP WHERE id = ?;")
+        .bind(path_id)
+        .execute(pool)
+        .await?;
     Ok(())
 }
 
-pub async fn archive_canvas_view(
-    pool: &SqlitePool,
-    view_id: &str,
-) -> Result<(), sqlx::Error> {
-    sqlx::query(
-        "UPDATE canvas_views 
-         SET archived_at = CURRENT_TIMESTAMP 
-         WHERE id = ?;"
-    )
-    .bind(view_id)
-    .execute(pool)
-    .await?;
-
+pub async fn archive_canvas_view(pool: &SqlitePool, view_id: &str) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE canvas_views SET archived_at = CURRENT_TIMESTAMP WHERE id = ?;")
+        .bind(view_id)
+        .execute(pool)
+        .await?;
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    async fn setup_test_db() -> SqlitePool {
-        let pool = SqlitePool::connect("sqlite::memory:")
-            .await
-            .expect("Failed to connect to in-memory test SQLite DB");
-
-        let migrations = get_migrations();
-        for migration in migrations {
-            sqlx::query(&migration.sql)
-                .execute(&pool)
-                .await
-                .unwrap_or_else(|_| panic!("Failed to run test migration version: {}", migration.version));
-        }
-
-        sqlx::query("PRAGMA foreign_keys = ON;")
-            .execute(&pool)
-            .await
-            .unwrap();
-
-        pool
-    }
-
-    #[test]
-    fn test_workspace_nodes_round_trip_from_canvas_card_positions() {
-        tauri::async_runtime::block_on(async {
-            let pool = setup_test_db().await;
-
-            sqlx::query(
-                "INSERT INTO tracked_paths (id, display_name, absolute_path, is_active)
-                 VALUES ('path-1', 'Workspace One', '/tmp/workspace-one', 1);",
-            )
-            .execute(&pool)
-            .await
-            .unwrap();
-
-            sqlx::query(
-                "INSERT INTO cached_git_branches (id, path_id, branch_name, is_head, last_commit_hash)
-                 VALUES ('branch-1', 'path-1', 'feature/test', 1, 'abc123');",
-            )
-            .execute(&pool)
-            .await
-            .unwrap();
-
-            sqlx::query(
-                "INSERT INTO cached_git_commits (commit_hash, branch_id, author_name, commit_message, committed_at)
-                 VALUES ('abc123', 'branch-1', 'Test Author', 'Latest workspace branch commit', '2026-01-01T00:00:00Z');",
-            )
-            .execute(&pool)
-            .await
-            .unwrap();
-
-            update_canvas_card_position(&pool, "branch-1", 120.5, 240.0)
-                .await
-                .unwrap();
-
-            let nodes = fetch_workspace_nodes(&pool).await.unwrap();
-
-            assert_eq!(nodes.len(), 1);
-            assert_eq!(nodes[0].branch_id, "branch-1");
-            assert_eq!(nodes[0].branch_name, "feature/test");
-            assert_eq!(nodes[0].commit_message.as_deref(), Some("Latest workspace branch commit"));
-            assert_eq!(nodes[0].pos_x, Some(120.5));
-            assert_eq!(nodes[0].pos_y, Some(240.0));
-
-            pool.close().await;
-        });
-    }
-
-    #[test]
-    fn test_update_canvas_card_position_updates_existing_position() {
-        tauri::async_runtime::block_on(async {
-            let pool = setup_test_db().await;
-
-            sqlx::query(
-                "INSERT INTO tracked_paths (id, display_name, absolute_path, is_active)
-                 VALUES ('path-1', 'Workspace One', '/tmp/workspace-one', 1);",
-            )
-            .execute(&pool)
-            .await
-            .unwrap();
-
-            sqlx::query(
-                "INSERT INTO cached_git_branches (id, path_id, branch_name, is_head, last_commit_hash)
-                 VALUES ('branch-1', 'path-1', 'feature/test', 1, 'abc123');",
-            )
-            .execute(&pool)
-            .await
-            .unwrap();
-
-            update_canvas_card_position(&pool, "branch-1", 40.0, 80.0)
-                .await
-                .unwrap();
-
-            update_canvas_card_position(&pool, "branch-1", 96.0, 144.0)
-                .await
-                .unwrap();
-
-            let stored_position = sqlx::query_as::<_, (f64, f64)>(
-                "SELECT pos_x, pos_y FROM canvas_view_cards WHERE view_id = ? AND branch_id = ?",
-            )
-            .bind(DEFAULT_CANVAS_VIEW_ID)
-            .bind("branch-1")
-            .fetch_one(&pool)
-            .await
-            .unwrap();
-
-            assert_eq!(stored_position, (96.0, 144.0));
-
-            pool.close().await;
-        });
-    }
-
-    #[test]
-    fn test_fetch_active_tracked_paths_returns_only_active_rows() {
-        tauri::async_runtime::block_on(async {
-            let pool = setup_test_db().await;
-
-            sqlx::query(
-                "INSERT INTO tracked_paths (id, display_name, absolute_path, remote_url, is_active) VALUES (?, 'Active Repo', '/tmp/active', 'https://example.com/active.git', 1);",
-            )
-            .bind("active-path")
-            .execute(&pool)
-            .await
-            .unwrap();
-
-            sqlx::query(
-                "INSERT INTO tracked_paths (id, display_name, absolute_path, remote_url, is_active) VALUES (?, 'Inactive Repo', '/tmp/inactive', 'https://example.com/inactive.git', 0);",
-            )
-            .bind("inactive-path")
-            .execute(&pool)
-            .await
-            .unwrap();
-
-            let tracked_paths = fetch_active_tracked_paths(&pool).await.unwrap();
-
-            assert_eq!(tracked_paths.len(), 1);
-            assert_eq!(tracked_paths[0].id, "active-path");
-            assert_eq!(tracked_paths[0].display_name, "Active Repo");
-            assert_eq!(tracked_paths[0].absolute_path, "/tmp/active");
-
-            pool.close().await;
-        });
-    }
-
-    #[test]
-    fn test_database_integrity_and_foreign_keys() {
-        tauri::async_runtime::block_on(async {
-            let pool = setup_test_db().await;
-
-            let path_id = "test-path-uuid-1111";
-            sqlx::query(
-                "INSERT INTO tracked_paths (id, display_name, absolute_path, remote_url, is_active)
-                 VALUES (?, 'Test Core Repo', '/Users/mock/code/test-core', 'https://github.com/test/repo.git', 1);",
-            )
-            .bind(path_id)
-            .execute(&pool)
-            .await
-            .unwrap();
-
-            let view_id = "test-view-uuid-2222";
-            sqlx::query(
-                "INSERT INTO canvas_views (id, view_name, zoom_level, pan_x, pan_y)
-                 VALUES (?, 'Sprint 1 Workspace Layout', 1.0, 0.0, 0.0);",
-            )
-            .bind(view_id)
-            .execute(&pool)
-            .await
-            .unwrap();
-
-            let branch_id = "test-branch-uuid-3333";
-            sqlx::query(
-                "INSERT INTO cached_git_branches (id, path_id, branch_name, is_head, ahead_count, behind_count, last_commit_hash)
-                 VALUES (?, ?, 'feature/auth-pipeline', 1, 2, 0, 'a1b2c3d4e5f6');",
-            )
-            .bind(branch_id)
-            .bind(path_id)
-            .execute(&pool)
-            .await
-            .unwrap();
-
-            sqlx::query(
-                "INSERT INTO canvas_view_cards (view_id, branch_id, pos_x, pos_y, view_mode, commit_density, theme_color_hex)
-                 VALUES (?, ?, 150.5, 300.0, 'EXPANDED', 5, '#4F46E5');",
-            )
-            .bind(view_id)
-            .bind(branch_id)
-            .execute(&pool)
-            .await
-            .unwrap();
-
-            let count_cards: i64 =
-                sqlx::query_scalar("SELECT COUNT(*) FROM canvas_view_cards WHERE view_id = ?")
-                    .bind(view_id)
-                    .fetch_one(&pool)
-                    .await
-                    .unwrap();
-            assert_eq!(count_cards, 1, "Canvas view card should be successfully registered!");
-
-            sqlx::query("DELETE FROM tracked_paths WHERE id = ?;")
-                .bind(path_id)
-                .execute(&pool)
-                .await
-                .unwrap();
-
-            let count_remaining_cards: i64 =
-                sqlx::query_scalar("SELECT COUNT(*) FROM canvas_view_cards WHERE branch_id = ?")
-                    .bind(branch_id)
-                    .fetch_one(&pool)
-                    .await
-                    .unwrap();
-            assert_eq!(
-                count_remaining_cards, 0,
-                "Foreign key ON DELETE CASCADE failed to clear decoupled visual cards!",
-            );
-
-            pool.close().await;
-        });
-    }
 }

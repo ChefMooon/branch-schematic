@@ -87,6 +87,30 @@ async fn soft_archive_repository(
         .map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+async fn get_branch_commits(
+    state: tauri::State<'_, DbState>,
+    branch_id: String,
+    limit: i64,
+) -> Result<Vec<db::CachedCommitRow>, String> {
+    db::fetch_branch_commits(&state.0, &branch_id, limit)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn update_branch_card_config(
+    state: tauri::State<'_, DbState>,
+    branch_id: String,
+    view_mode: String,
+    commit_density: i64,
+    theme_color_hex: String,
+) -> Result<(), String> {
+    db::update_canvas_card_config(&state.0, &branch_id, &view_mode, commit_density, &theme_color_hex)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -181,6 +205,8 @@ pub fn run() {
             get_manual_edges,
             save_manual_edge,
             soft_archive_repository,
+            get_branch_commits,
+            update_branch_card_config,
             git::scan_local_repository,
             git::execute_git_checkout,
             git::create_git_branch,
