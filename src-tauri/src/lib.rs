@@ -56,6 +56,37 @@ async fn update_card_position(
         .map_err(|error| error.to_string())
 }
 
+#[tauri::command]
+async fn get_manual_edges(
+    state: tauri::State<'_, DbState>,
+) -> Result<Vec<db::CanvasEdgeRow>, String> {
+    db::fetch_canvas_manual_edges(&state.0)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+async fn save_manual_edge(
+    state: tauri::State<'_, DbState>,
+    id: String,
+    source: String,
+    target: String,
+) -> Result<(), String> {
+    db::insert_canvas_manual_edge(&state.0, &id, &source, &target, "BEZIER")
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+async fn soft_archive_repository(
+    state: tauri::State<'_, DbState>,
+    path_id: String,
+) -> Result<(), String> {
+    db::archive_tracked_path(&state.0, &path_id)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -143,17 +174,21 @@ pub fn run() {
         // 5. Consolidated single-entry invoke handler registry
         .invoke_handler(tauri::generate_handler![
             greet,
-            git::scan_local_repository,
-            git::execute_git_checkout,
-            git::create_git_branch,
             watch_project_directory,
             get_active_tracked_paths,
             get_workspace_nodes,
             update_card_position,
+            get_manual_edges,
+            save_manual_edge,
+            soft_archive_repository,
+            git::scan_local_repository,
+            git::execute_git_checkout,
+            git::create_git_branch,
             git::add_new_tracked_path,
             git::untrack_repository,
             git::get_tracked_workspaces,
             git::set_repository_alias,
+            git::determine_branch_topology,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

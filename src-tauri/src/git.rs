@@ -1,6 +1,6 @@
 use std::path::Path;
 use uuid::Uuid;
-use git2::{BranchType, Repository};
+use git2::{Oid, BranchType, Repository};
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
 use crate::DbState;
@@ -31,6 +31,14 @@ pub struct WorkspaceDetails {
     pub current_branch: String,
     pub available_branches: Vec<String>,
     pub uncommitted_changes_count: usize,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct GitTopologyRelation {
+    pub source_branch: String,
+    pub target_branch: String,
+    pub common_ancestor: String,
+    pub distance_from_ancestor: usize,
 }
 
 /// Opens a local directory path, scans it for Git branch metadata,
@@ -284,6 +292,45 @@ pub async fn set_repository_alias(
     Ok(())
 }
 
+/// Finds the closest common ancestor (merge base) between two branches
+/// and calculates structural relationship topology.
+#[tauri::command]
+pub fn determine_branch_topology(
+    absolute_path: &str,
+    branch_a: &str,
+    branch_b: &str,
+) -> Result<GitTopologyRelation, String> {
+    let repo = Repository::open(absolute_path)
+        .map_err(|e| format!("Failed to open Git repository: {}", e))?;
+
+    // Resolve structural tips
+    let ref_a = repo.revparse_single(&format!("refs/heads/{}", branch_a))
+        .map_err(|e| format!("Branch '{}' not found: {}", branch_a, e))?;
+    let ref_b = repo.revparse_single(&format!("refs/heads/{}", branch_b))
+        .map_err(|e| format!("Branch '{}' not found: {}", branch_b, e))?;
+
+    let oid_a = ref_a.id();
+    let oid_b = ref_b.id();
+
+    // Find closest common ancestor commit (Merge Base)
+    let merge_base_oid = repo.merge_base(oid_a, oid_b)
+        .map_err(|e| format!("No common ancestor found between branches: {}", e))?;
+
+    // Simple graph walk to compute relative commit distance from ancestor to branch A tip
+    let mut revwalk = repo.revwalk().map_err(|e| e.to_string())?;
+    revwalk.push(oid_a).map_err(|e| e.to_string())?;
+    revwalk.hide(merge_base_oid).map_err(|e| e.to_string())?;
+    let distance = revwalk.count();
+
+    Ok(GitTopologyRelation {
+        source_branch: branch_b.to_string(), // Convention: from older/common base or peer
+        target_branch: branch_a.to_string(),
+        common_ancestor: merge_base_oid.to_string(),
+        distance_from_ancestor: distance,
+    })
+}
+
+// Tests start
 #[cfg(test)]
 mod tests {
     use super::*;

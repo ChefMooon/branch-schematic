@@ -9,7 +9,7 @@ import {
   applyNodeChanges,
   applyEdgeChanges,
 } from '@xyflow/react';
-import type { BranchCardNode } from '../features/branch-map/components/branch-card'; // Make sure to export this type from branch-card.tsx
+import type { BranchCardNode } from '../features/branch-map/components/branch-card';
 
 interface WorkspaceNodeRecord {
   branch_id: string;
@@ -19,6 +19,13 @@ interface WorkspaceNodeRecord {
   commit_message?: string | null;
   pos_x?: number | null;
   pos_y?: number | null;
+}
+
+interface CanvasEdgeRecord {
+  id: string;
+  source_branch_id: string;
+  target_branch_id: string;
+  edge_style: string;
 }
 
 interface CanvasState {
@@ -31,11 +38,6 @@ interface CanvasState {
   setEdges: (edges: Edge[]) => void;
   hydrateWorkspaceNodes: () => Promise<void>;
 }
-
-// Temporary fallback data until Step 4 (Hydration) is complete
-const initialNodes: BranchCardNode[] = [
-  { id: '1', type: 'branchCard', position: { x: 250, y: 150 }, data: { title: 'main', status: 'Active', content: 'Production branch' } }
-];
 
 function mapWorkspaceNodeToCanvasNode(record: WorkspaceNodeRecord, index: number): BranchCardNode {
   return {
@@ -54,7 +56,7 @@ function mapWorkspaceNodeToCanvasNode(record: WorkspaceNodeRecord, index: number
 }
 
 export const useCanvasStore = create<CanvasState>((set, get) => ({
-  nodes: initialNodes,
+  nodes: [],
   edges: [],
   onNodesChange: (changes) => {
     set({ nodes: applyNodeChanges(changes, get().nodes) as BranchCardNode[] });
@@ -62,20 +64,53 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   onEdgesChange: (changes) => {
     set({ edges: applyEdgeChanges(changes, get().edges) });
   },
-  onConnect: (connection) => {
-    set({ edges: addEdge(connection, get().edges) });
+  onConnect: async (connection) => {
+    if (!connection.source || !connection.target) return;
+
+    const newEdgeId = `edge-${connection.source}-${connection.target}`;
+    const newEdge: Edge = {
+      id: newEdgeId,
+      source: connection.source,
+      target: connection.target,
+      animated: true,
+      style: { stroke: '#6366f1', strokeWidth: 2 },
+    };
+
+    // Optimistically update React Flow Viewport state loop
+    set({ edges: addEdge(newEdge, get().edges) });
+
+    try {
+      // Direct SQLite transactional durability persistence lock
+      await invoke('save_manual_edge', {
+        id: newEdgeId,
+        source: connection.source,
+        target: connection.target,
+      });
+    } catch (error) {
+      console.error('Failed to commit structural manually overridden edge connection:', error);
+    }
   },
   setNodes: (nodes) => set({ nodes }),
   setEdges: (edges) => set({ edges }),
   hydrateWorkspaceNodes: async () => {
     try {
-      const rows = await invoke<WorkspaceNodeRecord[]>('get_workspace_nodes');
-      const hydratedNodes = rows.map(mapWorkspaceNodeToCanvasNode);
+      // 1. Fetch persistent coordinate nodes from the Db State
+      const dbNodes = await invoke<WorkspaceNodeRecord[]>('get_workspace_nodes');
+      const formattedNodes = dbNodes.map((node, index) => mapWorkspaceNodeToCanvasNode(node, index));
 
-      set({ nodes: hydratedNodes.length > 0 ? hydratedNodes : initialNodes });
+      // 2. Fetch manual persistent visual edges override mappings
+      const dbEdges = await invoke<CanvasEdgeRecord[]>('get_manual_edges');
+      const formattedEdges: Edge[] = dbEdges.map((edge) => ({
+        id: edge.id,
+        source: edge.source_branch_id,
+        target: edge.target_branch_id,
+        animated: true,
+        style: { stroke: '#4f46e5', strokeWidth: 2 },
+      }));
+
+      set({ nodes: formattedNodes, edges: formattedEdges });
     } catch (error) {
-      console.error('Failed to hydrate workspace nodes:', error);
-      set({ nodes: initialNodes });
+      console.error('Failed to execute graph node and edge hydration loops:', error);
     }
   },
 }));

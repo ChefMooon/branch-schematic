@@ -22,6 +22,14 @@ pub struct WorkspaceNodeRow {
     pub pos_y: Option<f64>,
 }
 
+#[derive(Debug, Serialize, Clone, FromRow)]
+pub struct CanvasEdgeRow {
+    pub id: String,
+    pub source_branch_id: String,
+    pub target_branch_id: String,
+    pub edge_style: String,
+}
+
 pub const DB_NAME: &str = "branch-schematic.db";
 pub const DB_URL: &str = "sqlite:branch-schematic.db";
 pub const DEFAULT_CANVAS_VIEW_ID: &str = "default-workspace-view";
@@ -304,6 +312,80 @@ pub async fn update_repository_alias(
     )
     .bind(alias)
     .bind(path_id)
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
+pub async fn fetch_canvas_manual_edges(
+    pool: &SqlitePool,
+) -> Result<Vec<CanvasEdgeRow>, sqlx::Error> {
+    ensure_default_canvas_view(pool).await?;
+
+    let rows = sqlx::query_as::<_, CanvasEdgeRow>(
+        "SELECT id, source_branch_id, target_branch_id, edge_style 
+         FROM canvas_manual_edges 
+         WHERE view_id = ?"
+    )
+    .bind(DEFAULT_CANVAS_VIEW_ID)
+    .fetch_all(pool)
+    .await?;
+
+    Ok(rows)
+}
+
+pub async fn insert_canvas_manual_edge(
+    pool: &SqlitePool,
+    id: &str,
+    source_id: &str,
+    target_id: &str,
+    edge_style: &str,
+) -> Result<(), sqlx::Error> {
+    ensure_default_canvas_view(pool).await?;
+
+    sqlx::query(
+        "INSERT INTO canvas_manual_edges (id, view_id, source_branch_id, target_branch_id, edge_style)
+         VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(id) DO NOTHING;"
+    )
+    .bind(id)
+    .bind(DEFAULT_CANVAS_VIEW_ID)
+    .bind(source_id)
+    .bind(target_id)
+    .bind(edge_style)
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
+pub async fn archive_tracked_path(
+    pool: &SqlitePool,
+    path_id: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "UPDATE tracked_paths 
+         SET is_active = 0, archived_at = CURRENT_TIMESTAMP 
+         WHERE id = ?;"
+    )
+    .bind(path_id)
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
+pub async fn archive_canvas_view(
+    pool: &SqlitePool,
+    view_id: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "UPDATE canvas_views 
+         SET archived_at = CURRENT_TIMESTAMP 
+         WHERE id = ?;"
+    )
+    .bind(view_id)
     .execute(pool)
     .await?;
 
