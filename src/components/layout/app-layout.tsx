@@ -1,12 +1,20 @@
 import { useState, useEffect } from 'react';
-import { useNavigate, useLocation } from '@tanstack/react-router';
+import { useLocation } from '@tanstack/react-router';
+import {
+  MagnifyingGlassIcon,
+  BellIcon,
+  PlusIcon,
+  CircleHalfIcon,
+  ListIcon,
+  XIcon,
+} from '@phosphor-icons/react';
 import { useWorkspaceStore } from '../../stores/workspace-store';
+import { AppSidebar } from './app-sidebar';
 
 interface AppLayoutProps {
   children: React.ReactNode;
 }
 
-// Reacts instantly to your app's light/dark mode changes
 function useLayoutThemeMode() {
   const [themeMode, setThemeMode] = useState<'light' | 'dark'>(() => {
     if (typeof document === 'undefined') return 'dark';
@@ -14,14 +22,16 @@ function useLayoutThemeMode() {
   });
 
   useEffect(() => {
-    const updateTheme = () => {
-      setThemeMode(document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light');
-    };
-
-    updateTheme();
-    const observer = new MutationObserver(updateTheme);
-    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
-
+    const update = () =>
+      setThemeMode(
+        document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light'
+      );
+    update();
+    const observer = new MutationObserver(update);
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['data-theme'],
+    });
     return () => observer.disconnect();
   }, []);
 
@@ -29,25 +39,127 @@ function useLayoutThemeMode() {
 }
 
 export function AppLayout({ children }: AppLayoutProps) {
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isProjectHubOpen, setIsProjectHubOpen] = useState(false);
+  const [searchValue, setSearchValue] = useState('');
 
-  const navigate = useNavigate();
   const location = useLocation();
   const themeMode = useLayoutThemeMode();
-  const isDark = themeMode === 'dark';
-  const { repos, activeRepoId, hydrateFromBackend, selectRepo } = useWorkspaceStore();
-  const activeRepo = repos.find((repo) => repo.id === activeRepoId) ?? null;
+  const { repos, activeRepoId, hydrateFromBackend } = useWorkspaceStore();
+  const activeRepo = repos.find((r) => r.id === activeRepoId) ?? null;
 
-  const sidebarWidth = 64;
-  const headerHeight = 60;
-  const hubDrawerWidth = 320;
+  const HEADER_H = 48;
 
   useEffect(() => {
     void hydrateFromBackend();
   }, [hydrateFromBackend]);
 
-  // --- Layout Theme-Aware Styles ---
-  const containerStyle: React.CSSProperties = {
+  useEffect(() => {
+    setIsSidebarOpen(false);
+  }, [location.pathname]);
+
+  const pageTitle: Record<string, string> = {
+    '/': 'Home',
+    '/branch-map': 'Branch Map',
+    '/database': 'Database',
+    '/settings': 'Settings',
+  };
+  const currentTitle = pageTitle[location.pathname] ?? 'Branch Schematic Canvas';
+
+  return (
+    <div style={{ ...styles.root, '--header-h': `${HEADER_H}px` } as React.CSSProperties}>
+
+      {/* ── SIDEBAR OVERLAY PANEL ── */}
+      <AppSidebar
+        isOpen={isSidebarOpen}
+        onClose={() => setIsSidebarOpen(false)}
+        isProjectHubOpen={isProjectHubOpen}
+        onToggleProjectHub={() => setIsProjectHubOpen((v) => !v)}
+      />
+
+      {/* ── TOPBAR (FULL WIDTH) ── */}
+      <header style={{ ...styles.header, height: HEADER_H }}>
+        
+        {/* Hamburger/Close Button */}
+        <button
+          onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+          style={styles.menuBtn}
+          title={isSidebarOpen ? "Close navigation" : "Open navigation"}
+        >
+          {isSidebarOpen ? (
+            <XIcon size={18} weight="bold" color="var(--app-text)" style={{ display: 'block' }} />
+          ) : (
+            <ListIcon size={18} weight="bold" color="var(--app-text)" style={{ display: 'block' }} />
+          )}
+        </button>
+
+        {/* Page breadcrumb */}
+        <span style={styles.headerTitle}>{currentTitle}</span>
+
+        {/* Center: search */}
+        <div style={styles.searchWrapper}>
+          <MagnifyingGlassIcon size={14} color="var(--app-muted)" style={{ flexShrink: 0, display: 'block' }} />
+          <input
+            type="text"
+            placeholder="Search or jump to…"
+            value={searchValue}
+            onChange={(e) => setSearchValue(e.target.value)}
+            style={styles.searchInput}
+          />
+          <kbd style={styles.searchKbd}>/</kbd>
+        </div>
+
+        {/* Right: actions + repo badge */}
+        <div style={styles.headerRight}>
+          {activeRepo && (
+            <span style={styles.repoBadge} title={activeRepo.absolute_path}>
+              📁 {activeRepo.display_name}
+            </span>
+          )}
+
+          <button
+            style={styles.iconBtn}
+            title="Notifications"
+            onClick={() => {/* TODO */}}
+          >
+            <BellIcon size={18} color="var(--app-text)" style={{ display: 'block' }} />
+          </button>
+
+          <button
+            style={styles.iconBtn}
+            title="New"
+            onClick={() => {/* TODO */}}
+          >
+            <PlusIcon size={18} color="var(--app-text)" style={{ display: 'block' }} />
+          </button>
+
+          <button
+            style={styles.iconBtn}
+            title={`Switch theme (current: ${themeMode})`}
+            onClick={() => {
+              document.documentElement.setAttribute(
+                'data-theme',
+                themeMode === 'dark' ? 'light' : 'dark'
+              );
+            }}
+          >
+            <CircleHalfIcon size={18} color="var(--app-text)" style={{ display: 'block' }} />
+          </button>
+        </div>
+      </header>
+
+      {/* ── MAIN CONTENT ── */}
+      <main style={{ ...styles.main, top: HEADER_H }}>
+        {children}
+      </main>
+    </div>
+  );
+}
+
+// ─── Styles ──────────────────────────────────────────────────────────────────
+
+const styles: Record<string, React.CSSProperties> = {
+  root: {
     width: '100vw',
     height: '100vh',
     backgroundColor: 'var(--app-bg)',
@@ -55,179 +167,121 @@ export function AppLayout({ children }: AppLayoutProps) {
     fontFamily: 'Inter, system-ui, sans-serif',
     overflow: 'hidden',
     position: 'relative',
-  };
+  },
 
-  const headerStyle: React.CSSProperties = {
+  header: {
     position: 'fixed',
     top: 0,
-    left: sidebarWidth,
-    width: `calc(100% - ${sidebarWidth}px)`,
+    left: 0,
+    width: '100%',
     boxSizing: 'border-box',
-    height: headerHeight,
     backgroundColor: 'var(--app-surface)',
     borderBottom: '1px solid var(--app-border)',
     display: 'flex',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: '0 24px',
-    zIndex: 10,
-  };
+    gap: '12px',
+    padding: '0 16px',
+    zIndex: 30,
+  },
 
-  const sidebarStyle: React.CSSProperties = {
-    position: 'fixed',
-    top: 0,
-    left: 0,
-    width: sidebarWidth,
-    height: '100vh',
-    boxSizing: 'border-box',
-    backgroundColor: 'var(--app-surface)',
-    borderRight: '1px solid var(--app-border)',
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    padding: '16px 0',
-    zIndex: 20,
-    justifyContent: 'space-between',
-  };
-
-  const sidebarIconStyle = (active = false): React.CSSProperties => ({
-    width: '44px',
-    height: '44px',
-    borderRadius: '10px',
-    backgroundColor: active ? 'var(--app-accent)' : 'transparent',
-    color: active ? '#ffffff' : 'var(--app-muted)',
+  menuBtn: {
+    width: '32px',
+    height: '32px',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
+    borderRadius: '6px',
+    border: '1px solid var(--app-border)',
+    backgroundColor: 'transparent',
+    padding: 0,
     cursor: 'pointer',
-    border: '1px solid transparent',
-    fontSize: '20px',
-    transition: 'all 0.2s ease',
-  });
+    flexShrink: 0,
+  },
 
-  const drawerStyle: React.CSSProperties = {
-    position: 'fixed',
-    top: headerHeight,
-    left: sidebarWidth,
-    width: hubDrawerWidth,
-    height: `calc(100vh - ${headerHeight}px)`,
+  headerTitle: {
+    fontWeight: 600,
+    fontSize: '13px',
+    color: 'var(--app-text)',
+    whiteSpace: 'nowrap',
+    minWidth: '80px',
+  },
+
+  searchWrapper: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+    flex: '1 1 0',
+    maxWidth: '320px',
+    margin: '0 auto',
+    backgroundColor: 'var(--app-bg)',
+    border: '1px solid var(--app-border)',
+    borderRadius: '6px',
+    padding: '5px 10px',
+    fontSize: '13px',
+  },
+
+  searchInput: {
+    flex: 1,
+    border: 'none',
+    background: 'transparent',
+    outline: 'none',
+    fontSize: '13px',
+    color: 'var(--app-text)',
+    fontFamily: 'inherit',
+  },
+
+  searchKbd: {
+    fontSize: '11px',
+    color: 'var(--app-muted)',
+    border: '1px solid var(--app-border)',
+    borderRadius: '4px',
+    padding: '1px 5px',
+    lineHeight: '1.4',
     backgroundColor: 'var(--app-surface)',
-    borderRight: '1px solid var(--app-border)',
-    transform: isProjectHubOpen ? 'translateX(0)' : `translateX(-${hubDrawerWidth + 10}px)`,
-    transition: 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-    zIndex: 5,
-    padding: '20px',
-    boxShadow: isProjectHubOpen ? '0 10px 30px var(--app-shadow)' : 'none',
-  };
+    fontFamily: 'inherit',
+  },
 
-  const viewportFrameStyle: React.CSSProperties = {
+  headerRight: {
+    marginLeft: 'auto',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+  },
+
+  repoBadge: {
+    fontSize: '12px',
+    color: 'var(--app-muted)',
+    backgroundColor: 'var(--app-surface-muted)',
+    border: '1px solid var(--app-border)',
+    borderRadius: '20px',
+    padding: '3px 10px',
+    whiteSpace: 'nowrap',
+    maxWidth: '160px',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+  },
+
+  iconBtn: {
+    width: '32px',
+    height: '32px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: '6px',
+    border: '1px solid var(--app-border)',
+    backgroundColor: 'transparent',
+    padding: 0,
+    cursor: 'pointer',
+    flexShrink: 0,
+  },
+
+  main: {
     position: 'absolute',
-    top: headerHeight,
-    left: sidebarWidth,
-    width: `calc(100vw - ${sidebarWidth}px)`,
-    height: `calc(100vh - ${headerHeight}px)`,
-    transition: 'padding-left 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-    paddingLeft: isProjectHubOpen ? hubDrawerWidth : 0,
+    left: 0,
+    width: '100vw',
+    height: 'calc(100vh - var(--header-h))',
     overflowY: 'auto',
     backgroundColor: 'var(--app-bg)',
-  };
-
-  return (
-    <div style={containerStyle}>
-      {/* SIDEBAR ZONE */}
-      <aside style={sidebarStyle}>
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px', width: '100%' }}>
-          <div 
-            style={{ fontWeight: 800, fontSize: '24px', marginBottom: '12px', cursor: 'pointer' }} 
-            onClick={() => navigate({ to: '/' })}
-          >
-            🌿
-          </div>
-          
-          <button 
-            onClick={() => setIsProjectHubOpen(!isProjectHubOpen)}
-            style={sidebarIconStyle(isProjectHubOpen)}
-            title="Project Workspace Hub"
-          >
-            📂
-          </button>
-
-          <button 
-            onClick={() => navigate({ to: '/branch-map' })}
-            style={sidebarIconStyle(location.pathname === '/branch-map')}
-            title="Interactive Branch Schematic"
-          >
-            🗺️
-          </button>
-
-          <button 
-            onClick={() => navigate({ to: '/database' })}
-            style={sidebarIconStyle(location.pathname === '/database')}
-            title="Database Cache Engine Control Panel"
-          >
-            🗄️
-          </button>
-        </div>
-
-        {/* SETTINGS AREA MOUNTED SECURELY AT THE BOTTOM */}
-        <div style={{ width: '100%', display: 'flex', justifyContent: 'center' }}>
-          <button 
-            onClick={() => navigate({ to: '/settings' })}
-            style={sidebarIconStyle(location.pathname === '/settings')}
-            title="System Preferences & Theme Settings"
-          >
-            ⚙️
-          </button>
-        </div>
-      </aside>
-
-      {/* HEADER BAR */}
-      <header style={headerStyle}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <span style={{ fontWeight: 600, fontSize: '15px' }}>Branch Schematic Canvas</span>
-        </div>
-        <div style={{ fontSize: '14px', color: isDark ? '#9ca3af' : '#64748b' }}>
-          Connected Repo: <strong style={{ color: isDark ? '#f3f4f6' : '#0f172a' }}>{activeRepo ? activeRepo.display_name : "None Selected"}</strong>
-        </div>
-      </header>
-
-      {/* DRAWER LAYER */}
-      <div style={drawerStyle}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-          <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 600, color: 'var(--app-text)' }}>Project Hub</h3>
-          <button onClick={() => setIsProjectHubOpen(false)} style={{ background: 'none', border: 'none', color: 'var(--app-muted)', cursor: 'pointer', fontSize: '16px' }}>✕</button>
-        </div>
-
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          {repos.map((repo) => {
-            const isSelected = activeRepo?.id === repo.id;
-            return (
-              <div 
-                key={repo.id}
-                onClick={() => {
-                  selectRepo(repo);
-                  setIsProjectHubOpen(false);
-                }}
-                style={{ 
-                  padding: '12px', borderRadius: '8px', 
-                  background: isSelected ? 'var(--app-surface-muted)' : 'transparent', 
-                  border: `1px solid ${isSelected ? 'var(--app-accent)' : 'transparent'}`, 
-                  cursor: 'pointer',
-                  transition: 'all 0.2s ease',
-                }}
-              >
-                <div style={{ fontWeight: 600, fontSize: '14px', color: 'var(--app-text)' }}>📁 {repo.display_name}</div>
-                <div style={{ fontSize: '11px', color: 'var(--app-muted)', marginTop: '4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{repo.absolute_path}</div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* DYNAMIC CONTENT CONTAINER */}
-      <main style={viewportFrameStyle}>
-        {children}
-      </main>
-    </div>
-  );
-}
+    boxSizing: 'border-box',
+  },
+};
