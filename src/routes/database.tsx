@@ -2,22 +2,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useEffect, useState } from "react";
 import Database from "@tauri-apps/plugin-sql";
 import { invoke } from "@tauri-apps/api/core";
-
-type TrackedPath = {
-  id: string;
-  display_name: string;
-  absolute_path: string;
-};
-
-type CachedBranch = {
-  id: string;
-  path_id: string;
-  branch_name: string;
-  is_head: number;
-  last_commit_hash: string;
-  author_name?: string;
-  commit_message?: string;
-};
+import { TrackedPath, CachedBranch, DiscoveredBranch } from "../types/git";
 
 // Structures returning from scan_local_repository
 type CommitLog = {
@@ -25,12 +10,6 @@ type CommitLog = {
   author: string;
   summary: string;
   timestamp: number;
-};
-
-type DiscoveredBranch = {
-  name: string;
-  is_head: boolean;
-  latest_commit: CommitLog;
 };
 
 export const Route = createFileRoute('/database')({
