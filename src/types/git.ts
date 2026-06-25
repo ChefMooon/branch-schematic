@@ -43,12 +43,26 @@ export interface TrackedPath {
   id: string;
   /** Custom presentation display name assigned to this repository context target */
   display_name: string;
+  /** Optional custom alias name for the repository */
+  alias_name?: string | null;
   /** Absolute target platform file path location point pointing to the project root directory */
   absolute_path: string;
   /** Optional URL remote tracking coordinate string configuration if registered */
   remote_url?: string | null;
+  /** Repository provenance classification for the UI */
+  repo_origin_type?: "OWNED" | "FORK" | "LOCAL_ONLY";
+  /** Number of locally modified files or changes pending */
+  uncommitted_changes_count?: number;
+  /** Currently checked out branch name */
+  current_branch?: string;
+  /** Available local branches for this repository */
+  available_branches?: string[];
+  /** Number of commits ahead of the remote branch */
+  ahead_count?: number;
+  /** Number of commits behind the remote branch */
+  behind_count?: number;
   /** Numeric boolean flag mapping (1 = True, 0 = False) tracking active visibility initialization */
-  is_active: number;
+  is_active?: number;
   /** ISO datetime text format string recording entry initialization timestamps */
   created_at?: string;
   /** Optional archival status datetime text track if unmounted historical tracking is queried */

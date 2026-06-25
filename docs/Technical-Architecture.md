@@ -9,18 +9,19 @@
 To prevent heavy disk execution loops on the frontend, SQLite acts as both a **Spatial Layout Registry** and a **Git Metadata Cache**.
 
 ```
-  +------------------+         +--------------------------+
-  |  tracked_paths   |-------->|   cached_git_branches    |
-  +------------------+         +--------------------------+
-           |                                 |
-           | 1:N                             | 1:N
-           ▼                                 ▼
-  +------------------+         +--------------------------+
-  |   canvas_views   |         |    canvas_view_cards     |
-  +------------------+         +--------------------------+
-           |                                 ^
-           | 1:N                             | 1:N
-           +---------------------------------+
+
++------------------+         +--------------------------+
+|  tracked_paths   |-------->|   cached_git_branches    |
++------------------+         +--------------------------+
+|                                 |
+| 1:N                             | 1:N
+▼                                 ▼
++------------------+         +--------------------------+
+|   canvas_views   |         |    canvas_view_cards     |
++------------------+         +--------------------------+
+|                                 ^
+| 1:N                             | 1:N
++---------------------------------+
 
 ```
 
@@ -32,20 +33,27 @@ To prevent heavy disk execution loops on the frontend, SQLite acts as both a **S
 
 #### `tracked_paths`
 
-Maps the individual workspace folders registered on the host file system. This table handles the multi-directory parallelism requirement (e.g., standard clones or distinct Git worktrees).
+Maps the individual workspace folders registered on the host file system. This table handles the multi-directory parallelism requirement and tracks enhanced homepage classification analytics (e.g., origin provenance types, uncommitted change states, and usage history metrics).
 
 ```sql
 CREATE TABLE tracked_paths (
-    id TEXT PRIMARY KEY NOT NULL,          -- UUID string
-    display_name TEXT NOT NULL,            -- e.g., "BranchMap (Main Core)"
-    absolute_path TEXT NOT NULL UNIQUE,    -- System path: /Users/user/code/branch-map
-    remote_url TEXT,                        -- Remote origin up-stream URL (cached)
-    is_active INTEGER NOT NULL DEFAULT 1,  -- 1 = Polled by Rust daemon, 0 = Hibernated
+    id TEXT PRIMARY KEY NOT NULL,              -- UUID string
+    display_name TEXT NOT NULL,                -- e.g., "BranchMap (Main Core)"
+    absolute_path TEXT NOT NULL UNIQUE,        -- System path: /Users/user/code/branch-map
+    remote_url TEXT,                           -- Remote origin up-stream URL (cached)
+    
+    -- Enhanced Homepage Analytics & Provenance
+    repo_origin_type TEXT NOT NULL DEFAULT 'LOCAL_ONLY', -- 'OWNED', 'FORK', 'LOCAL_ONLY'
+    uncommitted_changes_count INTEGER NOT NULL DEFAULT 0,
+    last_viewed_at DATETIME DEFAULT NULL,                -- Chronological track for Recent Repositories row
+    
+    is_active INTEGER NOT NULL DEFAULT 1,      -- 1 = Polled by Rust daemon, 0 = Hibernated
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    archived_at DATETIME DEFAULT NULL      -- Soft-delete flag
+    archived_at DATETIME DEFAULT NULL          -- Soft-delete flag
 );
 
 CREATE INDEX idx_tracked_paths_active ON tracked_paths(is_active) WHERE archived_at IS NULL;
+CREATE INDEX idx_tracked_paths_recent ON tracked_paths(last_viewed_at) WHERE last_viewed_at IS NOT NULL;
 
 ```
 

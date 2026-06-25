@@ -28,8 +28,24 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     set({ isLoading: true, error: null });
 
     try {
-      const rows = await invoke<TrackedPath[]>('get_active_tracked_paths');
-      const nextRepos = rows.filter((repo) => repo.is_active === 1);
+      // 1. Fetch active data paths from Rust database
+      const rows = await invoke<any[]>('get_tracked_workspaces');
+      
+      // 2. Map structural database fields safely to match runtime requirements
+      const nextRepos: TrackedPath[] = rows.map((repo) => ({
+        id: repo.id,
+        display_name: repo.display_name,
+        alias_name: repo.alias_name,
+        absolute_path: repo.absolute_path,
+        remote_url: repo.remote_url,
+        repo_origin_type: (repo.repo_origin_type || "LOCAL_ONLY"),
+        uncommitted_changes_count: repo.uncommitted_changes_count || 0,
+        current_branch: repo.current_branch || "main",
+        available_branches: repo.available_branches || ["main"],
+        ahead_count: repo.ahead_count || 0,
+        behind_count: repo.behind_count || 0,
+      }));
+
       const currentActiveRepo = get().activeRepoId
         ? nextRepos.find((repo) => repo.id === get().activeRepoId) ?? null
         : null;

@@ -1,10 +1,10 @@
-use tauri::{Manager, tray::TrayIconBuilder, tray::TrayIconEvent};
-use tauri_plugin_window_state::WindowExt;
 use sqlx::sqlite::SqlitePool;
+use tauri::{tray::TrayIconBuilder, tray::TrayIconEvent, Manager};
+use tauri_plugin_window_state::WindowExt;
 
+mod daemon;
 mod db;
 mod git;
-mod daemon;
 
 // Shared Tauri State container for our background SQLx Pool
 pub struct DbState(pub SqlitePool);
@@ -17,9 +17,9 @@ fn greet(name: &str) -> String {
 #[tauri::command]
 async fn watch_project_directory(
     app: tauri::AppHandle,
-    state: tauri::State<'_, DbState>, 
+    state: tauri::State<'_, DbState>,
     path_id: String,
-    absolute_path: String
+    absolute_path: String,
 ) -> Result<(), String> {
     let daemon = daemon::IndexerDaemon::new(app, state.0.clone());
     daemon.start_watching(path_id, absolute_path).await?;
@@ -27,7 +27,9 @@ async fn watch_project_directory(
 }
 
 #[tauri::command]
-async fn get_active_tracked_paths(state: tauri::State<'_, DbState>) -> Result<Vec<db::TrackedPathRow>, String> {
+async fn get_active_tracked_paths(
+    state: tauri::State<'_, DbState>,
+) -> Result<Vec<db::TrackedPathRow>, String> {
     db::fetch_active_tracked_paths(&state.0)
         .await
         .map_err(|error| error.to_string())
@@ -36,18 +38,24 @@ async fn get_active_tracked_paths(state: tauri::State<'_, DbState>) -> Result<Ve
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             // 1. Initialize the SQLite Connection Pool for the Daemon matching db::DB_URL location
-            let app_dir = app.path().app_data_dir().expect("Failed to locate app data directory");
+            let app_dir = app
+                .path()
+                .app_data_dir()
+                .expect("Failed to locate app data directory");
             std::fs::create_dir_all(&app_dir).unwrap();
-            
+
             // Build absolute path targeting the exact same file location managed by Tauri Plugin SQL
             let db_file_path = app_dir.join(db::DB_NAME);
             let db_url = format!("sqlite:{}", db_file_path.to_string_lossy());
 
             // Block asynchronously on setup to spin up our daemon SQLx engine pool
             tauri::async_runtime::block_on(async {
-                let pool = SqlitePool::connect(&db_url).await.expect("Failed to connect to SQLite Pool");
+                let pool = SqlitePool::connect(&db_url)
+                    .await
+                    .expect("Failed to connect to SQLite Pool");
                 app.manage(DbState(pool));
             });
 
@@ -61,7 +69,7 @@ pub fn run() {
                 }
 
                 if start_minimized {
-                    let _ = window.hide(); 
+                    let _ = window.hide();
                 } else {
                     let _ = window.show();
                     let _ = window.set_focus();
@@ -118,7 +126,11 @@ pub fn run() {
             git::execute_git_checkout,
             git::create_git_branch,
             watch_project_directory,
-            get_active_tracked_paths
+            get_active_tracked_paths,
+            git::add_new_tracked_path,
+            git::untrack_repository,
+            git::get_tracked_workspaces,
+            git::set_repository_alias,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

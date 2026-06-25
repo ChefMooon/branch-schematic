@@ -1,8 +1,8 @@
-use notify::{Watcher, RecursiveMode, Event, Result as NotifyResult};
+use notify::{Event, RecursiveMode, Result as NotifyResult, Watcher};
 use serde::Serialize;
+use sqlx::sqlite::SqlitePool;
 use std::path::PathBuf;
 use std::time::Duration;
-use sqlx::sqlite::SqlitePool;
 use tauri::{AppHandle, Emitter};
 use tokio::sync::mpsc;
 
@@ -26,7 +26,11 @@ impl IndexerDaemon {
         Self { app_handle, pool }
     }
 
-    pub async fn start_watching(&self, path_id: String, absolute_path: String) -> Result<(), String> {
+    pub async fn start_watching(
+        &self,
+        path_id: String,
+        absolute_path: String,
+    ) -> Result<(), String> {
         let pool = self.pool.clone();
         let app_handle = self.app_handle.clone();
         let watch_path = PathBuf::from(&absolute_path);
@@ -39,12 +43,18 @@ impl IndexerDaemon {
 
         let mut watcher = notify::recommended_watcher(move |res: NotifyResult<Event>| {
             let _ = tx.blocking_send(res);
-        }).map_err(|e| format!("Failed to init watcher: {}", e))?;
+        })
+        .map_err(|e| format!("Failed to init watcher: {}", e))?;
 
         let git_dir = watch_path.join(".git");
-        let path_to_watch = if git_dir.exists() { &git_dir } else { &watch_path };
+        let path_to_watch = if git_dir.exists() {
+            &git_dir
+        } else {
+            &watch_path
+        };
 
-        watcher.watch(path_to_watch, RecursiveMode::Recursive)
+        watcher
+            .watch(path_to_watch, RecursiveMode::Recursive)
             .map_err(|e| format!("Failed to watch path: {}", e))?;
 
         Box::leak(Box::new(watcher));
@@ -58,7 +68,14 @@ impl IndexerDaemon {
                     Ok(event) => {
                         if event.kind.is_modify() || event.kind.is_create() {
                             tokio::time::sleep(Duration::from_millis(300)).await;
-                            if let Err(e) = sync_repository_to_db(&path_id_clone, &abs_path_clone, &pool, Some(&app_handle_clone)).await {
+                            if let Err(e) = sync_repository_to_db(
+                                &path_id_clone,
+                                &abs_path_clone,
+                                &pool,
+                                Some(&app_handle_clone),
+                            )
+                            .await
+                            {
                                 eprintln!("Daemon Sync Error: {}", e);
                             }
                         }
@@ -74,9 +91,17 @@ impl IndexerDaemon {
     }
 }
 
-async fn sync_repository_to_db(path_id: &str, absolute_path: &str, pool: &SqlitePool, app_handle: Option<&AppHandle>) -> Result<(), String> {
+async fn sync_repository_to_db(
+    path_id: &str,
+    absolute_path: &str,
+    pool: &SqlitePool,
+    app_handle: Option<&AppHandle>,
+) -> Result<(), String> {
     let branches = scan_local_repository(absolute_path)?;
-    let mut tx = pool.begin().await.map_err(|e| format!("Database transaction error: {}", e))?;
+    let mut tx = pool
+        .begin()
+        .await
+        .map_err(|e| format!("Database transaction error: {}", e))?;
 
     for branch in &branches {
         let generated_branch_id = format!("{}-{}", path_id, branch.name);
@@ -86,7 +111,7 @@ async fn sync_repository_to_db(path_id: &str, absolute_path: &str, pool: &Sqlite
              VALUES (?1, ?2, ?3, ?4, ?5)
              ON CONFLICT(path_id, branch_name) DO UPDATE SET
                 is_head=excluded.is_head,
-                last_commit_hash=excluded.last_commit_hash"
+                last_commit_hash=excluded.last_commit_hash",
         )
         .bind(&generated_branch_id)
         .bind(path_id)
@@ -114,12 +139,17 @@ async fn sync_repository_to_db(path_id: &str, absolute_path: &str, pool: &Sqlite
         .map_err(|e| format!("Failed caching commit row: {}", e))?;
     }
 
-    tx.commit().await.map_err(|e| format!("Transaction commit failed: {}", e))?;
+    tx.commit()
+        .await
+        .map_err(|e| format!("Transaction commit failed: {}", e))?;
 
     if let Some(app_handle) = app_handle {
         let payload = IndexingNotificationPayload {
             title: "Repository indexed".to_string(),
-            message: format!("Cached {} branch updates from the repository watcher.", branches.len()),
+            message: format!(
+                "Cached {} branch updates from the repository watcher.",
+                branches.len()
+            ),
             variant: "success".to_string(),
             duration: 5000,
         };

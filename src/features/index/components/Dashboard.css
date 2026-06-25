@@ -1,0 +1,343 @@
+/* Dashboard Main Wrapper */
+.dashboard-container {
+  padding: 2rem;
+  max-width: 1400px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2.5rem;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+/* Action Controls & Filters Bar */
+.dashboard-header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1.5rem;
+  border-bottom: 1px solid var(--border-color, #e5e7eb);
+  padding-bottom: 1.5rem;
+}
+
+.action-buttons-group {
+  display: flex;
+  gap: 1rem;
+}
+
+.btn-primary, .btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 1.2rem;
+  border-radius: 6px;
+  font-weight: 500;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-primary {
+  background-color: #4f46e5;
+  color: #ffffff;
+  border: none;
+}
+
+.btn-primary:hover {
+  background-color: #4338ca;
+}
+
+.btn-secondary {
+  background-color: transparent;
+  color: #374151;
+  border: 1px solid #d1d5db;
+}
+
+.btn-secondary:hover {
+  background-color: #f9fafb;
+}
+
+.filter-controls-group {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.search-input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.search-icon-inside {
+  position: absolute;
+  left: 0.75rem;
+  color: #9ca3af;
+}
+
+.search-input-wrapper input {
+  padding: 0.55rem 0.75rem 0.55rem 2.2rem;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  width: 240px;
+}
+
+.sort-select {
+  padding: 0.55rem 2rem 0.55rem 0.75rem;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  background-color: white;
+  cursor: pointer;
+}
+
+/* Recents Section */
+.recents-section {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.recents-list {
+  display: flex;
+  gap: 1rem;
+  overflow-x: auto;
+  padding-bottom: 0.5rem;
+}
+
+.recent-mini-card {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1.2rem;
+  background: #f3f4f6;
+  border-radius: 8px;
+  cursor: pointer;
+  min-width: 200px;
+  border: 1px solid transparent;
+  transition: all 0.2s;
+}
+
+.recent-mini-card:hover {
+  background: #e5e7eb;
+  border-color: #d1d5db;
+}
+
+.recent-info {
+  display: flex;
+  flex-direction: column;
+}
+
+.recent-name {
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: #1f2937;
+}
+
+.recent-path {
+  font-size: 0.75rem;
+  color: #6b7280;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 160px;
+}
+
+/* Master Repository Layout Grid */
+.repo-grid-section {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.repo-responsive-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1.5rem;
+}
+
+/* Grid Breakpoint Scaling Hooks */
+@media (min-width: 640px) {
+  .repo-responsive-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (min-width: 1024px) {
+  .repo-responsive-grid {
+    grid-template-columns: repeat(3, 1fr); /* Bounded strict max boundary cap at 3 across */
+  }
+}
+
+/* Repository Blueprint Cards */
+.repo-card {
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 1.25rem;
+  position: relative;
+  transition: box-shadow 0.2s ease, border-color 0.2s ease;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+}
+
+.repo-card:hover {
+  border-color: #cbd5e1;
+  box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05), 0 2px 4px -1px rgba(0,0,0,0.03);
+}
+
+/* Origin Contextual Variation Accent Highlights */
+.repo-card.origin-owned { border-left: 4px solid #3b82f6; }
+.repo-card.origin-fork { border-left: 4px solid #10b981; }
+.repo-card.origin-local_only { border-left: 4px solid #f59e0b; }
+
+.repo-card-top {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+
+.repo-icon-wrapper {
+  padding: 0.5rem;
+  border-radius: 8px;
+  background-color: #f8fafc;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.repo-card.origin-owned .repo-icon-wrapper { color: #3b82f6; background-color: #eff6ff; }
+.repo-card.origin-fork .repo-icon-wrapper { color: #10b981; background-color: #ecfdf5; }
+.repo-card.origin-local_only .repo-icon-wrapper { color: #f59e0b; background-color: #fffbeb; }
+
+.repo-meta-details {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  flex-grow: 1;
+}
+
+.repo-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.repo-title-row h3 {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.badge-origin-type {
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 0.15rem 0.4rem;
+  border-radius: 4px;
+  text-transform: uppercase;
+}
+
+.origin-owned .badge-origin-type { background: #dbeafe; color: #1e40af; }
+.origin-fork .badge-origin-type { background: #d1fae5; color: #065f46; }
+.origin-local_only .badge-origin-type { background: #fef3c7; color: #92400e; }
+
+.repo-absolute-path {
+  font-size: 0.75rem;
+  color: #64748b;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 220px;
+}
+
+/* Branch Selector Target Container */
+.repo-branch-section {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: #f8fafc;
+  padding: 0.4rem 0.75rem;
+  border-radius: 6px;
+  border: 1px solid #e2e8f0;
+}
+
+.inline-branch-dropdown {
+  border: none;
+  background: transparent;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: #334155;
+  cursor: pointer;
+  flex-grow: 1;
+  outline: none;
+}
+
+/* Sync Controls & Dynamic Loading Spinners */
+.repo-sync-actions-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-top: 1px solid #f1f5f9;
+  padding-top: 0.75rem;
+}
+
+.status-indicator-pills {
+  display: flex;
+  gap: 0.75rem;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: #64748b;
+}
+
+.status-pill {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.status-pill.changes-pending {
+  color: #ef4444;
+}
+
+.sync-buttons-cluster {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.btn-sync-action {
+  background: transparent;
+  border: none;
+  padding: 0.4rem;
+  border-radius: 4px;
+  cursor: pointer;
+  color: #475569;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+}
+
+.btn-sync-action:hover:not(:disabled) {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
+.btn-sync-action:disabled {
+  color: #cbd5e1;
+  cursor: not-allowed;
+}
+
+/* Spinner Core Keyframe Vector Configuration */
+.animate-spin-svg {
+  animation: spin-kf 1s linear infinite;
+}
+
+@keyframes spin-kf {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}

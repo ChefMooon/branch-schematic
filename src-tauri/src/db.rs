@@ -39,13 +39,20 @@ pub fn get_migrations() -> Vec<Migration> {
             CREATE TABLE IF NOT EXISTS tracked_paths (
                 id TEXT PRIMARY KEY NOT NULL,
                 display_name TEXT NOT NULL,
+                alias_name TEXT,
                 absolute_path TEXT NOT NULL UNIQUE,
                 remote_url TEXT,
+                
+                repo_origin_type TEXT NOT NULL DEFAULT 'LOCAL_ONLY', -- 'OWNED', 'FORK', 'LOCAL_ONLY'
+                uncommitted_changes_count INTEGER NOT NULL DEFAULT 0,
+                last_viewed_at DATETIME DEFAULT NULL,
+                
                 is_active INTEGER NOT NULL DEFAULT 1,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 archived_at DATETIME DEFAULT NULL
             );
             CREATE INDEX IF NOT EXISTS idx_tracked_paths_active ON tracked_paths(is_active) WHERE archived_at IS NULL;
+            CREATE INDEX IF NOT EXISTS idx_tracked_paths_recent ON tracked_paths(last_viewed_at) WHERE last_viewed_at IS NOT NULL;
 
             -- Spatial View presets
             CREATE TABLE IF NOT EXISTS canvas_views (
@@ -122,10 +129,7 @@ pub fn read_bool_setting(_app: &tauri::AppHandle, column: &str) -> bool {
         let pool = SqlitePool::connect(DB_URL).await.ok()?;
 
         let query_str = format!("SELECT {} FROM settings WHERE id = 1", column_owned);
-        let value: i64 = sqlx::query_scalar(&query_str)
-            .fetch_one(&pool)
-            .await
-            .ok()?;
+        let value: i64 = sqlx::query_scalar(&query_str).fetch_one(&pool).await.ok()?;
 
         pool.close().await;
         Some(value != 0)
@@ -145,7 +149,9 @@ pub fn should_start_minimized(app: &tauri::AppHandle) -> bool {
     read_bool_setting(app, "start_minimized")
 }
 
-pub async fn fetch_active_tracked_paths(pool: &SqlitePool) -> Result<Vec<TrackedPathRow>, sqlx::Error> {
+pub async fn fetch_active_tracked_paths(
+    pool: &SqlitePool,
+) -> Result<Vec<TrackedPathRow>, sqlx::Error> {
     let rows = sqlx::query_as::<_, TrackedPathRow>(
         "SELECT id, display_name, absolute_path, remote_url, is_active FROM tracked_paths WHERE is_active = 1 ORDER BY display_name ASC"
     )
@@ -155,7 +161,74 @@ pub async fn fetch_active_tracked_paths(pool: &SqlitePool) -> Result<Vec<Tracked
     Ok(rows)
 }
 
-// Place this at the very bottom of src/db.rs
+pub async fn insert_tracked_path(
+    pool: &SqlitePool,
+    id: &str,
+    display_name: &str,
+    absolute_path: &str,
+    remote_url: Option<&str>,
+    repo_origin_type: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "INSERT INTO tracked_paths (
+            id, 
+            display_name, 
+            absolute_path, 
+            remote_url, 
+            repo_origin_type, 
+            uncommitted_changes_count,
+            is_active
+         ) VALUES (?, ?, ?, ?, ?, 0, 1)
+         ON CONFLICT(absolute_path) DO UPDATE SET
+            is_active = 1,
+            display_name = excluded.display_name,
+            remote_url = excluded.remote_url,
+            repo_origin_type = excluded.repo_origin_type;"
+    )
+    .bind(id)
+    .bind(display_name)
+    .bind(absolute_path)
+    .bind(remote_url)
+    .bind(repo_origin_type)
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
+pub async fn untrack_repository_path(
+    pool: &SqlitePool,
+    path_id: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "UPDATE tracked_paths 
+         SET is_active = 0 
+         WHERE id = ?;"
+    )
+    .bind(path_id)
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
+pub async fn update_repository_alias(
+    pool: &sqlx::SqlitePool,
+    path_id: &str,
+    alias: Option<&str>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "UPDATE tracked_paths 
+         SET alias_name = ? 
+         WHERE id = ?;"
+    )
+    .bind(alias)
+    .bind(path_id)
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
 
 #[cfg(test)]
 mod tests {
@@ -171,10 +244,16 @@ mod tests {
             sqlx::query(&migration.sql)
                 .execute(&pool)
                 .await
-                .expect(&format!("Failed to run test migration version: {}", migration.version));
+                .expect(&format!(
+                    "Failed to run test migration version: {}",
+                    migration.version
+                ));
         }
 
-        sqlx::query("PRAGMA foreign_keys = ON;").execute(&pool).await.unwrap();
+        sqlx::query("PRAGMA foreign_keys = ON;")
+            .execute(&pool)
+            .await
+            .unwrap();
 
         pool
     }
@@ -231,7 +310,7 @@ mod tests {
             let view_id = "test-view-uuid-2222";
             sqlx::query(
                 "INSERT INTO canvas_views (id, view_name, zoom_level, pan_x, pan_y)
-                 VALUES (?, 'Sprint 1 Workspace Layout', 1.0, 0.0, 0.0);"
+                 VALUES (?, 'Sprint 1 Workspace Layout', 1.0, 0.0, 0.0);",
             )
             .bind(view_id)
             .execute(&pool)
@@ -262,23 +341,35 @@ mod tests {
             .unwrap();
 
             // 5. Verification Queries & Assertions
-            let count_cards: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM canvas_view_cards WHERE view_id = ?")
-                .bind(view_id)
-                .fetch_one(&pool)
-                .await
-                .unwrap();
-            assert_eq!(count_cards, 1, "Canvas view card should be successfully registered!");
+            let count_cards: i64 =
+                sqlx::query_scalar("SELECT COUNT(*) FROM canvas_view_cards WHERE view_id = ?")
+                    .bind(view_id)
+                    .fetch_one(&pool)
+                    .await
+                    .unwrap();
+            assert_eq!(
+                count_cards, 1,
+                "Canvas view card should be successfully registered!"
+            );
 
-            // 6. Test Cascade Purge Protection 
+            // 6. Test Cascade Purge Protection
             // If a tracked path is hard removed, its dependent branch caches and visual cards must clean up automatically via CASCADE
-            sqlx::query("DELETE FROM tracked_paths WHERE id = ?;").bind(path_id).execute(&pool).await.unwrap();
-
-            let count_remaining_cards: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM canvas_view_cards WHERE branch_id = ?")
-                .bind(branch_id)
-                .fetch_one(&pool)
+            sqlx::query("DELETE FROM tracked_paths WHERE id = ?;")
+                .bind(path_id)
+                .execute(&pool)
                 .await
                 .unwrap();
-            assert_eq!(count_remaining_cards, 0, "Foreign key ON DELETE CASCADE failed to clear decoupled visual cards!");
+
+            let count_remaining_cards: i64 =
+                sqlx::query_scalar("SELECT COUNT(*) FROM canvas_view_cards WHERE branch_id = ?")
+                    .bind(branch_id)
+                    .fetch_one(&pool)
+                    .await
+                    .unwrap();
+            assert_eq!(
+                count_remaining_cards, 0,
+                "Foreign key ON DELETE CASCADE failed to clear decoupled visual cards!"
+            );
 
             pool.close().await;
         });
