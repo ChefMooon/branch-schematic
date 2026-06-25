@@ -65,6 +65,46 @@ pub fn scan_local_repository(absolute_path: &str) -> Result<Vec<DiscoveredBranch
     Ok(discovered_branches)
 }
 
+/// Safely executes a git checkout to switch to an existing local branch.
+#[tauri::command]
+pub fn execute_git_checkout(absolute_path: &str, branch_name: &str) -> Result<String, String> {
+    let repo = Repository::open(absolute_path)
+        .map_err(|e| format!("Failed to open Git repository: {}", e))?;
+
+    // Find the target branch reference locally
+    let ref_name = format!("refs/heads/{}", branch_name);
+    let obj = repo.revparse_single(&ref_name)
+        .map_err(|e| format!("Branch '{}' not found: {}", branch_name, e))?;
+
+    // Set HEAD to point to the target branch reference
+    repo.set_head(&ref_name)
+        .map_err(|e| format!("Failed to set HEAD to '{}': {}", branch_name, e))?;
+
+    // Checkout the index/tree to update files on disk matching the new branch state
+    repo.checkout_head(Some(git2::build::CheckoutBuilder::new().force()))
+        .map_err(|e| format!("Failed to checkout files for branch '{}': {}", branch_name, e))?;
+
+    Ok(format!("Successfully checked out branch '{}'", branch_name))
+}
+
+/// Safely creates a new local branch pointing to the current tip/HEAD commit.
+#[tauri::command]
+pub fn create_git_branch(absolute_path: &str, new_branch_name: &str) -> Result<String, String> {
+    let repo = Repository::open(absolute_path)
+        .map_err(|e| format!("Failed to open Git repository: {}", e))?;
+
+    // Find the current HEAD target commit so we know where to branch from
+    let head_commit = repo.head()
+        .and_then(|reference| reference.peel_to_commit())
+        .map_err(|e| format!("Failed to locate HEAD tip commit: {}", e))?;
+
+    // Create the new branch. Set force parameter to false to avoid overwriting existing references
+    repo.branch(new_branch_name, &head_commit, false)
+        .map_err(|e| format!("Failed creating branch '{}': {}", new_branch_name, e))?;
+
+    Ok(format!("Successfully created branch '{}'", new_branch_name))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

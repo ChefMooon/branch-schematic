@@ -107,6 +107,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             greet,
             git::scan_local_repository,
+            git::execute_git_checkout,
+            git::create_git_branch,
             watch_project_directory
         ])
         .run(tauri::generate_context!())
