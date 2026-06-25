@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as DatabaseRouteImport } from './routes/database'
+import { Route as BranchMapRouteImport } from './routes/branch-map'
 import { Route as AboutRouteImport } from './routes/about'
 import { Route as IndexRouteImport } from './routes/index'
 
@@ -22,6 +23,11 @@ const SettingsRoute = SettingsRouteImport.update({
 const DatabaseRoute = DatabaseRouteImport.update({
   id: '/database',
   path: '/database',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const BranchMapRoute = BranchMapRouteImport.update({
+  id: '/branch-map',
+  path: '/branch-map',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AboutRoute = AboutRouteImport.update({
@@ -38,12 +44,14 @@ const IndexRoute = IndexRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
+  '/branch-map': typeof BranchMapRoute
   '/database': typeof DatabaseRoute
   '/settings': typeof SettingsRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
+  '/branch-map': typeof BranchMapRoute
   '/database': typeof DatabaseRoute
   '/settings': typeof SettingsRoute
 }
@@ -51,20 +59,22 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
+  '/branch-map': typeof BranchMapRoute
   '/database': typeof DatabaseRoute
   '/settings': typeof SettingsRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/about' | '/database' | '/settings'
+  fullPaths: '/' | '/about' | '/branch-map' | '/database' | '/settings'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/about' | '/database' | '/settings'
-  id: '__root__' | '/' | '/about' | '/database' | '/settings'
+  to: '/' | '/about' | '/branch-map' | '/database' | '/settings'
+  id: '__root__' | '/' | '/about' | '/branch-map' | '/database' | '/settings'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AboutRoute: typeof AboutRoute
+  BranchMapRoute: typeof BranchMapRoute
   DatabaseRoute: typeof DatabaseRoute
   SettingsRoute: typeof SettingsRoute
 }
@@ -83,6 +93,13 @@ declare module '@tanstack/react-router' {
       path: '/database'
       fullPath: '/database'
       preLoaderRoute: typeof DatabaseRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/branch-map': {
+      id: '/branch-map'
+      path: '/branch-map'
+      fullPath: '/branch-map'
+      preLoaderRoute: typeof BranchMapRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/about': {
@@ -105,6 +122,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AboutRoute: AboutRoute,
+  BranchMapRoute: BranchMapRoute,
   DatabaseRoute: DatabaseRoute,
   SettingsRoute: SettingsRoute,
 }

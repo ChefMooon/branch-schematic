@@ -3,6 +3,7 @@ import { TanStackRouterDevtools } from "@tanstack/react-router-devtools";
 import { useEffect, useState } from "react";
 import "../App.css";
 import { applyTheme, loadThemePreference, type ThemePreference } from "../theme";
+import '@xyflow/react/dist/style.css';
 
 const RootLayout = () => {
     const [theme, setTheme] = useState<ThemePreference>('system');
@@ -36,6 +37,7 @@ const RootLayout = () => {
     <>
         <div className="navbar">
             <Link to="/">Home</Link>
+            <Link to="/branch-map">Branch Map</Link>
             <Link to="/database">Database</Link>
             <Link to="/about">About</Link>
 
