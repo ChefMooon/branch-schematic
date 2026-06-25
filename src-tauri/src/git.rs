@@ -1,23 +1,29 @@
 use git2::{Repository, BranchType};
 use serde::{Serialize, Deserialize};
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct CommitLog {
+    pub hash: String,
+    pub author: String,
+    pub summary: String,
+    pub timestamp: i64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct DiscoveredBranch {
     pub name: String,
     pub is_head: bool,
-    pub last_commit_hash: String,
+    pub latest_commit: CommitLog,
 }
 
-/// Opens a local directory path and scans it for Git branch metadata.
-/// Returns an error string if the path is invalid or not a Git repository.
+/// Opens a local directory path, scans it for Git branch metadata, 
+/// parses the active HEAD state, and logs the latest commit structures.
+#[tauri::command]
 pub fn scan_local_repository(absolute_path: &str) -> Result<Vec<DiscoveredBranch>, String> {
-    // 1. Attempt to open the directory as a standard Git Repository
     let repo = Repository::open(absolute_path)
         .map_err(|e| format!("Failed to open directory as a Git repo: {}", e))?;
 
     let mut discovered_branches = Vec::new();
-
-    // 2. Query all local branches inside the repository
     let branches = repo.branches(Some(BranchType::Local))
         .map_err(|e| format!("Failed to iterate local branches: {}", e))?;
 
@@ -25,25 +31,34 @@ pub fn scan_local_repository(absolute_path: &str) -> Result<Vec<DiscoveredBranch
         let (branch, _type) = branch_res
             .map_err(|e| format!("Failed to read branch reference: {}", e))?;
 
-        // Extract clean UTF-8 branch name
+        // 1. Parse branch name safely
         let branch_name = branch.name()
             .map_err(|e| format!("Failed to parse branch name: {}", e))?
             .unwrap_or("unknown")
             .to_string();
 
-        // Check if this specific branch is the currently active checked-out HEAD on disk
+        // 2. Parse the current checked-out HEAD state
         let is_head = branch.is_head();
 
-        // Retrieve the tip commit hash (OID) this branch points to
+        // 3. Drill down into the latest commit structure
         let target_commit = branch.get().peel_to_commit()
-            .map_err(|e| format!("Failed to resolve branch tip commit: {}", e))?;
+            .map_err(|e| format!("Failed to resolve branch tip commit for '{}': {}", branch_name, e))?;
         
-        let last_commit_hash = target_commit.id().to_string();
+        let author = target_commit.author();
+        let author_name = author.name().unwrap_or("Unknown Author").to_string();
+        let commit_summary = target_commit.summary().unwrap_or("No commit message").to_string();
+        
+        let latest_commit = CommitLog {
+            hash: target_commit.id().to_string(),
+            author: author_name,
+            summary: commit_summary,
+            timestamp: target_commit.time().seconds(),
+        };
 
         discovered_branches.push(DiscoveredBranch {
             name: branch_name,
             is_head,
-            last_commit_hash,
+            latest_commit,
         });
     }
 
@@ -154,9 +169,15 @@ mod tests {
         assert!(main_branch.unwrap().is_head, "Default branch should be marked as HEAD");
         assert!(!feat_branch.unwrap().is_head, "Feature branch should not be marked as HEAD");
 
-        // Check that valid commit hashes were captured
-        assert_eq!(main_branch.unwrap().last_commit_hash.len(), 40);
-        assert_eq!(feat_branch.unwrap().last_commit_hash, main_branch.unwrap().last_commit_hash);
+        // Check deep nested commit metadata captures
+        let main_commit = &main_branch.unwrap().latest_commit;
+        let feat_commit = &feat_branch.unwrap().latest_commit;
+
+        assert_eq!(main_commit.hash.len(), 40);
+        assert_eq!(main_commit.author, "Test User");
+        assert_eq!(main_commit.summary, "Initial commit");
+        assert_eq!(feat_commit.hash, main_commit.hash);
+        assert!(main_commit.timestamp > 0);
 
         // Clean up
         fs::remove_dir_all(repo_path).unwrap();

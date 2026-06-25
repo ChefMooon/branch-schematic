@@ -1,19 +1,49 @@
 use tauri::{Manager, tray::TrayIconBuilder, tray::TrayIconEvent};
 use tauri_plugin_window_state::WindowExt;
+use sqlx::sqlite::SqlitePool;
 
 mod db;
 mod git;
+mod daemon;
+
+// Shared Tauri State container for our background SQLx Pool
+pub struct DbState(pub SqlitePool);
 
 #[tauri::command]
 fn greet(name: &str) -> String {
     format!("Hello, {}! You've been greeted from Rust!", name)
 }
 
+#[tauri::command]
+async fn watch_project_directory(
+    state: tauri::State<'_, DbState>, 
+    path_id: String,
+    absolute_path: String
+) -> Result<(), String> {
+    let daemon = daemon::IndexerDaemon::new(state.0.clone());
+    daemon.start_watching(path_id, absolute_path).await?;
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .setup(|app| {
-            // Call explicitly through your new module namespace
+            // 1. Initialize the SQLite Connection Pool for the Daemon matching db::DB_URL location
+            let app_dir = app.path().app_data_dir().expect("Failed to locate app data directory");
+            std::fs::create_dir_all(&app_dir).unwrap();
+            
+            // Build absolute path targeting the exact same file location managed by Tauri Plugin SQL
+            let db_file_path = app_dir.join(db::DB_NAME);
+            let db_url = format!("sqlite:{}", db_file_path.to_string_lossy());
+
+            // Block asynchronously on setup to spin up our daemon SQLx engine pool
+            tauri::async_runtime::block_on(async {
+                let pool = SqlitePool::connect(&db_url).await.expect("Failed to connect to SQLite Pool");
+                app.manage(DbState(pool));
+            });
+
+            // 2. Window state lifecycle configuration matching your db settings
             let restore_window = db::should_restore_window(app.handle());
             let start_minimized = db::should_start_minimized(app.handle());
 
@@ -30,8 +60,8 @@ pub fn run() {
                 }
             }
 
+            // 3. Tray Event Handlers
             let app_handle = app.handle().clone();
-
             let _tray = TrayIconBuilder::new()
                 .icon(app.default_window_icon().unwrap().clone())
                 .on_tray_icon_event(move |_tray, event| {
@@ -44,13 +74,13 @@ pub fn run() {
                 })
                 .build(app)?;
 
+            // 4. Close interception rules mapped to db settings
             if let Some(window) = app.get_webview_window("main") {
                 let app_handle = app.handle().clone();
                 let window_handle = window.clone();
 
                 window.on_window_event(move |event| {
                     if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                        // Point tracking validation checks directly to db file
                         if db::should_hide_to_tray(&app_handle) {
                             api.prevent_close();
                             let _ = window_handle.hide();
@@ -73,7 +103,12 @@ pub fn run() {
                 .build(),
         )
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![greet])
+        // 5. Consolidated single-entry invoke handler registry
+        .invoke_handler(tauri::generate_handler![
+            greet,
+            git::scan_local_repository,
+            watch_project_directory
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
