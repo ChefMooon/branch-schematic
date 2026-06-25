@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import Database from "@tauri-apps/plugin-sql";
 import { invoke } from "@tauri-apps/api/core";
 import { useWorkspaceStore } from "../stores/workspace-store";
+import { useNotifications } from "../components/notifications/notification-provider";
 import { TrackedPath, CachedBranch, DiscoveredBranch } from "../types/git";
 
 export const Route = createFileRoute('/database')({
@@ -27,6 +28,7 @@ function DatabasePage() {
   const [message, setMessage] = useState<string>("");
   const [error, setError] = useState<string>("");
   const { addRepo, removeRepo, hydrateFromBackend } = useWorkspaceStore();
+  const { addToast } = useNotifications();
 
   async function refreshCacheData() {
     try {
@@ -112,6 +114,16 @@ function DatabasePage() {
     } finally {
       setIsScanning(false);
     }
+  }
+
+  function handleTestNotification() {
+    addToast({
+      title: 'Indexing complete',
+      message: 'Repository scan completed and the cache was refreshed.',
+      variant: 'success',
+      duration: 5000,
+    });
+    setMessage('Triggered a test notification for the indexing overlay.');
   }
 
   async function handleUnmountPath(pathId: string, displayName: string) {
@@ -240,7 +252,17 @@ function DatabasePage() {
 
       {/* Manual Live Scanner Diagnostic Section */}
       <section style={{ marginBottom: "2rem", border: "1px solid #444", padding: "1.5rem", borderRadius: "6px", backgroundColor: "#1e1e1e" }}>
-        <h3>3. On-Demand Live Repository Scanner Diagnostic</h3>
+        <h3>3. Notification Overlay Test</h3>
+        <p style={{ fontSize: "0.85rem", color: "#aaa" }}>
+          Trigger a sample payload that mirrors the backend indexing event so the toast overlay can be verified without waiting for a repository change.
+        </p>
+        <button type="button" onClick={handleTestNotification} style={{ marginTop: "1rem", padding: "0.6rem 1rem", background: "#0f766e", color: "#fff", border: "none", borderRadius: "4px", cursor: "pointer" }}>
+          Trigger Test Notification
+        </button>
+      </section>
+
+      <section style={{ marginBottom: "2rem", border: "1px solid #444", padding: "1.5rem", borderRadius: "6px", backgroundColor: "#1e1e1e" }}>
+        <h3>4. On-Demand Live Repository Scanner Diagnostic</h3>
         <p style={{ fontSize: "0.85rem", color: "#aaa" }}>
           Directly execute the native <code>scan_local_repository</code> command to see real-time output data structure integrity:
         </p>

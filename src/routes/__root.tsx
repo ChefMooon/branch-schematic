@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import "../App.css";
 import { applyTheme, loadThemePreference, type ThemePreference } from "../theme";
 import { AppLayout } from "../components/layout/app-layout";
+import { NotificationProvider } from "../components/notifications/notification-provider";
 import '@xyflow/react/dist/style.css';
 
 const RootLayout = () => {
@@ -34,11 +35,13 @@ const RootLayout = () => {
   }, [theme]);
 
   return (
-    <AppLayout>
-      {/* Sub-pages such as /branch-map and /database mount exactly here! */}
-      <Outlet />
-      <TanStackRouterDevtools />
-    </AppLayout>
+    <NotificationProvider>
+      <AppLayout>
+        {/* Sub-pages such as /branch-map and /database mount exactly here! */}
+        <Outlet />
+        <TanStackRouterDevtools />
+      </AppLayout>
+    </NotificationProvider>
   );
 };
 

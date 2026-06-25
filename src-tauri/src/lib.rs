@@ -16,11 +16,12 @@ fn greet(name: &str) -> String {
 
 #[tauri::command]
 async fn watch_project_directory(
+    app: tauri::AppHandle,
     state: tauri::State<'_, DbState>, 
     path_id: String,
     absolute_path: String
 ) -> Result<(), String> {
-    let daemon = daemon::IndexerDaemon::new(state.0.clone());
+    let daemon = daemon::IndexerDaemon::new(app, state.0.clone());
     daemon.start_watching(path_id, absolute_path).await?;
     Ok(())
 }
