@@ -1,9 +1,8 @@
-// src/lib.rs
 use tauri::{Manager, tray::TrayIconBuilder, tray::TrayIconEvent};
 use tauri_plugin_window_state::WindowExt;
 
-// Declare the isolated database module
 mod db;
+mod git;
 
 #[tauri::command]
 fn greet(name: &str) -> String {
