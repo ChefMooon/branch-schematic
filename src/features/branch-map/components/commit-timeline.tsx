@@ -14,11 +14,12 @@ interface CommitTimelineProps {
   densityLimit: number;
   lodTier: 'CLOSE' | 'MID' | 'BIRD';
   maxRows?: number;
+  maxHeight?: string;
   isDark: boolean;
   accentColor: string;
 }
 
-export function CommitTimeline({ branchId, densityLimit, lodTier, isDark, accentColor }: CommitTimelineProps) {
+export function CommitTimeline({ branchId, densityLimit, lodTier, isDark, accentColor, maxHeight }: CommitTimelineProps) {
   const [commits, setCommits] = useState<CommitRecord[]>([]);
   const [loading, setLoading] = useState(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -65,7 +66,7 @@ export function CommitTimeline({ branchId, densityLimit, lodTier, isDark, accent
     <div 
       ref={scrollContainerRef}
       style={{
-        maxHeight: '180px',
+        maxHeight: maxHeight ?? '180px',
         overflowY: 'auto',
         paddingRight: '4px',
         display: 'flex',

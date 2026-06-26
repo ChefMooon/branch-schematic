@@ -1,10 +1,10 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useEffect, useState } from "react";
-import Database from "@tauri-apps/plugin-sql";
 import { invoke } from "@tauri-apps/api/core";
 import { useWorkspaceStore } from "../stores/workspace-store";
 import { useNotifications } from "../components/notifications/notification-provider";
 import { TrackedPath, CachedBranch, DiscoveredBranch } from "../types/git";
+import { openAppDatabase } from "../lib/db";
 
 export const Route = createFileRoute('/database')({
   component: DatabasePage,
@@ -32,7 +32,7 @@ function DatabasePage() {
 
   async function refreshCacheData() {
     try {
-      const db = await Database.load("sqlite:branch-schematic.db");
+      const db = await openAppDatabase();
       
       const paths = await db.select<TrackedPath[]>(
         "SELECT id, display_name, absolute_path FROM tracked_paths WHERE is_active = 1"
@@ -64,7 +64,7 @@ function DatabasePage() {
 
     try {
       setIsLoading(true);
-      const db = await Database.load("sqlite:branch-schematic.db");
+      const db = await openAppDatabase();
       const pathUuid = crypto.randomUUID();
 
       await db.execute(
@@ -129,7 +129,7 @@ function DatabasePage() {
   async function handleUnmountPath(pathId: string, displayName: string) {
     try {
       setIsLoading(true);
-      const db = await Database.load("sqlite:branch-schematic.db");
+      const db = await openAppDatabase();
       
       await db.execute("UPDATE tracked_paths SET is_active = 0 WHERE id = $1", [pathId]);
       await db.execute("DELETE FROM cached_git_branches WHERE path_id = $1", [pathId]);

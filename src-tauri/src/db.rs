@@ -1,5 +1,7 @@
 use serde::Serialize;
 use sqlx::{FromRow, SqlitePool};
+use std::collections::HashMap;
+use tauri::Manager;
 use tauri_plugin_sql::{Migration, MigrationKind};
 
 #[derive(Debug, Serialize, Clone, FromRow)]
@@ -12,7 +14,30 @@ pub struct TrackedPathRow {
 }
 
 #[derive(Debug, Serialize, Clone, FromRow)]
+pub struct CanvasViewRow {
+    pub id: String,
+    pub view_name: String,
+    pub zoom_level: f64,
+    pub pan_x: f64,
+    pub pan_y: f64,
+    pub baseline_zoom: Option<f64>,
+    pub baseline_pan_x: Option<f64>,
+    pub baseline_pan_y: Option<f64>,
+    pub created_at: String,
+    pub archived_at: Option<String>,
+}
+
+#[derive(Debug, Serialize, Clone)]
+pub struct CanvasViewScopeState {
+    pub visible_path_ids: Vec<String>,
+    pub hidden_path_ids: Vec<String>,
+    pub branch_visibility: HashMap<String, bool>,
+}
+
+#[derive(Debug, Serialize, Clone, FromRow)]
 pub struct WorkspaceNodeRow {
+    pub repo_path_id: String,
+    pub explode_branches: i64,
     pub branch_id: String,
     pub branch_name: String,
     pub is_head: i64,
@@ -39,14 +64,24 @@ pub struct CachedCommitRow {
 #[derive(Debug, Serialize, Clone, FromRow)]
 pub struct CanvasEdgeRow {
     pub id: String,
-    pub source_branch_id: String,
-    pub target_branch_id: String,
+    pub source_repo_id: String,
+    pub target_repo_id: String,
     pub edge_style: String,
 }
 
 pub const DB_NAME: &str = "branch-schematic.db";
 pub const DB_URL: &str = "sqlite:branch-schematic.db";
 pub const DEFAULT_CANVAS_VIEW_ID: &str = "default-workspace-view";
+
+pub fn get_app_data_db_path(app: &tauri::AppHandle) -> std::path::PathBuf {
+    let app_dir = app.path().app_data_dir().expect("Failed to resolve App Data directory");
+    let _ = std::fs::create_dir_all(&app_dir);
+    app_dir.join(DB_NAME)
+}
+
+pub fn get_app_data_db_url(app: &tauri::AppHandle) -> String {
+    format!("sqlite:{}", get_app_data_db_path(app).to_string_lossy())
+}
 
 pub fn get_migrations() -> Vec<Migration> {
     vec![
@@ -96,7 +131,10 @@ pub fn get_migrations() -> Vec<Migration> {
                 pan_x REAL NOT NULL DEFAULT 0.0,
                 pan_y REAL NOT NULL DEFAULT 0.0,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                archived_at DATETIME DEFAULT NULL
+                archived_at DATETIME DEFAULT NULL,
+                baseline_zoom REAL DEFAULT NULL,
+                baseline_pan_x REAL DEFAULT NULL,
+                baseline_pan_y REAL DEFAULT NULL
             );
             INSERT OR IGNORE INTO canvas_views (id, view_name, zoom_level, pan_x, pan_y)
             VALUES ('default-workspace-view', 'Default Workspace', 1.0, 0.0, 0.0);
@@ -115,6 +153,23 @@ pub fn get_migrations() -> Vec<Migration> {
             );
             CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_path_branch ON cached_git_branches(path_id, branch_name);
 
+            CREATE TABLE IF NOT EXISTS canvas_view_visible_paths (
+                view_id TEXT NOT NULL,
+                repo_path_id TEXT NOT NULL,
+                PRIMARY KEY (view_id, repo_path_id),
+                FOREIGN KEY(view_id) REFERENCES canvas_views(id) ON DELETE CASCADE,
+                FOREIGN KEY(repo_path_id) REFERENCES tracked_paths(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS canvas_view_visible_branches (
+                view_id TEXT NOT NULL,
+                branch_id TEXT NOT NULL,
+                is_visible INTEGER NOT NULL DEFAULT 1,
+                PRIMARY KEY (view_id, branch_id),
+                FOREIGN KEY(view_id) REFERENCES canvas_views(id) ON DELETE CASCADE,
+                FOREIGN KEY(branch_id) REFERENCES cached_git_branches(id) ON DELETE CASCADE
+            );
+
             CREATE TABLE IF NOT EXISTS cached_git_commits (
                 commit_hash TEXT PRIMARY KEY NOT NULL,
                 branch_id TEXT NOT NULL,
@@ -128,12 +183,24 @@ pub fn get_migrations() -> Vec<Migration> {
             -- Component layout rendering definitions (Decoupled coordinates)
             CREATE TABLE IF NOT EXISTS canvas_view_cards (
                 view_id TEXT NOT NULL,
-                branch_id TEXT NOT NULL,
+                repo_path_id TEXT NOT NULL,
                 pos_x REAL NOT NULL DEFAULT 0.0,
                 pos_y REAL NOT NULL DEFAULT 0.0,
                 view_mode TEXT NOT NULL DEFAULT 'EXPANDED',
                 commit_density INTEGER NOT NULL DEFAULT 5,
                 theme_color_hex TEXT DEFAULT '#4F46E5',
+                explode_branches INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY (view_id, repo_path_id),
+                FOREIGN KEY(view_id) REFERENCES canvas_views(id) ON DELETE CASCADE,
+                FOREIGN KEY(repo_path_id) REFERENCES tracked_paths(id) ON DELETE CASCADE
+            );
+
+            -- Branch-level layout overrides used by exploded branch mode
+            CREATE TABLE IF NOT EXISTS canvas_view_branch_cards (
+                view_id TEXT NOT NULL,
+                branch_id TEXT NOT NULL,
+                pos_x REAL NOT NULL DEFAULT 0.0,
+                pos_y REAL NOT NULL DEFAULT 0.0,
                 PRIMARY KEY (view_id, branch_id),
                 FOREIGN KEY(view_id) REFERENCES canvas_views(id) ON DELETE CASCADE,
                 FOREIGN KEY(branch_id) REFERENCES cached_git_branches(id) ON DELETE CASCADE
@@ -143,13 +210,13 @@ pub fn get_migrations() -> Vec<Migration> {
             CREATE TABLE IF NOT EXISTS canvas_manual_edges (
                 id TEXT PRIMARY KEY NOT NULL,
                 view_id TEXT NOT NULL,
-                source_branch_id TEXT NOT NULL,
-                target_branch_id TEXT NOT NULL,
+                source_repo_id TEXT NOT NULL,
+                target_repo_id TEXT NOT NULL,
                 edge_style TEXT NOT NULL DEFAULT 'BEZIER',
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY(view_id) REFERENCES canvas_views(id) ON DELETE CASCADE,
-                FOREIGN KEY(source_branch_id) REFERENCES cached_git_branches(id) ON DELETE CASCADE,
-                FOREIGN KEY(target_branch_id) REFERENCES cached_git_branches(id) ON DELETE CASCADE
+                FOREIGN KEY(source_repo_id) REFERENCES tracked_paths(id) ON DELETE CASCADE,
+                FOREIGN KEY(target_repo_id) REFERENCES tracked_paths(id) ON DELETE CASCADE
             );
             ",
             kind: MigrationKind::Up,
@@ -157,11 +224,12 @@ pub fn get_migrations() -> Vec<Migration> {
     ]
 }
 
-pub fn read_bool_setting(_app: &tauri::AppHandle, column: &str) -> bool {
+pub fn read_bool_setting(app: &tauri::AppHandle, column: &str) -> bool {
     let column_owned = column.to_string();
+    let db_url = get_app_data_db_url(app);
 
     tauri::async_runtime::block_on(async move {
-        let pool = SqlitePool::connect(DB_URL).await.ok()?;
+        let pool = SqlitePool::connect(&db_url).await.ok()?;
         let query_str = format!("SELECT {} FROM settings WHERE id = 1", column_owned);
         let value: i64 = sqlx::query_scalar(&query_str).fetch_one(&pool).await.ok()?;
         pool.close().await;
@@ -193,45 +261,311 @@ pub async fn fetch_active_tracked_paths(
     Ok(rows)
 }
 
-pub async fn ensure_default_canvas_view(pool: &SqlitePool) -> Result<(), sqlx::Error> {
+pub async fn ensure_canvas_view_exists(pool: &SqlitePool, view_id: &str, view_name: &str) -> Result<(), sqlx::Error> {
     sqlx::query(
         "INSERT OR IGNORE INTO canvas_views (id, view_name, zoom_level, pan_x, pan_y)
-         VALUES (?, 'Default Workspace', 1.0, 0.0, 0.0);",
+         VALUES (?, ?, 1.0, 0.0, 0.0);",
     )
-    .bind(DEFAULT_CANVAS_VIEW_ID)
+    .bind(view_id)
+    .bind(view_name)
     .execute(pool)
     .await?;
     Ok(())
 }
 
+pub async fn fetch_all_canvas_views(pool: &SqlitePool) -> Result<Vec<CanvasViewRow>, sqlx::Error> {
+    ensure_canvas_view_exists(pool, DEFAULT_CANVAS_VIEW_ID, "Default Workspace").await?;
+    let rows = sqlx::query_as::<_, CanvasViewRow>(
+        "SELECT id, view_name, zoom_level, pan_x, pan_y, baseline_zoom, baseline_pan_x, baseline_pan_y, created_at, archived_at FROM canvas_views WHERE archived_at IS NULL ORDER BY created_at ASC"
+    )
+    .fetch_all(pool)
+    .await?;
+    Ok(rows)
+}
+
+pub async fn update_canvas_viewport_state(
+    pool: &SqlitePool,
+    view_id: &str,
+    zoom_level: f64,
+    pan_x: f64,
+    pan_y: f64,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "UPDATE canvas_views SET zoom_level = ?, pan_x = ?, pan_y = ? WHERE id = ?;"
+    )
+    .bind(zoom_level)
+    .bind(pan_x)
+    .bind(pan_y)
+    .bind(view_id)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+pub async fn snapshot_canvas_view_baseline_viewport(
+    pool: &SqlitePool,
+    view_id: &str,
+    baseline_zoom: f64,
+    baseline_pan_x: f64,
+    baseline_pan_y: f64,
+) -> Result<(), sqlx::Error> {
+    ensure_canvas_view_exists(pool, view_id, "Workspace View").await?;
+    sqlx::query(
+        "UPDATE canvas_views
+         SET baseline_zoom = ?, baseline_pan_x = ?, baseline_pan_y = ?
+         WHERE id = ?;",
+    )
+    .bind(baseline_zoom)
+    .bind(baseline_pan_x)
+    .bind(baseline_pan_y)
+    .bind(view_id)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+pub async fn set_canvas_view_path_visibility(
+    pool: &SqlitePool,
+    view_id: &str,
+    repo_path_id: &str,
+    visible: bool,
+) -> Result<(), sqlx::Error> {
+    ensure_canvas_view_exists(pool, view_id, "Workspace View").await?;
+
+    if visible {
+        sqlx::query(
+            "INSERT OR IGNORE INTO canvas_view_visible_paths (view_id, repo_path_id)
+             VALUES (?, ?);",
+        )
+        .bind(view_id)
+        .bind(repo_path_id)
+        .execute(pool)
+        .await?;
+    } else {
+                // If this view has not been seeded yet, backfill once so removal is deterministic.
+                sqlx::query(
+                        "INSERT INTO canvas_view_visible_paths (view_id, repo_path_id)
+                         SELECT ?, tracked_paths.id
+                         FROM tracked_paths
+                         WHERE tracked_paths.is_active = 1
+                             AND tracked_paths.archived_at IS NULL
+                         ON CONFLICT(view_id, repo_path_id) DO NOTHING;",
+                )
+                .bind(view_id)
+                .execute(pool)
+                .await?;
+
+        sqlx::query(
+            "DELETE FROM canvas_view_visible_paths
+             WHERE view_id = ? AND repo_path_id = ?;",
+        )
+        .bind(view_id)
+        .bind(repo_path_id)
+        .execute(pool)
+        .await?;
+    }
+
+    Ok(())
+}
+
+pub async fn set_canvas_view_branch_visibility(
+    pool: &SqlitePool,
+    view_id: &str,
+    branch_key: &str,
+    visible: bool,
+) -> Result<(), sqlx::Error> {
+    ensure_canvas_view_exists(pool, view_id, "Workspace View").await?;
+
+    let branch_id = resolve_branch_visibility_key(pool, branch_key)
+        .await?
+        .ok_or(sqlx::Error::RowNotFound)?;
+
+    sqlx::query(
+        "INSERT INTO canvas_view_visible_branches (view_id, branch_id, is_visible)
+         VALUES (?, ?, ?)
+         ON CONFLICT(view_id, branch_id) DO UPDATE SET
+            is_visible = excluded.is_visible;",
+    )
+    .bind(view_id)
+    .bind(branch_id)
+    .bind(if visible { 1_i64 } else { 0_i64 })
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
+pub async fn fetch_canvas_view_scope(
+    pool: &SqlitePool,
+    view_id: &str,
+) -> Result<CanvasViewScopeState, sqlx::Error> {
+    ensure_canvas_view_exists(pool, view_id, "Workspace View").await?;
+
+    let path_rows = sqlx::query_as::<_, (String, i64)>(
+        "SELECT
+            tracked_paths.id AS repo_path_id,
+            CASE
+                WHEN EXISTS(SELECT 1 FROM canvas_view_visible_paths vp WHERE vp.view_id = ?)
+                    THEN CASE WHEN visible_paths.repo_path_id IS NULL THEN 0 ELSE 1 END
+                ELSE 1
+            END AS is_visible
+         FROM tracked_paths
+         LEFT JOIN canvas_view_visible_paths AS visible_paths
+            ON visible_paths.view_id = ?
+           AND visible_paths.repo_path_id = tracked_paths.id
+         WHERE tracked_paths.is_active = 1
+           AND tracked_paths.archived_at IS NULL
+         ORDER BY tracked_paths.display_name ASC;",
+    )
+    .bind(view_id)
+    .bind(view_id)
+    .fetch_all(pool)
+    .await?;
+
+    let mut visible_path_ids = Vec::new();
+    let mut hidden_path_ids = Vec::new();
+    for (repo_path_id, is_visible) in path_rows {
+        if is_visible != 0 {
+            visible_path_ids.push(repo_path_id);
+        } else {
+            hidden_path_ids.push(repo_path_id);
+        }
+    }
+
+    let branch_rows = sqlx::query_as::<_, (String, String, i64)>(
+        "SELECT
+            cached_git_branches.path_id AS repo_path_id,
+            cached_git_branches.branch_name AS branch_name,
+            COALESCE(visible_branches.is_visible, 1) AS is_visible
+         FROM cached_git_branches
+         JOIN tracked_paths
+            ON tracked_paths.id = cached_git_branches.path_id
+         LEFT JOIN canvas_view_visible_branches AS visible_branches
+            ON visible_branches.view_id = ?
+           AND visible_branches.branch_id = cached_git_branches.id
+         WHERE tracked_paths.is_active = 1
+           AND tracked_paths.archived_at IS NULL
+         ORDER BY cached_git_branches.path_id ASC, cached_git_branches.branch_name ASC;",
+    )
+    .bind(view_id)
+    .fetch_all(pool)
+    .await?;
+
+    let mut branch_visibility = HashMap::new();
+    for (repo_path_id, branch_name, is_visible) in branch_rows {
+        branch_visibility.insert(format!("{}::{}", repo_path_id, branch_name), is_visible != 0);
+    }
+
+    Ok(CanvasViewScopeState {
+        visible_path_ids,
+        hidden_path_ids,
+        branch_visibility,
+    })
+}
+
 pub async fn fetch_workspace_nodes(
     pool: &SqlitePool,
+    view_id: &str,
 ) -> Result<Vec<WorkspaceNodeRow>, sqlx::Error> {
-    ensure_default_canvas_view(pool).await?;
+    ensure_canvas_view_exists(pool, view_id, "Workspace View").await?;
 
     let rows = sqlx::query_as::<_, WorkspaceNodeRow>(
-        "SELECT
-            branches.id AS branch_id,
-            branches.branch_name,
-            branches.is_head,
-            branches.ahead_count,
-            branches.behind_count,
-            branches.last_commit_hash,
+        "WITH card_layout AS (
+            SELECT
+                repo_path_id,
+                pos_x,
+                pos_y,
+                view_mode,
+                commit_density,
+                theme_color_hex,
+                COALESCE(explode_branches, 0) AS explode_branches
+            FROM canvas_view_cards
+            WHERE view_id = ?
+        ),
+        branch_layout AS (
+            SELECT
+                branch_id,
+                pos_x,
+                pos_y
+            FROM canvas_view_branch_cards
+            WHERE view_id = ?
+        ),
+        selected_branches AS (
+            SELECT
+                tracked_paths.id AS path_id,
+                cached_git_branches.id AS branch_id,
+                cached_git_branches.branch_name,
+                cached_git_branches.is_head,
+                cached_git_branches.ahead_count,
+                cached_git_branches.behind_count,
+                cached_git_branches.last_commit_hash
+            FROM tracked_paths
+            LEFT JOIN cached_git_branches
+                ON cached_git_branches.path_id = tracked_paths.id
+            LEFT JOIN cached_git_branches AS head_branch
+                ON head_branch.path_id = tracked_paths.id
+               AND head_branch.is_head = 1
+            LEFT JOIN card_layout
+                ON card_layout.repo_path_id = tracked_paths.id
+            LEFT JOIN canvas_view_visible_paths AS visible_paths
+                ON visible_paths.view_id = ?
+               AND visible_paths.repo_path_id = tracked_paths.id
+            LEFT JOIN canvas_view_visible_branches AS visible_branches
+                ON visible_branches.view_id = ?
+               AND visible_branches.branch_id = cached_git_branches.id
+            WHERE
+                tracked_paths.is_active = 1
+                AND tracked_paths.archived_at IS NULL
+                AND (
+                    NOT EXISTS(
+                        SELECT 1 FROM canvas_view_visible_paths visibility_seed WHERE visibility_seed.view_id = ?
+                    )
+                    OR visible_paths.repo_path_id IS NOT NULL
+                )
+                AND COALESCE(visible_branches.is_visible, 1) = 1
+                AND (
+                    (COALESCE(card_layout.explode_branches, 0) = 1 AND cached_git_branches.id IS NOT NULL)
+                    OR
+                    (COALESCE(card_layout.explode_branches, 0) = 0 AND (cached_git_branches.id IS NULL OR cached_git_branches.id = head_branch.id))
+                )
+        )
+        SELECT
+            selected_branches.path_id AS repo_path_id,
+            COALESCE(card_layout.explode_branches, 0) AS explode_branches,
+            COALESCE(selected_branches.branch_id, '') AS branch_id,
+            COALESCE(selected_branches.branch_name, '') AS branch_name,
+            COALESCE(selected_branches.is_head, 0) AS is_head,
+            COALESCE(selected_branches.ahead_count, 0) AS ahead_count,
+            COALESCE(selected_branches.behind_count, 0) AS behind_count,
+            COALESCE(selected_branches.last_commit_hash, '') AS last_commit_hash,
             commits.commit_message,
-            COALESCE(cards.pos_x, 100.0) as pos_x,
-            COALESCE(cards.pos_y, 100.0) as pos_y,
-            COALESCE(cards.view_mode, 'EXPANDED') as view_mode,
-            COALESCE(cards.commit_density, 5) as commit_density,
-            COALESCE(cards.theme_color_hex, '#4F46E5') as theme_color_hex
-         FROM cached_git_branches AS branches
-         LEFT JOIN canvas_view_cards AS cards
-            ON cards.branch_id = branches.id
-           AND cards.view_id = ?
-         LEFT JOIN cached_git_commits AS commits
-            ON commits.commit_hash = branches.last_commit_hash
-         ORDER BY branches.is_head DESC, branches.branch_name ASC",
+            CASE
+                WHEN COALESCE(card_layout.explode_branches, 0) = 1
+                    THEN COALESCE(branch_layout.pos_x, card_layout.pos_x, 100.0)
+                ELSE COALESCE(card_layout.pos_x, 100.0)
+            END AS pos_x,
+            CASE
+                WHEN COALESCE(card_layout.explode_branches, 0) = 1
+                    THEN COALESCE(branch_layout.pos_y, card_layout.pos_y, 100.0)
+                ELSE COALESCE(card_layout.pos_y, 100.0)
+            END AS pos_y,
+            COALESCE(card_layout.view_mode, 'EXPANDED') AS view_mode,
+            COALESCE(card_layout.commit_density, 5) AS commit_density,
+            COALESCE(card_layout.theme_color_hex, '#4F46E5') AS theme_color_hex
+        FROM selected_branches
+        LEFT JOIN card_layout
+            ON card_layout.repo_path_id = selected_branches.path_id
+        LEFT JOIN branch_layout
+            ON branch_layout.branch_id = selected_branches.branch_id
+        LEFT JOIN cached_git_commits AS commits
+            ON commits.commit_hash = selected_branches.last_commit_hash
+        ORDER BY selected_branches.path_id ASC, selected_branches.branch_name ASC",
     )
-    .bind(DEFAULT_CANVAS_VIEW_ID)
+    .bind(view_id)
+    .bind(view_id)
+    .bind(view_id)
+    .bind(view_id)
+    .bind(view_id)
     .fetch_all(pool)
     .await?;
 
@@ -262,51 +596,77 @@ pub async fn fetch_branch_commits(
 
 pub async fn update_canvas_card_position(
     pool: &SqlitePool,
-    branch_id: &str,
+    view_id: &str,
+    node_key: &str,
     pos_x: f64,
     pos_y: f64,
 ) -> Result<(), sqlx::Error> {
-    ensure_default_canvas_view(pool).await?;
+    ensure_canvas_view_exists(pool, view_id, "Workspace View").await?;
 
-    sqlx::query(
-        "INSERT INTO canvas_view_cards (view_id, branch_id, pos_x, pos_y, view_mode, commit_density, theme_color_hex)
-         VALUES (?, ?, ?, ?, 'EXPANDED', 5, '#4F46E5')
-         ON CONFLICT(view_id, branch_id) DO UPDATE SET
-            pos_x = excluded.pos_x,
-            pos_y = excluded.pos_y;",
-    )
-    .bind(DEFAULT_CANVAS_VIEW_ID)
-    .bind(branch_id)
-    .bind(pos_x)
-    .bind(pos_y)
-    .execute(pool)
-    .await?;
+    let resolved = resolve_layout_node_key(pool, node_key).await?;
+
+    if let Some(branch_id) = resolved.branch_id {
+        sqlx::query(
+            "INSERT INTO canvas_view_branch_cards (view_id, branch_id, pos_x, pos_y)
+             VALUES (?, ?, ?, ?)
+             ON CONFLICT(view_id, branch_id) DO UPDATE SET
+                pos_x = excluded.pos_x,
+                pos_y = excluded.pos_y;",
+        )
+        .bind(view_id)
+        .bind(branch_id)
+        .bind(pos_x)
+        .bind(pos_y)
+        .execute(pool)
+        .await?;
+    } else {
+        sqlx::query(
+            "INSERT INTO canvas_view_cards (view_id, repo_path_id, pos_x, pos_y, view_mode, commit_density, theme_color_hex, explode_branches)
+             VALUES (?, ?, ?, ?, 'EXPANDED', 5, '#4F46E5', 0)
+             ON CONFLICT(view_id, repo_path_id) DO UPDATE SET
+                pos_x = excluded.pos_x,
+                pos_y = excluded.pos_y;",
+        )
+        .bind(view_id)
+        .bind(resolved.repo_path_id)
+        .bind(pos_x)
+        .bind(pos_y)
+        .execute(pool)
+        .await?;
+    }
 
     Ok(())
 }
 
 pub async fn update_canvas_card_config(
     pool: &SqlitePool,
-    branch_id: &str,
+    view_id: &str,
+    repo_path_id: &str,
     view_mode: &str,
     commit_density: i64,
     theme_color_hex: &str,
+    explode_branches: i64,
 ) -> Result<(), sqlx::Error> {
-    ensure_default_canvas_view(pool).await?;
+    ensure_canvas_view_exists(pool, view_id, "Workspace View").await?;
+
+    // Accept either tracked_paths.id or cached_git_branches.id and normalize to repo path key.
+    let resolved_repo_path_id = resolve_repo_path_id(pool, repo_path_id).await?;
 
     sqlx::query(
-        "INSERT INTO canvas_view_cards (view_id, branch_id, pos_x, pos_y, view_mode, commit_density, theme_color_hex)
-         VALUES (?, ?, 100.0, 100.0, ?, ?, ?)
-         ON CONFLICT(view_id, branch_id) DO UPDATE SET
+        "INSERT INTO canvas_view_cards (view_id, repo_path_id, pos_x, pos_y, view_mode, commit_density, theme_color_hex, explode_branches)
+         VALUES (?, ?, 100.0, 100.0, ?, ?, ?, ?)
+         ON CONFLICT(view_id, repo_path_id) DO UPDATE SET
             view_mode = excluded.view_mode,
             commit_density = excluded.commit_density,
-            theme_color_hex = excluded.theme_color_hex;",
+            theme_color_hex = excluded.theme_color_hex,
+            explode_branches = excluded.explode_branches;",
     )
-    .bind(DEFAULT_CANVAS_VIEW_ID)
-    .bind(branch_id)
+    .bind(view_id)
+    .bind(resolved_repo_path_id)
     .bind(view_mode)
     .bind(commit_density)
     .bind(theme_color_hex)
+    .bind(explode_branches)
     .execute(pool)
     .await?;
 
@@ -367,12 +727,13 @@ pub async fn update_repository_alias(
 
 pub async fn fetch_canvas_manual_edges(
     pool: &SqlitePool,
+    view_id: &str,
 ) -> Result<Vec<CanvasEdgeRow>, sqlx::Error> {
-    ensure_default_canvas_view(pool).await?;
+    ensure_canvas_view_exists(pool, view_id, "Workspace View").await?;
     let rows = sqlx::query_as::<_, CanvasEdgeRow>(
-        "SELECT id, source_branch_id, target_branch_id, edge_style FROM canvas_manual_edges WHERE view_id = ?"
+        "SELECT id, source_repo_id, target_repo_id, edge_style FROM canvas_manual_edges WHERE view_id = ?"
     )
-    .bind(DEFAULT_CANVAS_VIEW_ID)
+    .bind(view_id)
     .fetch_all(pool)
     .await?;
     Ok(rows)
@@ -380,23 +741,37 @@ pub async fn fetch_canvas_manual_edges(
 
 pub async fn insert_canvas_manual_edge(
     pool: &SqlitePool,
+    view_id: &str,
     id: &str,
     source_id: &str,
     target_id: &str,
     edge_style: &str,
 ) -> Result<(), sqlx::Error> {
-    ensure_default_canvas_view(pool).await?;
+    ensure_canvas_view_exists(pool, view_id, "Workspace View").await?;
     sqlx::query(
-        "INSERT INTO canvas_manual_edges (id, view_id, source_branch_id, target_branch_id, edge_style)
+        "INSERT INTO canvas_manual_edges (id, view_id, source_repo_id, target_repo_id, edge_style)
          VALUES (?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING;"
     )
     .bind(id)
-    .bind(DEFAULT_CANVAS_VIEW_ID)
+    .bind(view_id)
     .bind(source_id)
     .bind(target_id)
     .bind(edge_style)
     .execute(pool)
     .await?;
+    Ok(())
+}
+
+pub async fn delete_canvas_manual_edge(
+    pool: &SqlitePool,
+    view_id: &str,
+    id: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query("DELETE FROM canvas_manual_edges WHERE view_id = ? AND id = ?;")
+        .bind(view_id)
+        .bind(id)
+        .execute(pool)
+        .await?;
     Ok(())
 }
 
@@ -413,5 +788,194 @@ pub async fn archive_canvas_view(pool: &SqlitePool, view_id: &str) -> Result<(),
         .bind(view_id)
         .execute(pool)
         .await?;
+    Ok(())
+}
+
+pub async fn clone_canvas_view(
+    pool: &SqlitePool,
+    source_id: &str,
+    new_id: &str,
+    new_name: &str,
+) -> Result<(), sqlx::Error> {
+    let mut tx = pool.begin().await?;
+
+    sqlx::query(
+           "INSERT INTO canvas_views (id, view_name, zoom_level, pan_x, pan_y, baseline_zoom, baseline_pan_x, baseline_pan_y)
+            SELECT ?, ?, zoom_level, pan_x, pan_y, baseline_zoom, baseline_pan_x, baseline_pan_y FROM canvas_views WHERE id = ?"
+    )
+    .bind(new_id)
+    .bind(new_name)
+    .bind(source_id)
+    .execute(&mut *tx)
+    .await?;
+
+        sqlx::query(
+           "INSERT INTO canvas_view_visible_paths (view_id, repo_path_id)
+            SELECT ?, repo_path_id
+            FROM canvas_view_visible_paths
+            WHERE view_id = ?"
+        )
+        .bind(new_id)
+        .bind(source_id)
+        .execute(&mut *tx)
+        .await?;
+
+        sqlx::query(
+           "INSERT INTO canvas_view_visible_branches (view_id, branch_id, is_visible)
+            SELECT ?, branch_id, is_visible
+            FROM canvas_view_visible_branches
+            WHERE view_id = ?"
+        )
+        .bind(new_id)
+        .bind(source_id)
+        .execute(&mut *tx)
+        .await?;
+
+    sqlx::query(
+        "INSERT INTO canvas_view_cards (view_id, repo_path_id, pos_x, pos_y, view_mode, commit_density, theme_color_hex, explode_branches)
+         SELECT ?, repo_path_id, pos_x, pos_y, view_mode, commit_density, theme_color_hex, explode_branches
+         FROM canvas_view_cards WHERE view_id = ?"
+    )
+    .bind(new_id)
+    .bind(source_id)
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        "INSERT INTO canvas_manual_edges (id, view_id, source_repo_id, target_repo_id, edge_style)
+         SELECT lower(hex(randomblob(16))), ?, source_repo_id, target_repo_id, edge_style
+         FROM canvas_manual_edges WHERE view_id = ?"
+    )
+    .bind(new_id)
+    .bind(source_id)
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        "INSERT INTO canvas_view_branch_cards (view_id, branch_id, pos_x, pos_y)
+         SELECT ?, branch_id, pos_x, pos_y
+         FROM canvas_view_branch_cards WHERE view_id = ?"
+    )
+    .bind(new_id)
+    .bind(source_id)
+    .execute(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
+    Ok(())
+}
+
+struct ResolvedLayoutNodeKey {
+    repo_path_id: String,
+    branch_id: Option<String>,
+}
+
+async fn resolve_layout_node_key(pool: &SqlitePool, key: &str) -> Result<ResolvedLayoutNodeKey, sqlx::Error> {
+    let row = sqlx::query_as::<_, (String, Option<String>)>(
+        "SELECT id AS repo_path_id, NULL AS branch_id
+         FROM tracked_paths
+         WHERE id = ?
+         UNION ALL
+         SELECT path_id AS repo_path_id, id AS branch_id
+         FROM cached_git_branches
+         WHERE id = ?
+         LIMIT 1;",
+    )
+    .bind(key)
+    .bind(key)
+    .fetch_optional(pool)
+    .await?;
+
+    if let Some((repo_path_id, branch_id)) = row {
+        Ok(ResolvedLayoutNodeKey {
+            repo_path_id,
+            branch_id,
+        })
+    } else {
+        Err(sqlx::Error::RowNotFound)
+    }
+}
+
+async fn resolve_repo_path_id(pool: &SqlitePool, key: &str) -> Result<String, sqlx::Error> {
+    let resolved = sqlx::query_scalar::<_, String>(
+        "SELECT id FROM tracked_paths WHERE id = ?
+         UNION
+         SELECT path_id AS id FROM cached_git_branches WHERE id = ?
+         LIMIT 1;",
+    )
+    .bind(key)
+    .bind(key)
+    .fetch_optional(pool)
+    .await?;
+
+    resolved.ok_or(sqlx::Error::RowNotFound)
+}
+
+async fn resolve_branch_visibility_key(pool: &SqlitePool, key: &str) -> Result<Option<String>, sqlx::Error> {
+    let direct = sqlx::query_scalar::<_, String>(
+        "SELECT id FROM cached_git_branches WHERE id = ? LIMIT 1;",
+    )
+    .bind(key)
+    .fetch_optional(pool)
+    .await?;
+
+    if direct.is_some() {
+        return Ok(direct);
+    }
+
+    if let Some((path_id, branch_name)) = key.split_once("::") {
+        let from_composite = sqlx::query_scalar::<_, String>(
+            "SELECT id FROM cached_git_branches WHERE path_id = ? AND branch_name = ? LIMIT 1;",
+        )
+        .bind(path_id)
+        .bind(branch_name)
+        .fetch_optional(pool)
+        .await?;
+
+        return Ok(from_composite);
+    }
+
+    Ok(None)
+}
+
+pub async fn delete_canvas_view(pool: &SqlitePool, view_id: &str) -> Result<(), sqlx::Error> {
+    sqlx::query("DELETE FROM canvas_views WHERE id = ?;")
+        .bind(view_id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+pub async fn rename_canvas_view(pool: &SqlitePool, view_id: &str, new_name: &str) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE canvas_views SET view_name = ? WHERE id = ?;")
+        .bind(new_name)
+        .bind(view_id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+pub async fn create_new_environment_view(pool: &SqlitePool, id: &str, name: &str) -> Result<(), sqlx::Error> {
+    let mut tx = pool.begin().await?;
+
+    sqlx::query("INSERT INTO canvas_views (id, view_name, zoom_level, pan_x, pan_y) VALUES (?, ?, 1.0, 0.0, 0.0);")
+        .bind(id)
+        .bind(name)
+        .execute(&mut *tx)
+        .await?;
+
+    sqlx::query(
+        "INSERT INTO canvas_view_visible_paths (view_id, repo_path_id)
+         SELECT ?, tracked_paths.id
+         FROM tracked_paths
+         WHERE tracked_paths.is_active = 1
+           AND tracked_paths.archived_at IS NULL;",
+    )
+    .bind(id)
+    .execute(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
+
     Ok(())
 }

@@ -1,4 +1,4 @@
-import Database from '@tauri-apps/plugin-sql';
+import { openAppDatabase } from './lib/db';
 
 export type ThemePreference = 'system' | 'light' | 'dark';
 export type ResolvedTheme = 'light' | 'dark';
@@ -22,7 +22,7 @@ export function applyTheme(preference: ThemePreference): ResolvedTheme {
 
 export async function loadThemePreference(): Promise<ThemePreference> {
   try {
-    const db = await Database.load('sqlite:branch-schematic.db');
+    const db = await openAppDatabase();
     const rows: Array<{ theme?: string | null }> = await db.select('SELECT theme FROM settings WHERE id = 1');
     const savedTheme = rows[0]?.theme;
 
@@ -38,7 +38,7 @@ export async function loadThemePreference(): Promise<ThemePreference> {
 
 export async function saveThemePreference(preference: ThemePreference): Promise<void> {
   try {
-    const db = await Database.load('sqlite:branch-schematic.db');
+    const db = await openAppDatabase();
     await db.execute('UPDATE settings SET theme = ? WHERE id = 1', [preference]);
   } catch (error) {
     console.error('Failed to save theme preference:', error);

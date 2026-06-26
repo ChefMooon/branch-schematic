@@ -3,11 +3,14 @@ import { useReactFlow, useViewport } from '@xyflow/react';
 
 type MapToolbarProps = {
   isDark?: boolean;
+  hidden?: boolean;
 };
 
-export function MapToolbar({ isDark = false }: MapToolbarProps) {
+export function MapToolbar({ isDark = false, hidden = false }: MapToolbarProps) {
   const { zoomIn, zoomOut, setViewport, fitView } = useReactFlow();
   const { zoom } = useViewport();
+
+  if (hidden) return null;
 
   const zoomPercentage = Math.round(zoom * 100);
 

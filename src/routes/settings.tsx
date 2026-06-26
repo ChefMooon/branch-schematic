@@ -1,7 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { useState, useEffect } from 'react';
-import Database from '@tauri-apps/plugin-sql'; // Import the Tauri SQL plugin
 import { applyTheme, DEFAULT_THEME, loadThemePreference, saveThemePreference, type ThemePreference } from '../theme';
+import { openAppDatabase } from '../lib/db';
 
 export const Route = createFileRoute('/settings')({
   component: RouteComponent,
@@ -28,7 +28,7 @@ function RouteComponent() {
     async function loadSettings() {
       try {
         // Connect to our SQLite database file
-        const db = await Database.load('sqlite:branch-schematic.db');
+        const db = await openAppDatabase();
         
         // Fetch our single row of settings
         const result: any[] = await db.select('SELECT * FROM settings WHERE id = 1');
@@ -69,7 +69,7 @@ function RouteComponent() {
   // This takes individual keys and updates them in the SQLite table
   async function updateSetting(columnName: string, value: any) {
     try {
-      const db = await Database.load('sqlite:branch-schematic.db');
+      const db = await openAppDatabase();
       // Execute standard SQL UPDATE command
       await db.execute(
         `UPDATE settings SET ${columnName} = ? WHERE id = 1`,
@@ -92,7 +92,7 @@ function RouteComponent() {
     await saveThemePreference(DEFAULT_SETTINGS.theme);
 
     try {
-      const db = await Database.load('sqlite:branch-schematic.db');
+      const db = await openAppDatabase();
       // Overwrite row 1 back to original factory parameters
       await db.execute(
         `UPDATE settings SET 

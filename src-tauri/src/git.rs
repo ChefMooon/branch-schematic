@@ -1,6 +1,6 @@
 use std::path::Path;
 use uuid::Uuid;
-use git2::{Oid, BranchType, Repository};
+use git2::{BranchType, Repository};
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
 use crate::DbState;

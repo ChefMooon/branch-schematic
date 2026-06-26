@@ -1,6 +1,5 @@
 use sqlx::sqlite::SqlitePool;
-use tauri::{tray::TrayIconBuilder, tray::TrayIconEvent, Manager};
-use tauri_plugin_window_state::WindowExt;
+use tauri::Manager;
 
 mod daemon;
 mod db;
@@ -36,10 +35,124 @@ async fn get_active_tracked_paths(
 }
 
 #[tauri::command]
+async fn get_canvas_views(
+    state: tauri::State<'_, DbState>,
+) -> Result<Vec<db::CanvasViewRow>, String> {
+    db::fetch_all_canvas_views(&state.0)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+async fn create_canvas_view(
+    state: tauri::State<'_, DbState>,
+    id: String,
+    name: String,
+) -> Result<(), String> {
+    db::create_new_environment_view(&state.0, &id, &name)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+async fn clone_view(
+    state: tauri::State<'_, DbState>,
+    source_id: String,
+    new_id: String,
+    new_name: String,
+) -> Result<(), String> {
+    db::clone_canvas_view(&state.0, &source_id, &new_id, &new_name)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+async fn delete_canvas_view(
+    state: tauri::State<'_, DbState>,
+    view_id: String,
+) -> Result<(), String> {
+    db::delete_canvas_view(&state.0, &view_id)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+async fn rename_canvas_view(
+    state: tauri::State<'_, DbState>,
+    view_id: String,
+    name: String,
+) -> Result<(), String> {
+    db::rename_canvas_view(&state.0, &view_id, &name)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+async fn save_viewport_state(
+    state: tauri::State<'_, DbState>,
+    view_id: String,
+    zoom_level: f64,
+    pan_x: f64,
+    pan_y: f64,
+) -> Result<(), String> {
+    db::update_canvas_viewport_state(&state.0, &view_id, zoom_level, pan_x, pan_y)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+async fn snapshot_canvas_view_baseline_viewport(
+    state: tauri::State<'_, DbState>,
+    view_id: String,
+    baseline_zoom: f64,
+    baseline_pan_x: f64,
+    baseline_pan_y: f64,
+) -> Result<(), String> {
+    db::snapshot_canvas_view_baseline_viewport(&state.0, &view_id, baseline_zoom, baseline_pan_x, baseline_pan_y)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+async fn set_canvas_view_path_visibility(
+    state: tauri::State<'_, DbState>,
+    view_id: String,
+    repo_path_id: String,
+    visible: bool,
+) -> Result<(), String> {
+    db::set_canvas_view_path_visibility(&state.0, &view_id, &repo_path_id, visible)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+async fn set_canvas_view_branch_visibility(
+    state: tauri::State<'_, DbState>,
+    view_id: String,
+    branch_id: String,
+    visible: bool,
+) -> Result<(), String> {
+    db::set_canvas_view_branch_visibility(&state.0, &view_id, &branch_id, visible)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+async fn get_canvas_view_scope(
+    state: tauri::State<'_, DbState>,
+    view_id: String,
+) -> Result<db::CanvasViewScopeState, String> {
+    db::fetch_canvas_view_scope(&state.0, &view_id)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 async fn get_workspace_nodes(
     state: tauri::State<'_, DbState>,
+    view_id: String,
 ) -> Result<Vec<db::WorkspaceNodeRow>, String> {
-    db::fetch_workspace_nodes(&state.0)
+    db::fetch_workspace_nodes(&state.0, &view_id)
         .await
         .map_err(|error| error.to_string())
 }
@@ -47,11 +160,12 @@ async fn get_workspace_nodes(
 #[tauri::command]
 async fn update_card_position(
     state: tauri::State<'_, DbState>,
+    view_id: String,
     id: String,
     x: f64,
     y: f64,
 ) -> Result<(), String> {
-    db::update_canvas_card_position(&state.0, &id, x, y)
+    db::update_canvas_card_position(&state.0, &view_id, &id, x, y)
         .await
         .map_err(|error| error.to_string())
 }
@@ -59,8 +173,9 @@ async fn update_card_position(
 #[tauri::command]
 async fn get_manual_edges(
     state: tauri::State<'_, DbState>,
+    view_id: String,
 ) -> Result<Vec<db::CanvasEdgeRow>, String> {
-    db::fetch_canvas_manual_edges(&state.0)
+    db::fetch_canvas_manual_edges(&state.0, &view_id)
         .await
         .map_err(|error| error.to_string())
 }
@@ -68,23 +183,48 @@ async fn get_manual_edges(
 #[tauri::command]
 async fn save_manual_edge(
     state: tauri::State<'_, DbState>,
+    view_id: String,
     id: String,
     source: String,
     target: String,
 ) -> Result<(), String> {
-    db::insert_canvas_manual_edge(&state.0, &id, &source, &target, "BEZIER")
+    db::insert_canvas_manual_edge(&state.0, &view_id, &id, &source, &target, "BEZIER")
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+async fn delete_manual_edge(
+    state: tauri::State<'_, DbState>,
+    view_id: String,
+    id: String,
+) -> Result<(), String> {
+    db::delete_canvas_manual_edge(&state.0, &view_id, &id)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+async fn update_branch_card_config(
+    state: tauri::State<'_, DbState>,
+    view_id: String,
+    repo_path_id: String,
+    view_mode: String,
+    commit_density: i64,
+    theme_color_hex: String,
+    explode_branches: i64,
+) -> Result<(), String> {
+    db::update_canvas_card_config(&state.0, &view_id, &repo_path_id, &view_mode, commit_density, &theme_color_hex, explode_branches)
         .await
         .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
 async fn soft_archive_repository(
-    state: tauri::State<'_, DbState>,
-    path_id: String,
+    _state: tauri::State<'_, DbState>,
+    _path_id: String,
 ) -> Result<(), String> {
-    db::archive_tracked_path(&state.0, &path_id)
-        .await
-        .map_err(|e| e.to_string())
+    Ok(())
 }
 
 #[tauri::command]
@@ -95,87 +235,48 @@ async fn get_branch_commits(
 ) -> Result<Vec<db::CachedCommitRow>, String> {
     db::fetch_branch_commits(&state.0, &branch_id, limit)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|error| error.to_string())
 }
 
-#[tauri::command]
-async fn update_branch_card_config(
-    state: tauri::State<'_, DbState>,
-    branch_id: String,
-    view_mode: String,
-    commit_density: i64,
-    theme_color_hex: String,
-) -> Result<(), String> {
-    db::update_canvas_card_config(&state.0, &branch_id, &view_mode, commit_density, &theme_color_hex)
-        .await
-        .map_err(|e| e.to_string())
-}
-
-#[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Generate context cleanly
+    let context = tauri::generate_context!();
+
+    // Resolve the app data directory used by Tauri and ensure the migration plugin
+    // and the runtime SQLx pool target the exact same SQLite file.
+    let app_dir = std::env::var("APPDATA")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|_| std::env::current_dir().unwrap_or_default())
+        .join("com.justi.branch-schematic");
+    let _ = std::fs::create_dir_all(&app_dir);
+    let target_db_url = format!("sqlite:{}", app_dir.join(db::DB_NAME).to_string_lossy());
+
     tauri::Builder::default()
-        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
-            // 1. Initialize the SQLite Connection Pool for the Daemon matching db::DB_URL location
-            let app_dir = app
-                .path()
-                .app_data_dir()
-                .expect("Failed to locate app data directory");
-            std::fs::create_dir_all(&app_dir).unwrap();
+            let handle = app.handle().clone();
 
-            // Build absolute path targeting the exact same file location managed by Tauri Plugin SQL
-            let db_file_path = app_dir.join(db::DB_NAME);
-            let db_url = format!("sqlite:{}", db_file_path.to_string_lossy());
+            let app_dir = app.path().app_data_dir().expect("Failed to resolve App Data directory");
+            let _ = std::fs::create_dir_all(&app_dir);
+            let db_path = app_dir.join(db::DB_NAME);
+            let target_db_url = format!("sqlite:{}", db_path.to_string_lossy());
 
-            // Block asynchronously on setup to spin up our daemon SQLx engine pool
-            tauri::async_runtime::block_on(async {
-                let pool = SqlitePool::connect(&db_url)
-                    .await
-                    .expect("Failed to connect to SQLite Pool");
-                app.manage(DbState(pool));
+            tauri::async_runtime::block_on(async move {
+                let pool = SqlitePool::connect(&target_db_url).await.expect("Failed to connect to SQLite database");
+                handle.manage(DbState(pool));
             });
 
-            // 2. Window state lifecycle configuration matching your db settings
-            let restore_window = db::should_restore_window(app.handle());
-            let start_minimized = db::should_start_minimized(app.handle());
+            if let Some(window_handle) = app.get_webview_window("main") {
+                let _ = window_handle.show();
+                let _ = window_handle.set_focus();
 
-            if let Some(window) = app.get_webview_window("main") {
-                if restore_window && !start_minimized {
-                    let _ = window.restore_state(tauri_plugin_window_state::StateFlags::all());
-                }
-
-                if start_minimized {
-                    let _ = window.hide();
-                } else {
-                    let _ = window.show();
-                    let _ = window.set_focus();
-                }
-            }
-
-            // 3. Tray Event Handlers
-            let app_handle = app.handle().clone();
-            let _tray = TrayIconBuilder::new()
-                .icon(app.default_window_icon().unwrap().clone())
-                .on_tray_icon_event(move |_tray, event| {
-                    if let TrayIconEvent::Click { .. } = event {
-                        if let Some(window) = app_handle.get_webview_window("main") {
-                            let _ = window.show();
-                            let _ = window.set_focus();
-                        }
-                    }
-                })
-                .build(app)?;
-
-            // 4. Close interception rules mapped to db settings
-            if let Some(window) = app.get_webview_window("main") {
-                let app_handle = app.handle().clone();
-                let window_handle = window.clone();
-
-                window.on_window_event(move |event| {
-                    if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                        if db::should_hide_to_tray(&app_handle) {
-                            api.prevent_close();
-                            let _ = window_handle.hide();
+                let _ = window_handle.on_window_event({
+                    let app_handle = app.handle().clone();
+                    move |event| {
+                        if let tauri::WindowEvent::CloseRequested { .. } = event {
+                            let _ = tauri_plugin_window_state::AppHandleExt::save_window_state(
+                                &app_handle,
+                                tauri_plugin_window_state::StateFlags::all(),
+                            );
                         }
                     }
                 });
@@ -191,19 +292,30 @@ pub fn run() {
         )
         .plugin(
             tauri_plugin_sql::Builder::default()
-                .add_migrations(db::DB_URL, db::get_migrations())
+                .add_migrations(&target_db_url, db::get_migrations())
                 .build(),
         )
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
-        // 5. Consolidated single-entry invoke handler registry
         .invoke_handler(tauri::generate_handler![
             greet,
             watch_project_directory,
             get_active_tracked_paths,
+            get_canvas_views,
+            create_canvas_view,
+            clone_view,
+            delete_canvas_view,
+            rename_canvas_view,
+            save_viewport_state,
+            snapshot_canvas_view_baseline_viewport,
+            set_canvas_view_path_visibility,
+            set_canvas_view_branch_visibility,
+            get_canvas_view_scope,
             get_workspace_nodes,
             update_card_position,
             get_manual_edges,
             save_manual_edge,
+            delete_manual_edge,
             soft_archive_repository,
             get_branch_commits,
             update_branch_card_config,
@@ -216,6 +328,6 @@ pub fn run() {
             git::set_repository_alias,
             git::determine_branch_topology,
         ])
-        .run(tauri::generate_context!())
+        .run(context)
         .expect("error while running tauri application");
 }

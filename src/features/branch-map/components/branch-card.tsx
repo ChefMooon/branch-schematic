@@ -1,10 +1,14 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Handle, Position, NodeProps, Node, useViewport } from '@xyflow/react';
 import { useCanvasStore } from '../../../stores/canvas-store';
 import { CommitTimeline } from './commit-timeline';
 
 export type BranchCardNode = Node<{
   title: string;
+  repoPathId: string;
+  branchId?: string;
+  branchName?: string;
+  explodeBranches: boolean;
   status: 'Active' | 'Draft' | 'Archived';
   aheadCount: number;
   behindCount: number;
@@ -32,13 +36,39 @@ function useAppThemeMode() {
   return themeMode;
 }
 
-export function BranchCard({ id, data }: NodeProps<BranchCardNode>) {
+export function BranchCard({ data }: NodeProps<BranchCardNode>) {
   const themeMode = useAppThemeMode();
   const isDark = themeMode === 'dark';
   const { zoom } = useViewport();
   const updateNodeConfig = useCanvasStore((state) => state.updateNodeConfig);
 
   const [menuOpen, setMenuOpen] = useState(false);
+  const menuContainerRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+
+    const handlePointerDown = (event: MouseEvent) => {
+      const target = event.target as globalThis.Node | null;
+      if (menuContainerRef.current && !menuContainerRef.current.contains(target)) {
+        setMenuOpen(false);
+      }
+    };
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setMenuOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handlePointerDown);
+    document.addEventListener('keydown', handleEscape);
+
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [menuOpen]);
 
   // Compute exact 3-Tier LoD classification flags matching requirements
   let lodTier: 'CLOSE' | 'MID' | 'BIRD' = 'CLOSE';
@@ -47,6 +77,7 @@ export function BranchCard({ id, data }: NodeProps<BranchCardNode>) {
 
   const accentColor = data.themeColorHex ?? '#4F46E5';
   const isCompact = data.viewMode === 'COMPACT';
+  const timelineMaxHeight = data.commitDensity === -1 ? '400px' : `${data.commitDensity * 32}px`;
 
   const cardStyle: React.CSSProperties = {
     backgroundColor: isDark ? '#121214' : '#ffffff',
@@ -86,7 +117,7 @@ export function BranchCard({ id, data }: NodeProps<BranchCardNode>) {
   };
 
   return (
-    <div style={cardStyle} className="nodrag">
+    <div style={cardStyle} ref={menuContainerRef}>
       {/* Explicit Target Anchor Handle on Left Side */}
       <Handle 
         type="target" 
@@ -125,16 +156,32 @@ export function BranchCard({ id, data }: NodeProps<BranchCardNode>) {
           <div style={{ fontSize: '10px', fontWeight: 'bold', color: '#a1a1aa' }}>VIEW MODE</div>
           <div style={{ display: 'flex', gap: '4px' }}>
             <button 
-              onClick={() => updateNodeConfig(id, 'COMPACT', data.commitDensity, accentColor)}
+              onClick={() => updateNodeConfig(data.repoPathId, 'COMPACT', data.commitDensity, accentColor, data.explodeBranches)}
               style={{ fontSize: '11px', padding: '2px 6px', cursor: 'pointer', backgroundColor: isCompact ? accentColor : 'transparent', color: isCompact ? '#fff' : (isDark ? '#fff' : '#000'), border: `1px solid ${isDark ? '#2d2d30' : '#e5e7eb'}`, borderRadius: '4px' }}
             >
               Compact
             </button>
             <button 
-              onClick={() => updateNodeConfig(id, 'EXPANDED', data.commitDensity, accentColor)}
+              onClick={() => updateNodeConfig(data.repoPathId, 'EXPANDED', data.commitDensity, accentColor, data.explodeBranches)}
               style={{ fontSize: '11px', padding: '2px 6px', cursor: 'pointer', backgroundColor: !isCompact ? accentColor : 'transparent', color: !isCompact ? '#fff' : (isDark ? '#fff' : '#000'), border: `1px solid ${isDark ? '#2d2d30' : '#e5e7eb'}`, borderRadius: '4px' }}
             >
               Expanded
+            </button>
+          </div>
+
+          <div style={{ fontSize: '10px', fontWeight: 'bold', color: '#a1a1aa', marginTop: '4px' }}>STRUCTURE VIEW</div>
+          <div style={{ display: 'flex', gap: '4px' }}>
+            <button
+              onClick={() => updateNodeConfig(data.repoPathId, data.viewMode, data.commitDensity, accentColor, false)}
+              style={{ fontSize: '11px', padding: '2px 6px', cursor: 'pointer', backgroundColor: !data.explodeBranches ? accentColor : 'transparent', color: !data.explodeBranches ? '#fff' : (isDark ? '#fff' : '#000'), border: `1px solid ${isDark ? '#2d2d30' : '#e5e7eb'}`, borderRadius: '4px' }}
+            >
+              Repository Focus
+            </button>
+            <button
+              onClick={() => updateNodeConfig(data.repoPathId, data.viewMode, data.commitDensity, accentColor, true)}
+              style={{ fontSize: '11px', padding: '2px 6px', cursor: 'pointer', backgroundColor: data.explodeBranches ? accentColor : 'transparent', color: data.explodeBranches ? '#fff' : (isDark ? '#fff' : '#000'), border: `1px solid ${isDark ? '#2d2d30' : '#e5e7eb'}`, borderRadius: '4px' }}
+            >
+              Explode Branches
             </button>
           </div>
 
@@ -143,7 +190,7 @@ export function BranchCard({ id, data }: NodeProps<BranchCardNode>) {
               <div style={{ fontSize: '10px', fontWeight: 'bold', color: '#a1a1aa', marginTop: '4px' }}>MAX TIMELINE COMMITS</div>
               <select 
                 value={data.commitDensity} 
-                onChange={(e) => updateNodeConfig(id, data.viewMode, Number(e.target.value), accentColor)}
+                onChange={(e) => updateNodeConfig(data.repoPathId, data.viewMode, Number(e.target.value), accentColor, data.explodeBranches)}
                 style={{ fontSize: '11px', padding: '2px', backgroundColor: isDark ? '#2d2d30' : '#fff', color: isDark ? '#fff' : '#000', border: '1px solid #71717a', borderRadius: '4px' }}
               >
                 <option value={5}>5 Rows</option>
@@ -159,7 +206,7 @@ export function BranchCard({ id, data }: NodeProps<BranchCardNode>) {
             {['#4F46E5', '#10B981', '#F59E0B', '#EF4444', '#EC4899'].map((hex) => (
               <div 
                 key={hex} 
-                onClick={() => updateNodeConfig(id, data.viewMode, data.commitDensity, hex)}
+                onClick={() => updateNodeConfig(data.repoPathId, data.viewMode, data.commitDensity, hex, data.explodeBranches)}
                 style={{ width: '14px', height: '14px', borderRadius: '50%', backgroundColor: hex, border: accentColor === hex ? '2px solid #fff' : 'none', cursor: 'pointer' }} 
               />
             ))}
@@ -175,11 +222,12 @@ export function BranchCard({ id, data }: NodeProps<BranchCardNode>) {
             <div>▼ <strong>{data.behindCount ?? 0}</strong> behind</div>
           </div>
           <CommitTimeline 
-            branchId={id} 
+            branchId={data.branchId || data.repoPathId} 
             densityLimit={data.commitDensity} 
             lodTier={lodTier} 
             isDark={isDark} 
             accentColor={accentColor} 
+            maxHeight={timelineMaxHeight} 
           />
         </div>
       )}
