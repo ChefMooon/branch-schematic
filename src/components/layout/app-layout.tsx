@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useLocation } from '@tanstack/react-router';
 import {
-  MagnifyingGlassIcon,
   BellIcon,
   PlusIcon,
   CircleHalfIcon,
@@ -9,11 +8,15 @@ import {
   XIcon,
 } from '@phosphor-icons/react';
 import { useWorkspaceStore } from '../../stores/workspace-store';
+import { useOS } from '../../hooks/use-os';
+import { WindowControls } from '../titlebar/window-controls';
 import { AppSidebar } from './app-sidebar';
 
 interface AppLayoutProps {
   children: React.ReactNode;
 }
+
+type AppStyle = React.CSSProperties;
 
 function useLayoutThemeMode() {
   const [themeMode, setThemeMode] = useState<'light' | 'dark'>(() => {
@@ -41,10 +44,10 @@ function useLayoutThemeMode() {
 export function AppLayout({ children }: AppLayoutProps) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isProjectHubOpen, setIsProjectHubOpen] = useState(false);
-  const [searchValue, setSearchValue] = useState('');
 
   const location = useLocation();
   const themeMode = useLayoutThemeMode();
+  const { isMac } = useOS();
   const { repos, activeRepoId, hydrateFromBackend } = useWorkspaceStore();
   const activeRepo = repos.find((r) => r.id === activeRepoId) ?? null;
 
@@ -78,7 +81,13 @@ export function AppLayout({ children }: AppLayoutProps) {
       />
 
       {/* ── TOPBAR (FULL WIDTH) ── */}
-      <header style={{ ...styles.header, height: HEADER_H }}>
+      <header
+        style={{
+          ...styles.header,
+          height: HEADER_H,
+          paddingLeft: isMac ? '80px' : '16px',
+        }}
+      >
         
         {/* Hamburger/Close Button */}
         <button
@@ -96,18 +105,8 @@ export function AppLayout({ children }: AppLayoutProps) {
         {/* Page breadcrumb */}
         <span style={styles.headerTitle}>{currentTitle}</span>
 
-        {/* Center: search */}
-        <div style={styles.searchWrapper}>
-          <MagnifyingGlassIcon size={14} color="var(--app-muted)" style={{ flexShrink: 0, display: 'block' }} />
-          <input
-            type="text"
-            placeholder="Search or jump to…"
-            value={searchValue}
-            onChange={(e) => setSearchValue(e.target.value)}
-            style={styles.searchInput}
-          />
-          <kbd style={styles.searchKbd}>/</kbd>
-        </div>
+        {/* Dedicated drag surface so buttons remain clickable */}
+        <div data-tauri-drag-region style={styles.dragRegion} />
 
         {/* Right: actions + repo badge */}
         <div style={styles.headerRight}>
@@ -145,6 +144,8 @@ export function AppLayout({ children }: AppLayoutProps) {
           >
             <CircleHalfIcon size={18} color="var(--app-text)" style={{ display: 'block' }} />
           </button>
+
+          {!isMac && <WindowControls />}
         </div>
       </header>
 
@@ -158,7 +159,7 @@ export function AppLayout({ children }: AppLayoutProps) {
 
 // ─── Styles ──────────────────────────────────────────────────────────────────
 
-const styles: Record<string, React.CSSProperties> = {
+const styles: Record<string, AppStyle> = {
   root: {
     width: '100vw',
     height: '100vh',
@@ -181,6 +182,7 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: 'center',
     gap: '12px',
     padding: '0 16px',
+    userSelect: 'none',
     zIndex: 30,
   },
 
@@ -206,43 +208,13 @@ const styles: Record<string, React.CSSProperties> = {
     minWidth: '80px',
   },
 
-  searchWrapper: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '6px',
-    flex: '1 1 0',
-    maxWidth: '320px',
-    margin: '0 auto',
-    backgroundColor: 'var(--app-bg)',
-    border: '1px solid var(--app-border)',
-    borderRadius: '6px',
-    padding: '5px 10px',
-    fontSize: '13px',
-  },
-
-  searchInput: {
+  dragRegion: {
     flex: 1,
-    border: 'none',
-    background: 'transparent',
-    outline: 'none',
-    fontSize: '13px',
-    color: 'var(--app-text)',
-    fontFamily: 'inherit',
-  },
-
-  searchKbd: {
-    fontSize: '11px',
-    color: 'var(--app-muted)',
-    border: '1px solid var(--app-border)',
-    borderRadius: '4px',
-    padding: '1px 5px',
-    lineHeight: '1.4',
-    backgroundColor: 'var(--app-surface)',
-    fontFamily: 'inherit',
+    minWidth: 24,
+    height: '100%',
   },
 
   headerRight: {
-    marginLeft: 'auto',
     display: 'flex',
     alignItems: 'center',
     gap: '6px',

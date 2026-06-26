@@ -1,0 +1,15 @@
+{
+  "app": {
+    "windows": [
+      {
+        "title": "branch-schematic",
+        "width": 800,
+        "height": 600,
+        "visible": false,
+        "decorations": false,
+        "titleBarStyle": "Visible",
+        "hiddenTitle": false
+      }
+    ]
+  }
+}
