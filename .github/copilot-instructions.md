@@ -18,3 +18,6 @@ This is a desktop application providing a visual representation of Git repositor
 - **SQL Best Practices:** - Never concatenate or interpolate strings to build SQL queries (prevents SQL injection). Always use parameterized queries: `db.execute("SELECT * FROM repos WHERE id = $1", [id])`.
   - Prefer putting heavy SQL heavy-lifting or complex Git operations in Rust commands (`src-tauri/src/`) and invoking them via `invoke()`, using the SQLite plugin primarily for local client state, history cache, or basic configuration storage.
 - **Async Safety:** All Tauri Core and SQL plugin calls are asynchronous. Ensure proper `try/catch` blocks and loading/error states are handled gracefully in React hooks.
+
+## Miscellaneous Guidelines
+-  Use @phosphor-icons/react for all icons. Avoid using other icon libraries to maintain consistency.
