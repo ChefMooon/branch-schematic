@@ -41,7 +41,7 @@ export function MapToolbar({ isDark = false, hidden = false }: MapToolbarProps) 
         position: 'absolute',
         top: '24px',
         right: '24px',
-        zIndex: 9999,
+        zIndex: 15,
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',

@@ -21,6 +21,9 @@ pub struct CanvasViewRow {
     pub zoom_level: f64,
     pub pan_x: f64,
     pub pan_y: f64,
+    pub is_favorite: i64,
+    pub display_order: i64,
+    pub card_state_json: Option<String>,
     pub baseline_zoom: Option<f64>,
     pub baseline_pan_x: Option<f64>,
     pub baseline_pan_y: Option<f64>,
@@ -198,14 +201,17 @@ pub fn get_migrations() -> Vec<Migration> {
                 zoom_level REAL NOT NULL DEFAULT 1.0,
                 pan_x REAL NOT NULL DEFAULT 0.0,
                 pan_y REAL NOT NULL DEFAULT 0.0,
+                is_favorite INTEGER NOT NULL DEFAULT 0,
+                display_order INTEGER NOT NULL DEFAULT 0,
+                card_state_json TEXT,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 archived_at DATETIME DEFAULT NULL,
                 baseline_zoom REAL DEFAULT NULL,
                 baseline_pan_x REAL DEFAULT NULL,
                 baseline_pan_y REAL DEFAULT NULL
             );
-            INSERT OR IGNORE INTO canvas_views (id, view_name, zoom_level, pan_x, pan_y)
-            VALUES ('default-workspace-view', 'Default Workspace', 1.0, 0.0, 0.0);
+            INSERT OR IGNORE INTO canvas_views (id, view_name, zoom_level, pan_x, pan_y, is_favorite, display_order)
+            VALUES ('default-workspace-view', 'Default Workspace', 1.0, 0.0, 0.0, 1, 0);
 
             -- Daemon local cache index tables
             CREATE TABLE IF NOT EXISTS cached_git_branches (
@@ -331,8 +337,8 @@ pub async fn fetch_active_tracked_paths(
 
 pub async fn ensure_canvas_view_exists(pool: &SqlitePool, view_id: &str, view_name: &str) -> Result<(), sqlx::Error> {
     sqlx::query(
-        "INSERT OR IGNORE INTO canvas_views (id, view_name, zoom_level, pan_x, pan_y)
-         VALUES (?, ?, 1.0, 0.0, 0.0);",
+        "INSERT OR IGNORE INTO canvas_views (id, view_name, zoom_level, pan_x, pan_y, is_favorite, display_order)
+         VALUES (?, ?, 1.0, 0.0, 0.0, 0, COALESCE((SELECT MAX(display_order) + 1 FROM canvas_views), 0));",
     )
     .bind(view_id)
     .bind(view_name)
@@ -344,7 +350,7 @@ pub async fn ensure_canvas_view_exists(pool: &SqlitePool, view_id: &str, view_na
 pub async fn fetch_all_canvas_views(pool: &SqlitePool) -> Result<Vec<CanvasViewRow>, sqlx::Error> {
     ensure_canvas_view_exists(pool, DEFAULT_CANVAS_VIEW_ID, "Default Workspace").await?;
     let rows = sqlx::query_as::<_, CanvasViewRow>(
-        "SELECT id, view_name, zoom_level, pan_x, pan_y, baseline_zoom, baseline_pan_x, baseline_pan_y, created_at, archived_at FROM canvas_views WHERE archived_at IS NULL ORDER BY created_at ASC"
+        "SELECT id, view_name, zoom_level, pan_x, pan_y, is_favorite, display_order, card_state_json, baseline_zoom, baseline_pan_x, baseline_pan_y, created_at, archived_at FROM canvas_views WHERE archived_at IS NULL ORDER BY is_favorite DESC, display_order ASC, created_at ASC"
     )
     .fetch_all(pool)
     .await?;
@@ -386,6 +392,24 @@ pub async fn snapshot_canvas_view_baseline_viewport(
     .bind(baseline_zoom)
     .bind(baseline_pan_x)
     .bind(baseline_pan_y)
+    .bind(view_id)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+pub async fn update_canvas_view_card_state(
+    pool: &SqlitePool,
+    view_id: &str,
+    card_state_json: &str,
+) -> Result<(), sqlx::Error> {
+    ensure_canvas_view_exists(pool, view_id, "Workspace View").await?;
+    sqlx::query(
+        "UPDATE canvas_views
+         SET card_state_json = ?
+         WHERE id = ?;",
+    )
+    .bind(card_state_json)
     .bind(view_id)
     .execute(pool)
     .await?;
@@ -1208,12 +1232,19 @@ pub async fn clone_canvas_view(
 ) -> Result<(), sqlx::Error> {
     let mut tx = pool.begin().await?;
 
+    let next_display_order: i64 = sqlx::query_scalar(
+        "SELECT COALESCE(MAX(display_order), -1) + 1 FROM canvas_views;",
+    )
+    .fetch_one(&mut *tx)
+    .await?;
+
     sqlx::query(
-           "INSERT INTO canvas_views (id, view_name, zoom_level, pan_x, pan_y, baseline_zoom, baseline_pan_x, baseline_pan_y)
-            SELECT ?, ?, zoom_level, pan_x, pan_y, baseline_zoom, baseline_pan_x, baseline_pan_y FROM canvas_views WHERE id = ?"
+           "INSERT INTO canvas_views (id, view_name, zoom_level, pan_x, pan_y, is_favorite, display_order, card_state_json, baseline_zoom, baseline_pan_x, baseline_pan_y)
+            SELECT ?, ?, zoom_level, pan_x, pan_y, 0, ?, card_state_json, baseline_zoom, baseline_pan_x, baseline_pan_y FROM canvas_views WHERE id = ?"
     )
     .bind(new_id)
     .bind(new_name)
+    .bind(next_display_order)
     .bind(source_id)
     .execute(&mut *tx)
     .await?;
@@ -1364,12 +1395,107 @@ pub async fn rename_canvas_view(pool: &SqlitePool, view_id: &str, new_name: &str
     Ok(())
 }
 
+pub async fn set_canvas_view_favorite(
+    pool: &SqlitePool,
+    view_id: &str,
+    is_favorite: bool,
+) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE canvas_views SET is_favorite = ? WHERE id = ?;")
+        .bind(if is_favorite { 1_i64 } else { 0_i64 })
+        .bind(view_id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+pub async fn move_canvas_view_display_order(
+    pool: &SqlitePool,
+    view_id: &str,
+    direction: i64,
+) -> Result<(), sqlx::Error> {
+    if direction == 0 {
+        return Ok(());
+    }
+
+    let mut tx = pool.begin().await?;
+
+    let current = sqlx::query_as::<_, (i64,)>(
+        "SELECT display_order
+         FROM canvas_views
+         WHERE id = ?
+           AND archived_at IS NULL
+         LIMIT 1;",
+    )
+    .bind(view_id)
+    .fetch_optional(&mut *tx)
+    .await?;
+
+    let Some((current_order,)) = current else {
+        tx.commit().await?;
+        return Ok(());
+    };
+
+    let neighbor = if direction < 0 {
+        sqlx::query_as::<_, (String, i64)>(
+            "SELECT id, display_order
+             FROM canvas_views
+             WHERE id <> ?
+               AND archived_at IS NULL
+               AND display_order < ?
+             ORDER BY display_order DESC
+             LIMIT 1;",
+        )
+        .bind(view_id)
+        .bind(current_order)
+        .fetch_optional(&mut *tx)
+        .await?
+    } else {
+        sqlx::query_as::<_, (String, i64)>(
+            "SELECT id, display_order
+             FROM canvas_views
+             WHERE id <> ?
+               AND archived_at IS NULL
+               AND display_order > ?
+             ORDER BY display_order ASC
+             LIMIT 1;",
+        )
+        .bind(view_id)
+        .bind(current_order)
+        .fetch_optional(&mut *tx)
+        .await?
+    };
+
+    if let Some((neighbor_id, neighbor_order)) = neighbor {
+        sqlx::query("UPDATE canvas_views SET display_order = ? WHERE id = ?;")
+            .bind(neighbor_order)
+            .bind(view_id)
+            .execute(&mut *tx)
+            .await?;
+
+        sqlx::query("UPDATE canvas_views SET display_order = ? WHERE id = ?;")
+            .bind(current_order)
+            .bind(neighbor_id)
+            .execute(&mut *tx)
+            .await?;
+    }
+
+    tx.commit().await?;
+    Ok(())
+}
+
 pub async fn create_new_environment_view(pool: &SqlitePool, id: &str, name: &str) -> Result<(), sqlx::Error> {
     let mut tx = pool.begin().await?;
 
-    sqlx::query("INSERT INTO canvas_views (id, view_name, zoom_level, pan_x, pan_y) VALUES (?, ?, 1.0, 0.0, 0.0);")
+    let next_display_order: i64 = sqlx::query_scalar(
+        "SELECT COALESCE(MAX(display_order), -1) + 1 FROM canvas_views;",
+    )
+    .fetch_one(&mut *tx)
+    .await?;
+
+    sqlx::query("INSERT INTO canvas_views (id, view_name, zoom_level, pan_x, pan_y, is_favorite, display_order, card_state_json) VALUES (?, ?, 1.0, 0.0, 0.0, 0, ?, NULL);")
         .bind(id)
         .bind(name)
+        .bind(next_display_order)
         .execute(&mut *tx)
         .await?;
 

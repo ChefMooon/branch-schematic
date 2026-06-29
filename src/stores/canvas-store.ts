@@ -19,6 +19,9 @@ export interface CanvasViewRecord {
   zoom_level: number;
   pan_x: number;
   pan_y: number;
+  is_favorite: number;
+  display_order: number;
+  card_state_json?: string;
   baseline_zoom?: number;
   baseline_pan_x?: number;
   baseline_pan_y?: number;
@@ -126,9 +129,12 @@ interface CanvasState {
   duplicateView: (sourceId: string, newName: string) => Promise<void>;
   deleteView: (viewId: string) => Promise<void>;
   renameView: (viewId: string, name: string) => Promise<void>;
+  setViewFavorite: (viewId: string, favorite: boolean) => Promise<void>;
+  moveViewOrder: (viewId: string, direction: -1 | 1) => Promise<void>;
   togglePathVisibility: (viewId: string, repoPathId: string, visible: boolean) => Promise<CanvasViewScopeState | null>;
   toggleBranchVisibility: (viewId: string, branchId: string, visible: boolean) => Promise<CanvasViewScopeState | null>;
   snapshotBaselineViewport: (viewId: string, zoom: number, x: number, y: number) => Promise<void>;
+  saveCardState: (viewId: string, cardStateJson: string) => Promise<void>;
   hydrateViewsList: () => Promise<void>;
   hydrateWorkspaceNodes: () => Promise<void>;
   updateNodeConfig: (repoPathId: string, viewMode: 'COMPACT' | 'EXPANDED', density: number, hex: string, explodeBranches: boolean) => Promise<void>;
@@ -252,6 +258,9 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
         zoom_level: v.zoom_level ?? 1.0,
         pan_x: v.pan_x ?? 0.0,
         pan_y: v.pan_y ?? 0.0,
+        is_favorite: v.is_favorite ?? 0,
+        display_order: v.display_order ?? 0,
+        card_state_json: v.card_state_json ?? undefined,
         baseline_zoom: v.baseline_zoom ?? undefined,
         baseline_pan_x: v.baseline_pan_x ?? undefined,
         baseline_pan_y: v.baseline_pan_y ?? undefined,
@@ -318,6 +327,12 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
 
   deleteView: async (viewId) => {
     try {
+      const existingViews = get().views;
+      const deleteIndex = existingViews.findIndex((view) => view.id === viewId);
+      const fallbackViewId = deleteIndex >= 0
+        ? (existingViews[deleteIndex + 1]?.id || existingViews[deleteIndex - 1]?.id || null)
+        : null;
+
       await invoke('delete_canvas_view', { viewId });
 
       if (get().activeViewId === viewId) {
@@ -325,6 +340,10 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       }
 
       await get().hydrateViewsList();
+
+      if (fallbackViewId && get().views.some((view) => view.id === fallbackViewId)) {
+        await get().setActiveView(fallbackViewId);
+      }
     } catch (error) {
       console.error('Failed deleting environment view:', error);
     }
@@ -336,6 +355,30 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       await get().hydrateViewsList();
     } catch (error) {
       console.error('Failed renaming environment view:', error);
+    }
+  },
+
+  setViewFavorite: async (viewId, favorite) => {
+    try {
+      await invoke('set_canvas_view_favorite', {
+        viewId,
+        isFavorite: favorite,
+      });
+      await get().hydrateViewsList();
+    } catch (error) {
+      console.error('Failed setting view favorite state:', error);
+    }
+  },
+
+  moveViewOrder: async (viewId, direction) => {
+    try {
+      await invoke('move_canvas_view_display_order', {
+        viewId,
+        direction,
+      });
+      await get().hydrateViewsList();
+    } catch (error) {
+      console.error('Failed moving view display order:', error);
     }
   },
 
@@ -390,6 +433,28 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       });
     } catch (error) {
       console.error('Failed to snapshot baseline viewport:', error);
+    }
+  },
+
+  saveCardState: async (viewId, cardStateJson) => {
+    try {
+      await invoke('save_canvas_view_card_state', {
+        viewId,
+        cardStateJson,
+      });
+
+      set({
+        views: get().views.map((view) =>
+          view.id === viewId
+            ? {
+                ...view,
+                card_state_json: cardStateJson,
+              }
+            : view,
+        ),
+      });
+    } catch (error) {
+      console.error('Failed to save view card state payload:', error);
     }
   },
   

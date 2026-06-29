@@ -88,6 +88,28 @@ async fn rename_canvas_view(
 }
 
 #[tauri::command]
+async fn set_canvas_view_favorite(
+    state: tauri::State<'_, DbState>,
+    view_id: String,
+    is_favorite: bool,
+) -> Result<(), String> {
+    db::set_canvas_view_favorite(&state.0, &view_id, is_favorite)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+async fn move_canvas_view_display_order(
+    state: tauri::State<'_, DbState>,
+    view_id: String,
+    direction: i64,
+) -> Result<(), String> {
+    db::move_canvas_view_display_order(&state.0, &view_id, direction)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 async fn save_viewport_state(
     state: tauri::State<'_, DbState>,
     view_id: String,
@@ -109,6 +131,17 @@ async fn snapshot_canvas_view_baseline_viewport(
     baseline_pan_y: f64,
 ) -> Result<(), String> {
     db::snapshot_canvas_view_baseline_viewport(&state.0, &view_id, baseline_zoom, baseline_pan_x, baseline_pan_y)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+async fn save_canvas_view_card_state(
+    state: tauri::State<'_, DbState>,
+    view_id: String,
+    card_state_json: String,
+) -> Result<(), String> {
+    db::update_canvas_view_card_state(&state.0, &view_id, &card_state_json)
         .await
         .map_err(|error| error.to_string())
 }
@@ -306,8 +339,11 @@ pub fn run() {
             clone_view,
             delete_canvas_view,
             rename_canvas_view,
+            set_canvas_view_favorite,
+            move_canvas_view_display_order,
             save_viewport_state,
             snapshot_canvas_view_baseline_viewport,
+            save_canvas_view_card_state,
             set_canvas_view_path_visibility,
             set_canvas_view_branch_visibility,
             get_canvas_view_scope,

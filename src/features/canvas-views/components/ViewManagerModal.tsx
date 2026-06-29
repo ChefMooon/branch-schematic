@@ -4,6 +4,18 @@ import { useCanvasStore } from '../../../stores/canvas-store';
 import { ViewManagerSidebar } from './ViewManagerSidebar';
 import { ViewDetailsConfigurator } from './ViewDetailsConfigurator';
 
+function sortViews(views: ReturnType<typeof useCanvasStore.getState>['views']) {
+  return [...views].sort((left, right) => {
+    const favoriteDelta = (right.is_favorite ?? 0) - (left.is_favorite ?? 0);
+    if (favoriteDelta !== 0) return favoriteDelta;
+
+    const displayOrderDelta = (left.display_order ?? 0) - (right.display_order ?? 0);
+    if (displayOrderDelta !== 0) return displayOrderDelta;
+
+    return left.name.localeCompare(right.name);
+  });
+}
+
 type ViewManagerModalProps = {
   isDark: boolean;
   isOpen: boolean;
@@ -18,6 +30,8 @@ export function ViewManagerModal({ isDark, isOpen, onClose }: ViewManagerModalPr
   const renameView = useCanvasStore((state) => state.renameView);
   const duplicateView = useCanvasStore((state) => state.duplicateView);
   const createNewView = useCanvasStore((state) => state.createNewView);
+  const setViewFavorite = useCanvasStore((state) => state.setViewFavorite);
+  const moveViewOrder = useCanvasStore((state) => state.moveViewOrder);
 
   const [selectedViewId, setSelectedViewId] = useState<string | null>(activeViewId);
 
@@ -32,9 +46,11 @@ export function ViewManagerModal({ isDark, isOpen, onClose }: ViewManagerModalPr
     }
   }, [isOpen, activeViewId, views]);
 
+  const orderedViews = useMemo(() => sortViews(views), [views]);
+
   const selectedView = useMemo(
-    () => views.find((view) => view.id === selectedViewId) ?? null,
-    [views, selectedViewId],
+    () => orderedViews.find((view) => view.id === selectedViewId) ?? null,
+    [orderedViews, selectedViewId],
   );
 
   if (!isOpen) return null;
@@ -132,13 +148,22 @@ export function ViewManagerModal({ isDark, isOpen, onClose }: ViewManagerModalPr
         >
           <ViewManagerSidebar
             isDark={isDark}
-            views={views}
+            views={orderedViews}
             selectedViewId={selectedViewId}
             onSelect={(viewId) => void handleSelect(viewId)}
             onCreate={() => void handleCreate()}
             onRename={renameView}
             onDuplicate={(view) => void handleDuplicate(view)}
             onDelete={(view) => handleDelete(view)}
+            onToggleFavorite={async (viewId, favorite) => {
+              await setViewFavorite(viewId, favorite);
+            }}
+            onMoveUp={async (viewId) => {
+              await moveViewOrder(viewId, -1);
+            }}
+            onMoveDown={async (viewId) => {
+              await moveViewOrder(viewId, 1);
+            }}
           />
 
           <ViewDetailsConfigurator isDark={isDark} view={selectedView} />

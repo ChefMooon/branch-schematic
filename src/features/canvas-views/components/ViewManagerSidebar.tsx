@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Check, CopySimple, PencilSimple, Trash, X } from '@phosphor-icons/react';
+import { ArrowDown, ArrowUp, Check, CopySimple, PencilSimple, Star, Trash, X } from '@phosphor-icons/react';
 import type { CanvasViewRecord } from '../../../stores/canvas-store';
 
 type ViewManagerSidebarProps = {
@@ -11,6 +11,9 @@ type ViewManagerSidebarProps = {
   onDuplicate: (view: CanvasViewRecord) => void;
   onRename: (viewId: string, newName: string) => Promise<void>;
   onDelete: (view: CanvasViewRecord) => Promise<void>;
+  onToggleFavorite: (viewId: string, favorite: boolean) => Promise<void>;
+  onMoveUp: (viewId: string) => Promise<void>;
+  onMoveDown: (viewId: string) => Promise<void>;
 };
 
 export function ViewManagerSidebar({
@@ -22,6 +25,9 @@ export function ViewManagerSidebar({
   onDuplicate,
   onRename,
   onDelete,
+  onToggleFavorite,
+  onMoveUp,
+  onMoveDown,
 }: ViewManagerSidebarProps) {
   const [editingViewId, setEditingViewId] = useState<string | null>(null);
   const [draftName, setDraftName] = useState('');
@@ -78,16 +84,31 @@ export function ViewManagerSidebar({
         </button>
       </div>
 
-      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div
+        style={{
+          flex: 1,
+          minHeight: 0,
+          overflowY: 'auto',
+          overflowX: 'hidden',
+          padding: 10,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 8,
+          scrollbarGutter: 'stable',
+        }}
+      >
         {views.length === 0 && (
           <div style={{ borderRadius: 8, padding: 10, color: isDark ? '#a3a3a3' : '#64748b', fontSize: 12 }}>
             No views available.
           </div>
         )}
 
-        {views.map((view) => {
+        {views.map((view, index) => {
           const selected = view.id === selectedViewId;
           const isEditing = editingViewId === view.id;
+          const isFavorite = (view.is_favorite ?? 0) === 1;
+          const canMoveUp = index > 0;
+          const canMoveDown = index < views.length - 1;
           const nameColor = selected
             ? (isDark ? '#f5f5f5' : '#0f172a')
             : (isDark ? '#e5e5e5' : '#1e293b');
@@ -101,6 +122,10 @@ export function ViewManagerSidebar({
                 background: selected ? (isDark ? '#191b2f' : '#eef2ff') : (isDark ? '#151515' : '#fff'),
                 padding: '12px 14px',
                 overflow: 'hidden',
+                flexShrink: 0,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 8,
               }}
             >
               {isEditing ? (
@@ -175,97 +200,171 @@ export function ViewManagerSidebar({
                     </button>
                   </div>
 
-                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 8 }}>
-                    <button
-                      onClick={() => onDuplicate(view)}
-                      title={`Duplicate ${view.name}`}
-                      onMouseEnter={(event) => {
-                        event.currentTarget.style.backgroundColor = isDark ? '#27272a' : '#e2e8f0';
-                        event.currentTarget.style.transform = 'translateY(-1px)';
-                      }}
-                      onMouseLeave={(event) => {
-                        event.currentTarget.style.backgroundColor = isDark ? '#18181b' : '#f1f5f9';
-                        event.currentTarget.style.transform = 'translateY(0)';
-                      }}
-                      style={{
-                        border: 'none',
-                        background: isDark ? '#18181b' : '#f1f5f9',
-                        color: isDark ? '#d4d4d8' : '#475569',
-                        cursor: 'pointer',
-                        borderRadius: 8,
-                        width: 28,
-                        height: 28,
-                        padding: 0,
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        transition: 'background-color 140ms ease, transform 140ms ease',
-                        flexShrink: 0,
-                        lineHeight: 0,
-                      }}
-                    >
-                      <CopySimple size={16} weight="bold" style={{ display: 'block' }} />
-                    </button>
-                    <button
-                      onClick={() => startEditing(view)}
-                      title={`Rename ${view.name}`}
-                      onMouseEnter={(event) => {
-                        event.currentTarget.style.backgroundColor = isDark ? '#27272a' : '#e2e8f0';
-                        event.currentTarget.style.transform = 'translateY(-1px)';
-                      }}
-                      onMouseLeave={(event) => {
-                        event.currentTarget.style.backgroundColor = isDark ? '#18181b' : '#f1f5f9';
-                        event.currentTarget.style.transform = 'translateY(0)';
-                      }}
-                      style={{
-                        border: 'none',
-                        background: isDark ? '#18181b' : '#f1f5f9',
-                        color: isDark ? '#d4d4d8' : '#475569',
-                        cursor: 'pointer',
-                        borderRadius: 8,
-                        width: 28,
-                        height: 28,
-                        padding: 0,
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        transition: 'background-color 140ms ease, transform 140ms ease',
-                        flexShrink: 0,
-                        lineHeight: 0,
-                      }}
-                    >
-                      <PencilSimple size={16} weight="bold" style={{ display: 'block' }} />
-                    </button>
-                    <button
-                      onClick={() => void onDelete(view)}
-                      title={`Delete ${view.name}`}
-                      onMouseEnter={(event) => {
-                        event.currentTarget.style.backgroundColor = isDark ? '#3f1d22' : '#fee2e2';
-                        event.currentTarget.style.transform = 'translateY(-1px)';
-                      }}
-                      onMouseLeave={(event) => {
-                        event.currentTarget.style.backgroundColor = isDark ? '#2b1418' : '#fff1f2';
-                        event.currentTarget.style.transform = 'translateY(0)';
-                      }}
-                      style={{
-                        border: 'none',
-                        background: isDark ? '#2b1418' : '#fff1f2',
-                        color: '#ef4444',
-                        cursor: 'pointer',
-                        borderRadius: 8,
-                        width: 28,
-                        height: 28,
-                        padding: 0,
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        transition: 'background-color 140ms ease, transform 140ms ease',
-                        flexShrink: 0,
-                        lineHeight: 0,
-                      }}
-                    >
-                      <Trash size={16} weight="bold" style={{ display: 'block' }} />
-                    </button>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 2, flexShrink: 0 }}>
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+                      <button
+                        onClick={() => void onToggleFavorite(view.id, !isFavorite)}
+                        title={isFavorite ? 'Unfavorite view' : 'Favorite view'}
+                        style={{
+                          border: 'none',
+                          background: isFavorite ? (isDark ? '#2d1b00' : '#fef3c7') : (isDark ? '#18181b' : '#f1f5f9'),
+                          color: isFavorite ? '#f59e0b' : (isDark ? '#d4d4d8' : '#475569'),
+                          cursor: 'pointer',
+                          borderRadius: 8,
+                          width: 28,
+                          height: 28,
+                          padding: 0,
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          transition: 'background-color 140ms ease, transform 140ms ease',
+                          flexShrink: 0,
+                          lineHeight: 0,
+                        }}
+                      >
+                        <Star size={16} weight={isFavorite ? 'fill' : 'regular'} style={{ display: 'block' }} />
+                      </button>
+                      <button
+                        onClick={() => void onMoveUp(view.id)}
+                        title={`Move ${view.name} up`}
+                        disabled={!canMoveUp}
+                        style={{
+                          border: 'none',
+                          background: isDark ? '#18181b' : '#f1f5f9',
+                          color: canMoveUp ? (isDark ? '#d4d4d8' : '#475569') : (isDark ? '#52525b' : '#94a3b8'),
+                          cursor: canMoveUp ? 'pointer' : 'not-allowed',
+                          borderRadius: 8,
+                          width: 28,
+                          height: 28,
+                          padding: 0,
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          transition: 'background-color 140ms ease, transform 140ms ease',
+                          flexShrink: 0,
+                          lineHeight: 0,
+                          opacity: canMoveUp ? 1 : 0.55,
+                        }}
+                      >
+                        <ArrowUp size={16} weight="bold" style={{ display: 'block' }} />
+                      </button>
+                      <button
+                        onClick={() => void onMoveDown(view.id)}
+                        title={`Move ${view.name} down`}
+                        disabled={!canMoveDown}
+                        style={{
+                          border: 'none',
+                          background: isDark ? '#18181b' : '#f1f5f9',
+                          color: canMoveDown ? (isDark ? '#d4d4d8' : '#475569') : (isDark ? '#52525b' : '#94a3b8'),
+                          cursor: canMoveDown ? 'pointer' : 'not-allowed',
+                          borderRadius: 8,
+                          width: 28,
+                          height: 28,
+                          padding: 0,
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          transition: 'background-color 140ms ease, transform 140ms ease',
+                          flexShrink: 0,
+                          lineHeight: 0,
+                          opacity: canMoveDown ? 1 : 0.55,
+                        }}
+                      >
+                        <ArrowDown size={16} weight="bold" style={{ display: 'block' }} />
+                      </button>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+                      <button
+                        onClick={() => onDuplicate(view)}
+                        title={`Duplicate ${view.name}`}
+                        onMouseEnter={(event) => {
+                          event.currentTarget.style.backgroundColor = isDark ? '#27272a' : '#e2e8f0';
+                          event.currentTarget.style.transform = 'translateY(-1px)';
+                        }}
+                        onMouseLeave={(event) => {
+                          event.currentTarget.style.backgroundColor = isDark ? '#18181b' : '#f1f5f9';
+                          event.currentTarget.style.transform = 'translateY(0)';
+                        }}
+                        style={{
+                          border: 'none',
+                          background: isDark ? '#18181b' : '#f1f5f9',
+                          color: isDark ? '#d4d4d8' : '#475569',
+                          cursor: 'pointer',
+                          borderRadius: 8,
+                          width: 28,
+                          height: 28,
+                          padding: 0,
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          transition: 'background-color 140ms ease, transform 140ms ease',
+                          flexShrink: 0,
+                          lineHeight: 0,
+                        }}
+                      >
+                        <CopySimple size={16} weight="bold" style={{ display: 'block' }} />
+                      </button>
+                      <button
+                        onClick={() => startEditing(view)}
+                        title={`Rename ${view.name}`}
+                        onMouseEnter={(event) => {
+                          event.currentTarget.style.backgroundColor = isDark ? '#27272a' : '#e2e8f0';
+                          event.currentTarget.style.transform = 'translateY(-1px)';
+                        }}
+                        onMouseLeave={(event) => {
+                          event.currentTarget.style.backgroundColor = isDark ? '#18181b' : '#f1f5f9';
+                          event.currentTarget.style.transform = 'translateY(0)';
+                        }}
+                        style={{
+                          border: 'none',
+                          background: isDark ? '#18181b' : '#f1f5f9',
+                          color: isDark ? '#d4d4d8' : '#475569',
+                          cursor: 'pointer',
+                          borderRadius: 8,
+                          width: 28,
+                          height: 28,
+                          padding: 0,
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          transition: 'background-color 140ms ease, transform 140ms ease',
+                          flexShrink: 0,
+                          lineHeight: 0,
+                        }}
+                      >
+                        <PencilSimple size={16} weight="bold" style={{ display: 'block' }} />
+                      </button>
+                      <button
+                        onClick={() => void onDelete(view)}
+                        title={`Delete ${view.name}`}
+                        onMouseEnter={(event) => {
+                          event.currentTarget.style.backgroundColor = isDark ? '#3f1d22' : '#fee2e2';
+                          event.currentTarget.style.transform = 'translateY(-1px)';
+                        }}
+                        onMouseLeave={(event) => {
+                          event.currentTarget.style.backgroundColor = isDark ? '#2b1418' : '#fff1f2';
+                          event.currentTarget.style.transform = 'translateY(0)';
+                        }}
+                        style={{
+                          border: 'none',
+                          background: isDark ? '#2b1418' : '#fff1f2',
+                          color: '#ef4444',
+                          cursor: 'pointer',
+                          borderRadius: 8,
+                          width: 28,
+                          height: 28,
+                          padding: 0,
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          transition: 'background-color 140ms ease, transform 140ms ease',
+                          flexShrink: 0,
+                          lineHeight: 0,
+                        }}
+                      >
+                        <Trash size={16} weight="bold" style={{ display: 'block' }} />
+                      </button>
+                    </div>
                   </div>
                 </>
               )}
