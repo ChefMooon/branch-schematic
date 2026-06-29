@@ -10,23 +10,32 @@ import {
   Cloud,
   CircleNotch,
   WarningCircle,
-  Trash,
-  PencilSimple,
-  Check,
-  X,
 } from "@phosphor-icons/react";
 import type { TrackedPath } from "../../../types/git";
+import { useWorkspaceStore } from "../../../stores/workspace-store";
+import { RepoCardHeader } from "./RepositoryCard/RepoCardHeader";
+import { RepoCardTags } from "./RepositoryCard/RepoCardTags";
+import { TagSelectionModal } from "../../../components/Modal/TagSelectionModal";
 
 interface RepositoryCardProps {
   repo: TrackedPath;
   onRefresh: () => void;
+  onOpenManagement: () => void;
 }
 
-export function RepositoryCard({ repo, onRefresh }: RepositoryCardProps) {
+export function RepositoryCard({ repo, onRefresh, onOpenManagement }: RepositoryCardProps) {
   const originType = repo.repo_origin_type ?? "LOCAL_ONLY";
+  const setRepositoryFavorite = useWorkspaceStore((state) => state.setRepositoryFavorite);
+  const setRepositoryGroup = useWorkspaceStore((state) => state.setRepositoryGroup);
+  const addTag = useWorkspaceStore((state) => state.addTag);
+  const removeTag = useWorkspaceStore((state) => state.removeTag);
+  const getCustomGroups = useWorkspaceStore((state) => state.getCustomGroups);
+  const createCustomGroup = useWorkspaceStore((state) => state.createCustomGroup);
+  const tagDirectory = useWorkspaceStore((state) => state.tagDirectory);
   
   // ALIAS LAYOUT STATE TRACKERS
   const [isEditingAlias, setIsEditingAlias] = useState(false);
+  const [isTagModalOpen, setIsTagModalOpen] = useState(false);
   const [aliasInput, setAliasInput] = useState("");
   const [loadingAction, setLoadingAction] = useState<"fetch" | "pull" | "push" | "checkout" | "alias" | null>(null);
 
@@ -101,73 +110,98 @@ export function RepositoryCard({ repo, onRefresh }: RepositoryCardProps) {
   };
 
   const isAnyLoading = loadingAction !== null;
+  const availableGroups = getCustomGroups();
+
+  const handleFavoriteToggle = async () => {
+    await setRepositoryFavorite(repo.id, (repo.is_favorite ?? 0) !== 1);
+  };
+
+  const handleGroupChange = async (groupId: string | null) => {
+    await setRepositoryGroup(repo.id, groupId);
+  };
+
+  const handleCreateGroup = async () => {
+    const name = window.prompt("Enter a new group name:");
+    if (!name || !name.trim()) return;
+    const createdId = await createCustomGroup(name.trim());
+    if (createdId) {
+      await setRepositoryGroup(repo.id, createdId);
+    }
+  };
 
   return (
-    <div className={`repo-card origin-${originType.toLowerCase()}`}>
+    <div
+      className={`repo-card origin-${originType.toLowerCase()} ${(repo.is_favorite ?? 0) === 1 ? 'is-favorited' : ''}`}
+    >
       
       {/* Top Header Information Stack */}
       <div className="repo-card-top">
         <div className="repo-icon-wrapper">
           {getOriginIcon()}
         </div>
-        <div className="repo-meta-details">
-          <div className="repo-title-row">
-            
-            {/* DYNAMIC TITLE EDITABLE LAYERING */}
-            {isEditingAlias ? (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                <input 
-                  type="text"
-                  className="alias-input-field"
-                  value={aliasInput}
-                  onChange={(e) => setAliasInput(e.target.value)}
-                  placeholder="Revert to folder name..."
-                  style={{ fontSize: '1rem', padding: '2px 6px', borderRadius: '4px', border: '1px solid #6366f1' }}
-                  autoFocus
-                  disabled={isAnyLoading}
-                />
-                <button onClick={saveAlias} style={{ border: 'none', background: 'none', color: '#10b981', cursor: 'pointer' }}><Check size={16} /></button>
-                <button onClick={() => { setIsEditingAlias(false); }} style={{ border: 'none', background: 'none', color: '#ef4444', cursor: 'pointer' }}><X size={16} /></button>
-              </div>
-            ) : (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }} title="Double click to add alias context">
-                <h3 onDoubleClick={handleStartEditing}>
-                  {repo.alias_name || repo.display_name}
-                </h3>
-                
-                {repo.alias_name && (
-                  <span style={{ fontSize: '0.75rem', color: '#94a3b8', fontStyle: 'italic' }}>
-                    ({repo.display_name})
-                  </span>
-                )}
-                
-                <button 
-                  onClick={handleStartEditing}
-                  style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', opacity: 0.5 }}
-                >
-                  <PencilSimple size={14} />
-                </button>
-              </div>
-            )}
-
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <span className="badge-origin-type">{originType.replace('_', ' ')}</span>
-              <button 
-                onClick={handleUntrackProject}
-                style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: '2px' }}
-                title="Untrack Repository"
-                onMouseEnter={(e) => (e.currentTarget.style.color = '#ef4444')}
-                onMouseLeave={(e) => (e.currentTarget.style.color = '#94a3b8')}
-              >
-                <Trash size={16} />
-              </button>
-            </div>
-          </div>
-          <span className="repo-absolute-path" title={repo.absolute_path}>
-            {repo.absolute_path}
-          </span>
-        </div>
+        <RepoCardHeader
+          repo={repo}
+          originType={originType}
+          isEditingAlias={isEditingAlias}
+          aliasInput={aliasInput}
+          isAnyLoading={isAnyLoading}
+          availableGroups={availableGroups}
+          onAliasInputChange={setAliasInput}
+          onStartEditing={handleStartEditing}
+          onSaveAlias={saveAlias}
+          onStopEditing={() => setIsEditingAlias(false)}
+          onUntrack={handleUntrackProject}
+          onFavoriteToggle={() => {
+            void handleFavoriteToggle();
+          }}
+          onGroupChange={(group) => {
+            void handleGroupChange(group);
+          }}
+          onCreateGroup={() => {
+            void handleCreateGroup();
+          }}
+          onOpenManagement={onOpenManagement}
+        />
       </div>
+
+      <RepoCardTags
+        tags={repo.tags ?? []}
+        isAnyLoading={isAnyLoading}
+        onOpenTagModal={() => {
+          setIsTagModalOpen(true);
+        }}
+        onRemoveTag={async (tagName) => {
+          await removeTag(repo.id, tagName);
+          await onRefresh();
+        }}
+      />
+
+      <TagSelectionModal
+        isOpen={isTagModalOpen}
+        availableTags={tagDirectory}
+        assignedTagNames={(repo.tags ?? []).map((tag) => tag.tag_name)}
+        onClose={() => setIsTagModalOpen(false)}
+        onOpenManagement={onOpenManagement}
+        onApply={async (nextTagNames) => {
+          const current = new Set((repo.tags ?? []).map((tag) => tag.tag_name));
+          const next = new Set(nextTagNames);
+
+          for (const tagName of current) {
+            if (!next.has(tagName)) {
+              await removeTag(repo.id, tagName);
+            }
+          }
+
+          for (const tagName of next) {
+            if (!current.has(tagName)) {
+              await addTag(repo.id, tagName);
+            }
+          }
+
+          setIsTagModalOpen(false);
+          await onRefresh();
+        }}
+      />
 
       {/* Dynamic Embedded Branch Selector Dropper */}
       <div className="repo-branch-section">
@@ -215,7 +249,7 @@ export function RepositoryCard({ repo, onRefresh }: RepositoryCardProps) {
         </div>
 
         {/* Sync Trigger Grid Layout Elements */}
-        <div className="sync-buttons-cluster">
+        <div className={`sync-buttons-cluster ${isAnyLoading ? 'is-loading' : ''}`}>
           <button 
             className="btn-sync-action" 
             onClick={() => executeGitOperation("fetch")}

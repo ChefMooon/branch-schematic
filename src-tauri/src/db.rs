@@ -1,8 +1,9 @@
 use serde::Serialize;
-use sqlx::{FromRow, SqlitePool};
+use sqlx::{FromRow, Row, SqlitePool};
 use std::collections::HashMap;
 use tauri::Manager;
 use tauri_plugin_sql::{Migration, MigrationKind};
+use uuid::Uuid;
 
 #[derive(Debug, Serialize, Clone, FromRow)]
 pub struct TrackedPathRow {
@@ -50,6 +51,45 @@ pub struct WorkspaceNodeRow {
     pub view_mode: String,
     pub commit_density: i64,
     pub theme_color_hex: String,
+    pub tags_json: Option<String>,
+}
+
+#[derive(Debug, Serialize, Clone, FromRow)]
+pub struct RepoTagRow {
+    pub id: String,
+    pub tag_name: String,
+    pub color_hex: String,
+}
+
+#[derive(Debug, Serialize, Clone, FromRow)]
+pub struct TagFilterSummaryRow {
+    pub id: String,
+    pub tag_name: String,
+    pub color_hex: String,
+    pub repo_count: i64,
+}
+
+#[derive(Debug, Serialize, Clone, FromRow)]
+pub struct CustomGroupRow {
+    pub id: String,
+    pub group_name: String,
+    pub color_hex: String,
+}
+
+#[derive(Debug, Serialize, Clone, FromRow)]
+pub struct GroupSummaryRow {
+    pub id: String,
+    pub group_name: String,
+    pub color_hex: String,
+    pub repo_count: i64,
+}
+
+#[derive(Debug, Serialize, Clone)]
+pub struct QuickFilterMetadata {
+    pub groups: Vec<String>,
+    pub favorites_count: i64,
+    pub tags: Vec<TagFilterSummaryRow>,
+    pub dangling_tags: Vec<TagFilterSummaryRow>,
 }
 
 #[derive(Debug, Serialize, Clone, FromRow)]
@@ -115,13 +155,41 @@ pub fn get_migrations() -> Vec<Migration> {
                 repo_origin_type TEXT NOT NULL DEFAULT 'LOCAL_ONLY', -- 'OWNED', 'FORK', 'LOCAL_ONLY'
                 uncommitted_changes_count INTEGER NOT NULL DEFAULT 0,
                 last_viewed_at DATETIME DEFAULT NULL,
+                group_id TEXT DEFAULT NULL,
+                is_favorite INTEGER NOT NULL DEFAULT 0,
+                last_accessed_at TEXT DEFAULT NULL,
                 
                 is_active INTEGER NOT NULL DEFAULT 1,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                archived_at DATETIME DEFAULT NULL
+                archived_at DATETIME DEFAULT NULL,
+                FOREIGN KEY(group_id) REFERENCES custom_groups(id) ON DELETE SET NULL
             );
             CREATE INDEX IF NOT EXISTS idx_tracked_paths_active ON tracked_paths(is_active) WHERE archived_at IS NULL;
             CREATE INDEX IF NOT EXISTS idx_tracked_paths_recent ON tracked_paths(last_viewed_at) WHERE last_viewed_at IS NOT NULL;
+            CREATE INDEX IF NOT EXISTS idx_tracked_paths_last_accessed ON tracked_paths(last_accessed_at) WHERE last_accessed_at IS NOT NULL;
+
+            CREATE TABLE IF NOT EXISTS custom_groups (
+                id TEXT PRIMARY KEY NOT NULL,
+                group_name TEXT UNIQUE NOT NULL,
+                color_hex TEXT NOT NULL DEFAULT '#64748B',
+                created_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS global_tags (
+                id TEXT PRIMARY KEY NOT NULL,
+                tag_name TEXT UNIQUE NOT NULL,
+                color_hex TEXT NOT NULL DEFAULT '#3B82F6'
+            );
+
+            CREATE TABLE IF NOT EXISTS tracked_path_tags (
+                repo_path_id TEXT NOT NULL,
+                tag_id TEXT NOT NULL,
+                PRIMARY KEY (repo_path_id, tag_id),
+                FOREIGN KEY(repo_path_id) REFERENCES tracked_paths(id) ON DELETE CASCADE,
+                FOREIGN KEY(tag_id) REFERENCES global_tags(id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_tracked_path_tags_tag_id ON tracked_path_tags(tag_id);
+            CREATE INDEX IF NOT EXISTS idx_tracked_path_tags_repo_path_id ON tracked_path_tags(repo_path_id);
 
             -- Spatial View presets
             CREATE TABLE IF NOT EXISTS canvas_views (
@@ -490,6 +558,21 @@ pub async fn fetch_workspace_nodes(
             FROM canvas_view_branch_cards
             WHERE view_id = ?
         ),
+        repo_tags AS (
+            SELECT
+                tracked_path_tags.repo_path_id,
+                json_group_array(
+                    json_object(
+                        'id', global_tags.id,
+                        'tag_name', global_tags.tag_name,
+                        'color_hex', global_tags.color_hex
+                    )
+                ) AS tags_json
+            FROM tracked_path_tags
+            JOIN global_tags
+                ON global_tags.id = tracked_path_tags.tag_id
+            GROUP BY tracked_path_tags.repo_path_id
+        ),
         selected_branches AS (
             SELECT
                 tracked_paths.id AS path_id,
@@ -551,7 +634,8 @@ pub async fn fetch_workspace_nodes(
             END AS pos_y,
             COALESCE(card_layout.view_mode, 'EXPANDED') AS view_mode,
             COALESCE(card_layout.commit_density, 5) AS commit_density,
-            COALESCE(card_layout.theme_color_hex, '#4F46E5') AS theme_color_hex
+            COALESCE(card_layout.theme_color_hex, '#4F46E5') AS theme_color_hex,
+            COALESCE(repo_tags.tags_json, '[]') AS tags_json
         FROM selected_branches
         LEFT JOIN card_layout
             ON card_layout.repo_path_id = selected_branches.path_id
@@ -559,6 +643,8 @@ pub async fn fetch_workspace_nodes(
             ON branch_layout.branch_id = selected_branches.branch_id
         LEFT JOIN cached_git_commits AS commits
             ON commits.commit_hash = selected_branches.last_commit_hash
+        LEFT JOIN repo_tags
+            ON repo_tags.repo_path_id = selected_branches.path_id
         ORDER BY selected_branches.path_id ASC, selected_branches.branch_name ASC",
     )
     .bind(view_id)
@@ -723,6 +809,329 @@ pub async fn update_repository_alias(
         .execute(pool)
         .await?;
     Ok(())
+}
+
+pub async fn update_repository_favorite(
+    pool: &SqlitePool,
+    path_id: &str,
+    is_favorite: bool,
+) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE tracked_paths SET is_favorite = ? WHERE id = ?;")
+        .bind(if is_favorite { 1_i64 } else { 0_i64 })
+        .bind(path_id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+pub async fn update_repository_group(
+    pool: &SqlitePool,
+    path_id: &str,
+    group_id: Option<&str>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE tracked_paths SET group_id = ? WHERE id = ?;")
+        .bind(group_id)
+        .bind(path_id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+pub async fn create_custom_group(
+    pool: &SqlitePool,
+    group_name: &str,
+    color_hex: Option<&str>,
+) -> Result<CustomGroupRow, sqlx::Error> {
+    let name = group_name.trim();
+    if name.is_empty() {
+        return Err(sqlx::Error::RowNotFound);
+    }
+
+    let group_id = Uuid::new_v4().to_string();
+    let color = color_hex.unwrap_or("#64748B");
+
+    sqlx::query(
+        "INSERT INTO custom_groups (id, group_name, color_hex, created_at)
+         VALUES (?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+         ON CONFLICT(group_name) DO NOTHING;",
+    )
+    .bind(&group_id)
+    .bind(name)
+    .bind(color)
+    .execute(pool)
+    .await?;
+
+    sqlx::query_as::<_, CustomGroupRow>(
+        "SELECT id, group_name, color_hex
+         FROM custom_groups
+         WHERE group_name = ?
+         LIMIT 1;",
+    )
+    .bind(name)
+    .fetch_one(pool)
+    .await
+}
+
+pub async fn update_custom_group(
+    pool: &SqlitePool,
+    id: &str,
+    group_name: &str,
+    color_hex: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE custom_groups SET group_name = ?, color_hex = ? WHERE id = ?;")
+        .bind(group_name.trim())
+        .bind(color_hex)
+        .bind(id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+pub async fn delete_custom_group(pool: &SqlitePool, id: &str) -> Result<(), sqlx::Error> {
+    sqlx::query("DELETE FROM custom_groups WHERE id = ?;")
+        .bind(id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+pub async fn fetch_custom_groups_with_usage(pool: &SqlitePool) -> Result<Vec<GroupSummaryRow>, sqlx::Error> {
+    sqlx::query_as::<_, GroupSummaryRow>(
+        "SELECT
+            custom_groups.id,
+            custom_groups.group_name,
+            custom_groups.color_hex,
+            COUNT(DISTINCT tracked_paths.id) AS repo_count
+         FROM custom_groups
+         LEFT JOIN tracked_paths
+            ON tracked_paths.group_id = custom_groups.id
+           AND tracked_paths.is_active = 1
+           AND tracked_paths.archived_at IS NULL
+         GROUP BY custom_groups.id, custom_groups.group_name, custom_groups.color_hex
+         ORDER BY custom_groups.group_name COLLATE NOCASE ASC;",
+    )
+    .fetch_all(pool)
+    .await
+}
+
+pub async fn fetch_global_tags_with_usage(pool: &SqlitePool) -> Result<Vec<TagFilterSummaryRow>, sqlx::Error> {
+    sqlx::query_as::<_, TagFilterSummaryRow>(
+        "SELECT
+            global_tags.id,
+            global_tags.tag_name,
+            global_tags.color_hex,
+            COUNT(DISTINCT tracked_paths.id) AS repo_count
+         FROM global_tags
+         LEFT JOIN tracked_path_tags
+            ON tracked_path_tags.tag_id = global_tags.id
+         LEFT JOIN tracked_paths
+            ON tracked_paths.id = tracked_path_tags.repo_path_id
+           AND tracked_paths.is_active = 1
+           AND tracked_paths.archived_at IS NULL
+         GROUP BY global_tags.id, global_tags.tag_name, global_tags.color_hex
+         ORDER BY global_tags.tag_name COLLATE NOCASE ASC;",
+    )
+    .fetch_all(pool)
+    .await
+}
+
+pub async fn update_global_tag(
+    pool: &SqlitePool,
+    id: &str,
+    tag_name: &str,
+    color_hex: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE global_tags SET tag_name = ?, color_hex = ? WHERE id = ?;")
+        .bind(tag_name.trim())
+        .bind(color_hex)
+        .bind(id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+pub async fn delete_global_tag(pool: &SqlitePool, id: &str) -> Result<(), sqlx::Error> {
+    sqlx::query("DELETE FROM global_tags WHERE id = ?;")
+        .bind(id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+pub async fn cleanup_dangling_global_tags(pool: &SqlitePool) -> Result<i64, sqlx::Error> {
+    let result = sqlx::query(
+        "DELETE FROM global_tags
+         WHERE id NOT IN (SELECT DISTINCT tag_id FROM tracked_path_tags);",
+    )
+    .execute(pool)
+    .await?;
+
+    Ok(result.rows_affected() as i64)
+}
+
+pub async fn touch_repository_last_accessed(
+    pool: &SqlitePool,
+    path_id: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE tracked_paths SET last_accessed_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ?;")
+        .bind(path_id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+pub async fn attach_repository_tag(
+    pool: &SqlitePool,
+    path_id: &str,
+    tag_name: &str,
+    color_hex: Option<&str>,
+) -> Result<(), sqlx::Error> {
+    let normalized = tag_name.trim();
+    if normalized.is_empty() {
+        return Ok(());
+    }
+
+    let incoming_color = color_hex.unwrap_or("#3B82F6");
+    let insert_id = Uuid::new_v4().to_string();
+
+    sqlx::query(
+        "INSERT INTO global_tags (id, tag_name, color_hex)
+         VALUES (?, ?, ?)
+         ON CONFLICT(tag_name) DO NOTHING;",
+    )
+    .bind(insert_id)
+    .bind(normalized)
+    .bind(incoming_color)
+    .execute(pool)
+    .await?;
+
+    let tag_id: String = sqlx::query_scalar(
+        "SELECT id FROM global_tags WHERE tag_name = ? COLLATE NOCASE LIMIT 1;",
+    )
+    .bind(normalized)
+    .fetch_one(pool)
+    .await?;
+
+    sqlx::query(
+        "INSERT OR IGNORE INTO tracked_path_tags (repo_path_id, tag_id)
+         VALUES (?, ?);",
+    )
+    .bind(path_id)
+    .bind(tag_id)
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
+pub async fn detach_repository_tag(
+    pool: &SqlitePool,
+    path_id: &str,
+    tag_name: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "DELETE FROM tracked_path_tags
+         WHERE repo_path_id = ?
+           AND tag_id IN (
+                SELECT id FROM global_tags WHERE tag_name = ? COLLATE NOCASE
+           );",
+    )
+    .bind(path_id)
+    .bind(tag_name.trim())
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
+pub async fn fetch_repository_tags(
+    pool: &SqlitePool,
+    path_id: &str,
+) -> Result<Vec<RepoTagRow>, sqlx::Error> {
+    let rows = sqlx::query_as::<_, RepoTagRow>(
+        "SELECT global_tags.id, global_tags.tag_name, global_tags.color_hex
+         FROM tracked_path_tags
+         JOIN global_tags
+            ON global_tags.id = tracked_path_tags.tag_id
+         WHERE tracked_path_tags.repo_path_id = ?
+         ORDER BY global_tags.tag_name COLLATE NOCASE ASC;",
+    )
+    .bind(path_id)
+    .fetch_all(pool)
+    .await?;
+
+    Ok(rows)
+}
+
+pub async fn fetch_quick_filter_metadata(
+    pool: &SqlitePool,
+) -> Result<QuickFilterMetadata, sqlx::Error> {
+    let groups = sqlx::query_scalar::<_, String>(
+                "SELECT custom_groups.group_name
+                 FROM custom_groups
+                 JOIN tracked_paths
+                        ON tracked_paths.group_id = custom_groups.id
+                     AND tracked_paths.is_active = 1
+                     AND tracked_paths.archived_at IS NULL
+                 GROUP BY custom_groups.group_name
+                 ORDER BY custom_groups.group_name COLLATE NOCASE ASC;",
+    )
+    .fetch_all(pool)
+    .await?;
+
+    let favorites_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*)
+         FROM tracked_paths
+         WHERE is_active = 1
+           AND archived_at IS NULL
+           AND is_favorite = 1;",
+    )
+    .fetch_one(pool)
+    .await?;
+
+    let tags = sqlx::query_as::<_, TagFilterSummaryRow>(
+        "SELECT
+            global_tags.id,
+            global_tags.tag_name,
+            global_tags.color_hex,
+            COUNT(DISTINCT tracked_path_tags.repo_path_id) AS repo_count
+         FROM global_tags
+         JOIN tracked_path_tags
+            ON tracked_path_tags.tag_id = global_tags.id
+         JOIN tracked_paths
+            ON tracked_paths.id = tracked_path_tags.repo_path_id
+         WHERE tracked_paths.is_active = 1
+           AND tracked_paths.archived_at IS NULL
+         GROUP BY global_tags.id, global_tags.tag_name, global_tags.color_hex
+         ORDER BY global_tags.tag_name COLLATE NOCASE ASC;",
+    )
+    .fetch_all(pool)
+    .await?;
+
+    let dangling_tags = sqlx::query_as::<_, TagFilterSummaryRow>(
+        "SELECT
+            global_tags.id,
+            global_tags.tag_name,
+            global_tags.color_hex,
+            COALESCE(COUNT(DISTINCT CASE WHEN tracked_paths.is_active = 1 AND tracked_paths.archived_at IS NULL THEN tracked_path_tags.repo_path_id END), 0) AS repo_count
+         FROM global_tags
+         LEFT JOIN tracked_path_tags
+            ON tracked_path_tags.tag_id = global_tags.id
+         LEFT JOIN tracked_paths
+            ON tracked_paths.id = tracked_path_tags.repo_path_id
+         GROUP BY global_tags.id, global_tags.tag_name, global_tags.color_hex
+         HAVING repo_count = 0
+         ORDER BY global_tags.tag_name COLLATE NOCASE ASC;",
+    )
+    .fetch_all(pool)
+    .await?;
+
+    Ok(QuickFilterMetadata {
+        groups,
+        favorites_count,
+        tags,
+        dangling_tags,
+    })
 }
 
 pub async fn fetch_canvas_manual_edges(

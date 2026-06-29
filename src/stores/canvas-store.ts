@@ -11,6 +11,7 @@ import {
   applyEdgeChanges,
 } from '@xyflow/react';
 import type { BranchCardNode } from '../features/branch-map/components/branch-card';
+import type { RepoTag } from '../types/git';
 
 export interface CanvasViewRecord {
   id: string;
@@ -39,6 +40,26 @@ export interface WorkspaceNodeRecord {
   view_mode: 'COMPACT' | 'EXPANDED';
   commit_density: number;
   theme_color_hex: string;
+  tags_json?: string | null;
+}
+
+function parseNodeTags(tagsJson: string | null | undefined): RepoTag[] {
+  if (!tagsJson || typeof tagsJson !== 'string') return [];
+
+  try {
+    const parsed = JSON.parse(tagsJson);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((entry): entry is RepoTag => {
+      return Boolean(
+        entry &&
+          typeof entry.id === 'string' &&
+          typeof entry.tag_name === 'string' &&
+          typeof entry.color_hex === 'string'
+      );
+    });
+  } catch {
+    return [];
+  }
 }
 
 export interface CanvasViewScopeState {
@@ -91,12 +112,15 @@ interface CanvasState {
   activeViewId: string | null;
   nodes: BranchCardNode[];
   edges: Edge[];
+  activeTagFilters: string[];
   onNodesChange: OnNodesChange<BranchCardNode>;
   onEdgesChange: OnEdgesChange;
   onConnect: OnConnect;
   onEdgeClick: EdgeMouseHandler;
   setNodes: (nodes: BranchCardNode[]) => void;
   setEdges: (edges: Edge[]) => void;
+  toggleTagFilter: (tagId: string) => void;
+  clearTagFilters: () => void;
   setActiveView: (viewId: string) => Promise<void>;
   createNewView: (name: string) => Promise<void>;
   duplicateView: (sourceId: string, newName: string) => Promise<void>;
@@ -117,6 +141,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   activeViewId: null,
   nodes: [],
   edges: [],
+  activeTagFilters: [],
   
   onNodesChange: (changes) => {
     // Explicitly process structural changes (like position updates from dragging) directly into store state
@@ -179,6 +204,43 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   
   setNodes: (nodes) => set({ nodes }),
   setEdges: (edges) => set({ edges }),
+
+  toggleTagFilter: (tagId) => {
+    const current = get().activeTagFilters;
+    const nextFilters = current.includes(tagId)
+      ? current.filter((id) => id !== tagId)
+      : [...current, tagId];
+
+    set({
+      activeTagFilters: nextFilters,
+      nodes: get().nodes.map((node) => {
+        const nodeTags = node.data.tags ?? [];
+        const matches =
+          nextFilters.length === 0 ||
+          nodeTags.some((tag) => nextFilters.includes(tag.id));
+        return {
+          ...node,
+          data: {
+            ...node.data,
+            isDimmedByTagFilter: !matches,
+          },
+        };
+      }),
+    });
+  },
+
+  clearTagFilters: () => {
+    set({
+      activeTagFilters: [],
+      nodes: get().nodes.map((node) => ({
+        ...node,
+        data: {
+          ...node.data,
+          isDimmedByTagFilter: false,
+        },
+      })),
+    });
+  },
 
   hydrateViewsList: async () => {
     try {
@@ -351,6 +413,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
 
       const dbNodes = await invoke<WorkspaceNodeRecord[]>('get_workspace_nodes', { viewId });
       const currentInMemoryNodes = get().nodes;
+      const activeTagFilters = get().activeTagFilters;
 
       const getNodeRepoPathId = (record: WorkspaceNodeRecord) => record.repo_path_id || record.path_id || record.branch_id || '';
       const normalizeBranchName = (branchName: string) => branchName.replace('refs/heads/', '').trim();
@@ -449,6 +512,10 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
             viewMode: record.view_mode as 'COMPACT' | 'EXPANDED',
             commitDensity: record.commit_density,
             themeColorHex: record.theme_color_hex || '#4f46e5',
+            tags: parseNodeTags(record.tags_json),
+            isDimmedByTagFilter:
+              activeTagFilters.length > 0 &&
+              !parseNodeTags(record.tags_json).some((tag) => activeTagFilters.includes(tag.id)),
           },
         };
       });

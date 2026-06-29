@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Handle, Position, NodeProps, Node, useViewport } from '@xyflow/react';
 import { useCanvasStore } from '../../../stores/canvas-store';
 import { CommitTimeline } from './commit-timeline';
+import type { RepoTag } from '../../../types/git';
 
 export type BranchCardNode = Node<{
   title: string;
@@ -15,6 +16,8 @@ export type BranchCardNode = Node<{
   viewMode: 'COMPACT' | 'EXPANDED';
   commitDensity: number;
   themeColorHex: string;
+  tags?: RepoTag[];
+  isDimmedByTagFilter?: boolean;
 }>;
 
 function useAppThemeMode() {
@@ -89,6 +92,8 @@ export function BranchCard({ data }: NodeProps<BranchCardNode>) {
     fontFamily: 'system-ui, sans-serif',
     position: 'relative',
     transition: 'border-color 0.2s ease, box-shadow 0.2s ease',
+    opacity: data.isDimmedByTagFilter ? 0.35 : 1,
+    filter: data.isDimmedByTagFilter ? 'grayscale(0.8)' : 'none',
   };
 
   const handleStyle: React.CSSProperties = {

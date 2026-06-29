@@ -67,6 +67,43 @@ export interface TrackedPath {
   created_at?: string;
   /** Optional archival status datetime text track if unmounted historical tracking is queried */
   archived_at?: string | null;
+  /** Starred pin state for quick dashboard filtering */
+  is_favorite?: number;
+  /** Foreign key into custom_groups table */
+  group_id?: string | null;
+  /** Optional user-defined logical grouping label */
+  custom_group?: string | null;
+  /** ISO timestamp for recent access ordering */
+  last_accessed_at?: string | null;
+  /** Relational tags resolved through global_tags + tracked_path_tags */
+  tags?: RepoTag[];
+}
+
+export interface RepoTag {
+  id: string;
+  tag_name: string;
+  color_hex: string;
+}
+
+export interface TagFilterSummary extends RepoTag {
+  repo_count: number;
+}
+
+export interface QuickFilterMetadata {
+  groups: string[];
+  favorites_count: number;
+  tags: TagFilterSummary[];
+  dangling_tags: TagFilterSummary[];
+}
+
+export interface CustomGroup {
+  id: string;
+  group_name: string;
+  color_hex: string;
+}
+
+export interface GroupSummary extends CustomGroup {
+  repo_count: number;
 }
 
 /**

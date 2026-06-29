@@ -31,6 +31,11 @@ pub struct WorkspaceDetails {
     pub current_branch: String,
     pub available_branches: Vec<String>,
     pub uncommitted_changes_count: usize,
+    pub is_favorite: i64,
+    pub group_id: Option<String>,
+    pub custom_group: Option<String>,
+    pub last_accessed_at: Option<String>,
+    pub tags_json: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -107,7 +112,7 @@ pub fn execute_git_checkout(absolute_path: &str, branch_name: &str) -> Result<St
 
     // Find the target branch reference locally
     let ref_name = format!("refs/heads/{}", branch_name);
-    let obj = repo
+    let _ = repo
         .revparse_single(&ref_name)
         .map_err(|e| format!("Branch '{}' not found: {}", branch_name, e))?;
 
@@ -212,9 +217,36 @@ pub async fn get_tracked_workspaces(
     state: tauri::State<'_, DbState>,
 ) -> Result<Vec<WorkspaceDetails>, String> {
     let rows = sqlx::query(
-        "SELECT id, display_name, alias_name, absolute_path, repo_origin_type 
-         FROM tracked_paths 
-         WHERE is_active = 1"
+        "SELECT
+            tracked_paths.id,
+            tracked_paths.display_name,
+            tracked_paths.alias_name,
+            tracked_paths.absolute_path,
+            tracked_paths.repo_origin_type,
+            tracked_paths.is_favorite,
+            tracked_paths.group_id,
+            custom_groups.group_name AS custom_group,
+            tracked_paths.last_accessed_at,
+            COALESCE(
+                (
+                    SELECT json_group_array(
+                        json_object(
+                            'id', global_tags.id,
+                            'tag_name', global_tags.tag_name,
+                            'color_hex', global_tags.color_hex
+                        )
+                    )
+                    FROM tracked_path_tags
+                    JOIN global_tags
+                        ON global_tags.id = tracked_path_tags.tag_id
+                    WHERE tracked_path_tags.repo_path_id = tracked_paths.id
+                ),
+                '[]'
+            ) AS tags_json
+         FROM tracked_paths
+            LEFT JOIN custom_groups
+                ON custom_groups.id = tracked_paths.group_id
+         WHERE tracked_paths.is_active = 1"
     )
     .fetch_all(&state.0)
     .await
@@ -228,6 +260,11 @@ pub async fn get_tracked_workspaces(
         let alias_name: Option<String> = row.get("alias_name");
         let absolute_path: String = row.get("absolute_path");
         let repo_origin_type: String = row.get("repo_origin_type");
+        let is_favorite: i64 = row.get("is_favorite");
+        let group_id: Option<String> = row.get("group_id");
+        let custom_group: Option<String> = row.get("custom_group");
+        let last_accessed_at: Option<String> = row.get("last_accessed_at");
+        let tags_json: String = row.get("tags_json");
 
         let mut current_branch = "main".to_string();
         let mut available_branches = vec!["main".to_string()];
@@ -267,6 +304,11 @@ pub async fn get_tracked_workspaces(
             current_branch,
             available_branches,
             uncommitted_changes_count,
+            is_favorite,
+            group_id,
+            custom_group,
+            last_accessed_at,
+            tags_json,
         });
     }
 
@@ -290,6 +332,185 @@ pub async fn set_repository_alias(
         .map_err(|err| format!("Failed to record custom workspace name alteration: {}", err))?;
 
     Ok(())
+}
+
+#[tauri::command]
+pub async fn set_repository_favorite(
+    state: tauri::State<'_, DbState>,
+    path_id: String,
+    is_favorite: bool,
+) -> Result<(), String> {
+    db::update_repository_favorite(&state.0, &path_id, is_favorite)
+        .await
+        .map_err(|err| format!("Failed to persist favorite state: {}", err))?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn set_repository_group(
+    state: tauri::State<'_, DbState>,
+    path_id: String,
+    group_id: Option<String>,
+) -> Result<(), String> {
+    let cleaned = group_id.and_then(|group| {
+        let trimmed = group.trim().to_string();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed)
+        }
+    });
+
+    db::update_repository_group(&state.0, &path_id, cleaned.as_deref())
+        .await
+        .map_err(|err| format!("Failed to persist custom group value: {}", err))?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn create_custom_group(
+    state: tauri::State<'_, DbState>,
+    group_name: String,
+    color_hex: Option<String>,
+) -> Result<db::CustomGroupRow, String> {
+    db::create_custom_group(&state.0, &group_name, color_hex.as_deref())
+        .await
+        .map_err(|err| format!("Failed to create custom group: {}", err))
+}
+
+#[tauri::command]
+pub async fn update_custom_group(
+    state: tauri::State<'_, DbState>,
+    id: String,
+    group_name: String,
+    color_hex: String,
+) -> Result<(), String> {
+    db::update_custom_group(&state.0, &id, &group_name, &color_hex)
+        .await
+        .map_err(|err| format!("Failed to update custom group: {}", err))
+}
+
+#[tauri::command]
+pub async fn delete_custom_group(
+    state: tauri::State<'_, DbState>,
+    id: String,
+) -> Result<(), String> {
+    db::delete_custom_group(&state.0, &id)
+        .await
+        .map_err(|err| format!("Failed to delete custom group: {}", err))
+}
+
+#[tauri::command]
+pub async fn get_custom_groups_with_usage(
+    state: tauri::State<'_, DbState>,
+) -> Result<Vec<db::GroupSummaryRow>, String> {
+    db::fetch_custom_groups_with_usage(&state.0)
+        .await
+        .map_err(|err| format!("Failed to fetch custom groups: {}", err))
+}
+
+#[tauri::command]
+pub async fn get_global_tags_with_usage(
+    state: tauri::State<'_, DbState>,
+) -> Result<Vec<db::TagFilterSummaryRow>, String> {
+    db::fetch_global_tags_with_usage(&state.0)
+        .await
+        .map_err(|err| format!("Failed to fetch global tags: {}", err))
+}
+
+#[tauri::command]
+pub async fn update_global_tag(
+    state: tauri::State<'_, DbState>,
+    id: String,
+    tag_name: String,
+    color_hex: String,
+) -> Result<(), String> {
+    db::update_global_tag(&state.0, &id, &tag_name, &color_hex)
+        .await
+        .map_err(|err| format!("Failed to update global tag: {}", err))
+}
+
+#[tauri::command]
+pub async fn delete_global_tag(
+    state: tauri::State<'_, DbState>,
+    id: String,
+) -> Result<(), String> {
+    db::delete_global_tag(&state.0, &id)
+        .await
+        .map_err(|err| format!("Failed to delete global tag: {}", err))
+}
+
+#[tauri::command]
+pub async fn cleanup_dangling_global_tags(
+    state: tauri::State<'_, DbState>,
+) -> Result<i64, String> {
+    db::cleanup_dangling_global_tags(&state.0)
+        .await
+        .map_err(|err| format!("Failed to clean dangling tags: {}", err))
+}
+
+#[tauri::command]
+pub async fn add_repository_tag(
+    state: tauri::State<'_, DbState>,
+    path_id: String,
+    tag_name: String,
+    color_hex: Option<String>,
+) -> Result<Vec<db::RepoTagRow>, String> {
+    db::attach_repository_tag(&state.0, &path_id, &tag_name, color_hex.as_deref())
+        .await
+        .map_err(|err| format!("Failed to attach repository tag: {}", err))?;
+
+    db::fetch_repository_tags(&state.0, &path_id)
+        .await
+        .map_err(|err| format!("Failed to reload repository tag list: {}", err))
+}
+
+#[tauri::command]
+pub async fn remove_repository_tag(
+    state: tauri::State<'_, DbState>,
+    path_id: String,
+    tag_name: String,
+) -> Result<Vec<db::RepoTagRow>, String> {
+    db::detach_repository_tag(&state.0, &path_id, &tag_name)
+        .await
+        .map_err(|err| format!("Failed to detach repository tag: {}", err))?;
+
+    db::fetch_repository_tags(&state.0, &path_id)
+        .await
+        .map_err(|err| format!("Failed to reload repository tag list: {}", err))
+}
+
+#[tauri::command]
+pub async fn get_repository_tags(
+    state: tauri::State<'_, DbState>,
+    path_id: String,
+) -> Result<Vec<db::RepoTagRow>, String> {
+    db::fetch_repository_tags(&state.0, &path_id)
+        .await
+        .map_err(|err| format!("Failed to fetch repository tag list: {}", err))
+}
+
+#[tauri::command]
+pub async fn touch_repository_last_accessed(
+    state: tauri::State<'_, DbState>,
+    path_id: String,
+) -> Result<(), String> {
+    db::touch_repository_last_accessed(&state.0, &path_id)
+        .await
+        .map_err(|err| format!("Failed to update repository last accessed timestamp: {}", err))?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn get_quick_filter_metadata(
+    state: tauri::State<'_, DbState>,
+) -> Result<db::QuickFilterMetadata, String> {
+    db::fetch_quick_filter_metadata(&state.0)
+        .await
+        .map_err(|err| format!("Failed to fetch quick filter metadata: {}", err))
 }
 
 /// Finds the closest common ancestor (merge base) between two branches

@@ -1,5 +1,7 @@
 import type { CSSProperties } from 'react';
 import { useReactFlow, useViewport } from '@xyflow/react';
+import { useCanvasStore } from '../../../stores/canvas-store';
+import { useWorkspaceStore } from '../../../stores/workspace-store';
 
 type MapToolbarProps = {
   isDark?: boolean;
@@ -9,6 +11,10 @@ type MapToolbarProps = {
 export function MapToolbar({ isDark = false, hidden = false }: MapToolbarProps) {
   const { zoomIn, zoomOut, setViewport, fitView } = useReactFlow();
   const { zoom } = useViewport();
+  const activeTagFilters = useCanvasStore((state) => state.activeTagFilters);
+  const toggleTagFilter = useCanvasStore((state) => state.toggleTagFilter);
+  const clearTagFilters = useCanvasStore((state) => state.clearTagFilters);
+  const uniqueTags = useWorkspaceStore((state) => state.getUniqueTags());
 
   if (hidden) return null;
 
@@ -47,6 +53,7 @@ export function MapToolbar({ isDark = false, hidden = false }: MapToolbarProps) 
         boxShadow: isDark
           ? '0 10px 25px -5px rgba(0, 0, 0, 0.5)'
           : '0 10px 25px -5px rgba(15, 23, 42, 0.12)',
+        maxWidth: '280px',
       }}
     >
       <div
@@ -120,6 +127,85 @@ export function MapToolbar({ isDark = false, hidden = false }: MapToolbarProps) 
       >
         ⤢
       </button>
+
+      {uniqueTags.length > 0 && (
+        <>
+          <div
+            style={{
+              width: '24px',
+              height: '1px',
+              backgroundColor: isDark ? '#262626' : '#e5e7eb',
+              margin: '2px 0',
+            }}
+          />
+
+          <div
+            style={{
+              fontSize: '10px',
+              fontWeight: 700,
+              color: isDark ? '#d4d4d8' : '#374151',
+              textTransform: 'uppercase',
+              letterSpacing: '0.04em',
+              marginTop: '4px',
+            }}
+          >
+            Tag Filters
+          </div>
+
+          <div
+            style={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              gap: '4px',
+              justifyContent: 'center',
+              marginTop: '4px',
+            }}
+          >
+            {uniqueTags.map((tag) => {
+              const isActive = activeTagFilters.includes(tag.id);
+              return (
+                <button
+                  key={tag.id}
+                  onClick={() => toggleTagFilter(tag.id)}
+                  title={tag.tag_name}
+                  style={{
+                    border: `1px solid ${isActive ? tag.color_hex : (isDark ? '#3f3f46' : '#d1d5db')}`,
+                    backgroundColor: isActive ? `${tag.color_hex}22` : 'transparent',
+                    color: isDark ? '#e5e7eb' : '#111827',
+                    borderRadius: '999px',
+                    padding: '2px 8px',
+                    fontSize: '10px',
+                    cursor: 'pointer',
+                    maxWidth: '110px',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {tag.tag_name}
+                </button>
+              );
+            })}
+          </div>
+
+          {activeTagFilters.length > 0 && (
+            <button
+              style={{
+                marginTop: '6px',
+                border: 'none',
+                background: 'transparent',
+                color: isDark ? '#a1a1aa' : '#6b7280',
+                fontSize: '10px',
+                cursor: 'pointer',
+                textDecoration: 'underline',
+              }}
+              onClick={() => clearTagFilters()}
+            >
+              Clear tag filters
+            </button>
+          )}
+        </>
+      )}
     </div>
   );
 }
