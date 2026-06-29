@@ -5,7 +5,7 @@ import { useNotifications } from '../components/notifications/notification-provi
 export interface NotificationPayload {
   title?: string;
   message?: string;
-  variant?: 'info' | 'success' | 'error';
+  variant?: 'info' | 'success' | 'warning' | 'error';
   duration?: number;
 }
 

@@ -24,6 +24,14 @@ const variantStyles = (variant: NotificationVariant, isDark: boolean): CSSProper
     };
   }
 
+  if (variant === 'warning') {
+    return {
+      backgroundColor: isDark ? 'rgba(245, 158, 11, 0.22)' : 'rgba(245, 158, 11, 0.14)',
+      borderColor: isDark ? 'rgba(245, 158, 11, 0.48)' : 'rgba(217, 119, 6, 0.3)',
+      color: isDark ? '#fde68a' : '#92400e',
+    };
+  }
+
   return {
     backgroundColor: isDark ? 'rgba(59, 130, 246, 0.16)' : 'rgba(59, 130, 246, 0.12)',
     borderColor: isDark ? 'rgba(59, 130, 246, 0.45)' : 'rgba(59, 130, 246, 0.28)',

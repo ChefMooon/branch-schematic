@@ -321,20 +321,20 @@
 
 .repo-responsive-grid {
   display: grid;
-  grid-template-columns: 1fr;
+  grid-template-columns: minmax(0, 1fr);
   gap: 1.5rem;
 }
 
 /* Grid Breakpoint Scaling Hooks */
 @media (min-width: 720px) {
   .repo-responsive-grid {
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
 @media (min-width: 1120px) {
   .repo-responsive-grid {
-    grid-template-columns: repeat(3, 1fr); /* Bounded strict max boundary cap at 3 across */
+    grid-template-columns: repeat(3, minmax(0, 1fr)); /* Bounded strict max boundary cap at 3 across */
   }
 }
 
@@ -402,11 +402,14 @@
   border: 1px solid var(--card-border);
   border-radius: 12px;
   padding: 1.25rem;
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
   gap: 1.25rem;
   position: relative;
+  width: 100%;
+  min-width: 0;
   transition: box-shadow 0.2s ease, border-color 0.2s ease;
   box-shadow: 0 1px 3px rgba(0,0,0,0.05);
 }
@@ -424,6 +427,7 @@
   display: flex;
   align-items: flex-start;
   gap: 0.75rem;
+  min-width: 0;
 }
 
 .repo-icon-wrapper {
@@ -444,12 +448,14 @@
   flex-direction: column;
   gap: 0.2rem;
   flex-grow: 1;
+  min-width: 0;
 }
 
 .repo-title-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  min-width: 0;
 }
 
 .repo-title-row h3 {
@@ -773,23 +779,54 @@
   transform: scale(1.04);
 }
 
-.repo-title-edit-row,
 .repo-title-inline-row,
 .repo-title-actions {
   display: flex;
   align-items: center;
 }
 
-.repo-title-edit-row {
-  gap: 4px;
+.repo-title-shell {
+  position: relative;
+  min-width: 0;
 }
 
 .repo-title-inline-row {
   gap: 6px;
+  min-width: 0;
+}
+
+.repo-title-inline-row h3 {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.alias-edit-popover {
+  position: absolute;
+  top: calc(100% + 0.45rem);
+  left: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 260px;
+  max-width: min(100%, 340px);
+  padding: 0.45rem;
+  border: 1px solid var(--card-border);
+  border-radius: 8px;
+  background: var(--card-bg);
+  box-shadow: 0 12px 24px -16px rgba(15, 23, 42, 0.55);
+}
+
+.alias-edit-popover-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
 }
 
 .repo-title-actions {
   gap: 0.5rem;
+  flex-shrink: 0;
 }
 
 .repo-title-alias {
@@ -805,6 +842,8 @@
   border: 1px solid var(--tag-item-active-border);
   background: var(--input-bg);
   color: var(--input-text);
+  min-width: 0;
+  width: 100%;
 }
 
 .alias-input-field:focus {
@@ -917,6 +956,33 @@
   display: flex;
   flex-wrap: wrap;
   gap: 0.4rem;
+}
+
+/* Alias title layout overrides: keep original name beneath alias and above absolute path. */
+.repo-title-shell {
+  flex: 1;
+}
+
+.repo-title-inline-row {
+  width: 100%;
+}
+
+.repo-title-inline-row h3 {
+  flex: 1;
+  min-width: 0;
+}
+
+.repo-title-alias {
+  display: block;
+  margin-top: 0.2rem;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  font-style: italic;
+  line-height: 1.2;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .repo-tag-pill {

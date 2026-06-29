@@ -16,6 +16,7 @@ import { useWorkspaceStore } from "../../../stores/workspace-store";
 import { RepoCardHeader } from "./RepositoryCard/RepoCardHeader";
 import { RepoCardTags } from "./RepositoryCard/RepoCardTags";
 import { TagSelectionModal } from "../../../components/Modal/TagSelectionModal";
+import { useNotifications } from "../../../components/notifications/notification-provider";
 
 interface RepositoryCardProps {
   repo: TrackedPath;
@@ -32,6 +33,7 @@ export function RepositoryCard({ repo, onRefresh, onOpenManagement }: Repository
   const getCustomGroups = useWorkspaceStore((state) => state.getCustomGroups);
   const createCustomGroup = useWorkspaceStore((state) => state.createCustomGroup);
   const tagDirectory = useWorkspaceStore((state) => state.tagDirectory);
+  const { addToast } = useNotifications();
   
   // ALIAS LAYOUT STATE TRACKERS
   const [isEditingAlias, setIsEditingAlias] = useState(false);
@@ -95,14 +97,56 @@ export function RepositoryCard({ repo, onRefresh, onOpenManagement }: Repository
     }
   };
 
-  const saveAlias = async () => {
+  const saveAlias = async (nextAliasInput: string = aliasInput) => {
+    const cleanInput = nextAliasInput.trim();
+    const currentAlias = repo.alias_name ?? "";
+    const matchesRepoName = cleanInput === repo.display_name;
+
+    if (cleanInput === currentAlias) {
+      setIsEditingAlias(false);
+      return;
+    }
+
+    if (matchesRepoName && currentAlias === "") {
+      setIsEditingAlias(false);
+      addToast({
+        variant: "warning",
+        title: "Alias Matches Repository Name",
+        message: "No custom alias was saved because it matches the repository name.",
+      });
+      return;
+    }
+
+    const aliasToPersist = cleanInput === "" || matchesRepoName ? "" : cleanInput;
+    const isClearingAlias = aliasToPersist === "";
+
     setLoadingAction("alias");
     try {
       // Matches the new Rust signature: set_repository_alias(path_id, alias)
-      await invoke("set_repository_alias", { pathId: repo.id, alias: aliasInput });
+      await invoke("set_repository_alias", { pathId: repo.id, alias: aliasToPersist });
       setIsEditingAlias(false);
+      if (matchesRepoName) {
+        addToast({
+          variant: "warning",
+          title: "Alias Matches Repository Name",
+          message: "Custom alias was removed and the repository name is now used.",
+        });
+      } else {
+        addToast({
+          variant: "success",
+          title: isClearingAlias ? "Alias Cleared" : "Alias Updated",
+          message: isClearingAlias
+            ? `${repo.display_name} now uses the default repository name.`
+            : `Alias saved as \"${aliasToPersist}\".`,
+        });
+      }
     } catch (err) {
       console.error("Failed to safely commit alias name alteration:", err);
+      addToast({
+        variant: "error",
+        title: "Alias Update Failed",
+        message: `Could not update alias for ${repo.display_name}.`,
+      });
     } finally {
       setLoadingAction(null);
       onRefresh(); // Instantly triggers store re-hydration with the new persistent alias assignment
@@ -149,6 +193,9 @@ export function RepositoryCard({ repo, onRefresh, onOpenManagement }: Repository
           onAliasInputChange={setAliasInput}
           onStartEditing={handleStartEditing}
           onSaveAlias={saveAlias}
+          onResetAlias={() => {
+            void saveAlias("");
+          }}
           onStopEditing={() => setIsEditingAlias(false)}
           onUntrack={handleUntrackProject}
           onFavoriteToggle={() => {

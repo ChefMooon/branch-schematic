@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 import { useNotificationListener, type NotificationPayload } from '../../hooks/use-notification-listener';
 import { Toast } from './toast';
 
-export type NotificationVariant = 'info' | 'success' | 'error';
+export type NotificationVariant = 'info' | 'success' | 'warning' | 'error';
 
 export interface NotificationToast extends NotificationPayload {
   id: number;

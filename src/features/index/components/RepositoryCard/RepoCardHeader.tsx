@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { Check, PencilSimple, Star, Trash, X } from '@phosphor-icons/react';
+import { PencilSimple, Star, Trash } from '@phosphor-icons/react';
 import type { GroupSummary, TrackedPath } from '../../../../types/git';
+import { AliasEditPopover } from '../../../repositories/components/RepositoryCard/AliasEditPopover';
 
 type RepoCardHeaderProps = {
   repo: TrackedPath;
@@ -12,6 +13,7 @@ type RepoCardHeaderProps = {
   onAliasInputChange: (value: string) => void;
   onStartEditing: () => void;
   onSaveAlias: () => Promise<void>;
+  onResetAlias: () => void;
   onStopEditing: () => void;
   onUntrack: (event: React.MouseEvent) => void;
   onFavoriteToggle: () => void;
@@ -30,6 +32,7 @@ export function RepoCardHeader({
   onAliasInputChange,
   onStartEditing,
   onSaveAlias,
+  onResetAlias,
   onStopEditing,
   onUntrack,
   onFavoriteToggle,
@@ -39,6 +42,7 @@ export function RepoCardHeader({
 }: RepoCardHeaderProps) {
   const isFavorite = (repo.is_favorite ?? 0) === 1;
   const groupLabel = repo.custom_group ?? 'No Group';
+  const primaryTitle = repo.alias_name || repo.display_name;
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -66,35 +70,26 @@ export function RepoCardHeader({
   return (
     <div className="repo-meta-details">
       <div className="repo-title-row">
-        {isEditingAlias ? (
-          <div className="repo-title-edit-row">
-            <input
-              type="text"
-              className="alias-input-field"
-              value={aliasInput}
-              onChange={(event) => onAliasInputChange(event.target.value)}
-              placeholder="Revert to folder name..."
-              autoFocus
-              disabled={isAnyLoading}
-            />
-            <button type="button" className="repo-card-action-button is-confirm" onClick={() => void onSaveAlias()}>
-              <Check size={16} />
-            </button>
-            <button type="button" className="repo-card-action-button is-cancel" onClick={onStopEditing}>
-              <X size={16} />
-            </button>
-          </div>
-        ) : (
+        <div className="repo-title-shell">
           <div className="repo-title-inline-row" title="Double click to add alias context">
-            <h3 onDoubleClick={onStartEditing}>{repo.alias_name || repo.display_name}</h3>
-            {repo.alias_name && (
-              <span className="repo-title-alias">({repo.display_name})</span>
-            )}
+            <h3 onDoubleClick={onStartEditing} title={primaryTitle}>{primaryTitle}</h3>
             <button type="button" className="repo-card-action-button is-muted" onClick={onStartEditing}>
               <PencilSimple size={14} />
             </button>
           </div>
-        )}
+          <AliasEditPopover
+            isOpen={isEditingAlias}
+            value={aliasInput}
+            isBusy={isAnyLoading}
+            hasAlias={Boolean(repo.alias_name)}
+            onChange={onAliasInputChange}
+            onSave={() => {
+              void onSaveAlias();
+            }}
+            onCancel={onStopEditing}
+            onReset={onResetAlias}
+          />
+        </div>
 
         <div className="repo-title-actions">
           <button
@@ -120,6 +115,10 @@ export function RepoCardHeader({
           </button>
         </div>
       </div>
+
+      {repo.alias_name ? (
+        <span className="repo-title-alias" title={repo.display_name}>{repo.display_name}</span>
+      ) : null}
 
       <span className="repo-absolute-path" title={repo.absolute_path}>
         {repo.absolute_path}
