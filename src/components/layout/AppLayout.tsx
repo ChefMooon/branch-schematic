@@ -13,6 +13,7 @@ import { WindowControls } from '../titlebar/WindowControls';
 import { AppSidebar } from './AppSidebar';
 import { RepositoryDropdown } from '../../features/repository/components/RepositoryDropdown';
 import { AddLocalRepositoryModal } from '../../features/repository/components/AddLocalRepositoryModal';
+import { BulkImportLocalRepositoryModal } from '../../features/repository/components/BulkImportLocalRepositryModal';
 import { CreateRepositoryModal } from '../../features/repository/components/CreateRepositoryModal';
 import { CreateViewModal } from '../../features/canvas-views/components/CreateViewModal';
 import { SettingsManagementModal } from '../../features/management/components/SettingsManagementModal';
@@ -89,6 +90,17 @@ export function AppLayout({ children }: AppLayoutProps) {
   useEffect(() => {
     setIsSidebarOpen(false);
   }, [location.pathname]);
+
+  useEffect(() => {
+    const handleOpenBulkImportModal = () => {
+      setActiveRepositoryModal('bulk-import');
+    };
+
+    window.addEventListener('open-bulk-import-modal', handleOpenBulkImportModal);
+    return () => {
+      window.removeEventListener('open-bulk-import-modal', handleOpenBulkImportModal);
+    };
+  }, []);
 
   const pageTitle: Record<string, string> = {
     '/': 'Home',
@@ -218,6 +230,11 @@ export function AppLayout({ children }: AppLayoutProps) {
 
       <AddLocalRepositoryModal
         isOpen={activeRepositoryModal === 'add-local'}
+        onClose={() => setActiveRepositoryModal(null)}
+      />
+
+      <BulkImportLocalRepositoryModal
+        isOpen={activeRepositoryModal === 'bulk-import'}
         onClose={() => setActiveRepositoryModal(null)}
       />
 

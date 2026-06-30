@@ -74,6 +74,16 @@ export function AddLocalRepositoryModal({ isOpen, onClose }: AddLocalRepositoryM
           <button type="button" onClick={onClose} style={secondaryButtonStyle}>
             Cancel
           </button>
+          <button
+            type="button"
+            onClick={() => {
+              onClose();
+              window.dispatchEvent(new CustomEvent('open-bulk-import-modal'));
+            }}
+            style={secondaryButtonStyle}
+          >
+            Bulk import
+          </button>
           <button type="button" onClick={handleSubmit} disabled={isSubmitting} style={primaryButtonStyle}>
             {isSubmitting ? 'Adding…' : 'Add Repository'}
           </button>

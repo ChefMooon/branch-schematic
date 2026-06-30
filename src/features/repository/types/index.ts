@@ -10,4 +10,13 @@ export interface RepositoryCreateOptions {
   license?: string | null;
 }
 
-export type RepositoryModalAction = 'create' | 'add-local' | 'clone' | 'create-view';
+export interface DiscoveredRepository {
+  id?: string;
+  display_name: string;
+  absolute_path: string;
+  is_git_repository: boolean;
+  depth?: number;
+  selected?: boolean;
+}
+
+export type RepositoryModalAction = 'create' | 'add-local' | 'bulk-import' | 'clone' | 'create-view';

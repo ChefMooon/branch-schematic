@@ -310,6 +310,73 @@ pub async fn initialize_new_repository(
     Ok(())
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct DiscoveredRepo {
+    pub id: Option<String>,
+    pub display_name: String,
+    pub absolute_path: String,
+    pub is_git_repository: bool,
+    pub depth: Option<u32>,
+    pub selected: Option<bool>,
+}
+
+#[tauri::command]
+pub fn crawl_repositories_command(root_path: String, max_depth: u32) -> Result<Vec<DiscoveredRepo>, String> {
+    let root = Path::new(&root_path);
+    if !root.exists() || !root.is_dir() {
+        return Err("The selected folder does not exist or is not a directory.".to_string());
+    }
+
+    let mut discovered = Vec::new();
+    let mut stack = vec![(root.to_path_buf(), 0u32)];
+
+    while let Some((current_path, depth)) = stack.pop() {
+        if depth > max_depth {
+            continue;
+        }
+
+        if let Ok(repo) = Repository::open(&current_path) {
+            let display_name = current_path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("Unknown Repository")
+                .to_string();
+
+            discovered.push(DiscoveredRepo {
+                id: None,
+                display_name: display_name.clone(),
+                absolute_path: current_path.to_string_lossy().to_string(),
+                is_git_repository: true,
+                depth: Some(depth),
+                selected: Some(true),
+            });
+
+            if depth >= max_depth {
+                continue;
+            }
+        }
+
+        if let Ok(entries) = fs::read_dir(&current_path) {
+            let mut child_paths = entries
+                .filter_map(|entry| entry.ok())
+                .map(|entry| entry.path())
+                .filter(|path| path.is_dir())
+                .collect::<Vec<_>>();
+            child_paths.sort();
+            for child_path in child_paths {
+                stack.push((child_path, depth + 1));
+            }
+        }
+
+        if let Ok(repo) = Repository::open(&current_path) {
+            let _ = repo;
+        }
+    }
+
+    discovered.sort_by(|left, right| left.absolute_path.cmp(&right.absolute_path));
+    Ok(discovered)
+}
+
 #[tauri::command]
 pub async fn add_new_tracked_path(
     state: tauri::State<'_, DbState>,
