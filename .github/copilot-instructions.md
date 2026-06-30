@@ -6,6 +6,7 @@ This is a desktop application providing a visual representation of Git repositor
 - **Feature-Driven Architecture:** All files related to a specific feature must reside in `src/features/feature-name/`. Inside, use subfolders like `/components`, `/hooks`, `/stores`, and `/types`.
 - **Atomic Components:** Keep components small, modular, and single-purpose. If a component exceeds ~150 lines or handles multiple UI responsibilities, break it down into smaller subcomponents in the same feature folder or suggest a new file.
 - **Common Components:** Shared, generic UI elements (buttons, inputs, modals) must go into `src/components/component-name/`.
+- **Theme & Styling:** Use the root theme variables defined in `src/App.css` for colors, spacing, and typography. Avoid hardcoding styles; instead, use CSS variables or theme classes.
 
 ## React 19 Guidelines
 - **Modern State/Effects:** Prefer the new React 19 APIs (like `use` for promises/context where applicable, or modern Action hooks like `useActionState` / `useTransition` for form submissions and async mutations) over legacy patterns.
