@@ -23,6 +23,9 @@ export function CommitTimeline({ branchId, densityLimit, lodTier, isDark, accent
   const [commits, setCommits] = useState<CommitRecord[]>([]);
   const [loading, setLoading] = useState(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const isBird = lodTier === 'BIRD';
+  const shellHeight = maxHeight ?? '180px';
+  const placeholderCount = Math.max(3, Math.min(6, Math.ceil((densityLimit === -1 ? 100 : densityLimit) / 6)));
 
   useEffect(() => {
     async function loadCommits() {
@@ -41,16 +44,44 @@ export function CommitTimeline({ branchId, densityLimit, lodTier, isDark, accent
     loadCommits();
   }, [branchId, densityLimit]);
 
-  if (lodTier === 'BIRD') return null;
+  const shellStyle: React.CSSProperties = {
+    minHeight: shellHeight,
+    maxHeight: shellHeight,
+    overflowY: isBird ? 'hidden' : 'auto',
+    paddingRight: '4px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: isBird ? '6px' : '8px',
+    position: 'relative',
+    justifyContent: isBird ? 'center' : 'flex-start',
+    opacity: isBird ? 0.35 : 1,
+  };
 
   if (loading) {
-    return <div style={{ fontSize: 11, padding: 8, color: '#71717a' }}>Streaming timeline records...</div>;
+    return (
+      <div style={{ ...shellStyle, alignItems: 'center', justifyContent: 'center', borderRadius: '6px', border: `1px dashed ${isDark ? '#2d2d30' : '#e5e7eb'}`, backgroundColor: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)' }}>
+        <div style={{ fontSize: 11, padding: 8, color: '#71717a' }}>Streaming timeline records...</div>
+      </div>
+    );
+  }
+
+  if (isBird) {
+    return (
+      <div style={{ ...shellStyle, borderRadius: '6px', border: `1px dashed ${isDark ? '#2d2d30' : '#e5e7eb'}`, backgroundColor: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)', padding: '8px 8px' }}>
+        {Array.from({ length: placeholderCount }).map((_, index) => (
+          <div key={`bird-${index}`} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <div style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: accentColor, opacity: 0.2 + index * 0.12 }} />
+            <div style={{ flex: 1, height: 4, borderRadius: 2, backgroundColor: isDark ? '#262626' : '#e5e7eb', opacity: 0.2 + index * 0.12 }} />
+          </div>
+        ))}
+      </div>
+    );
   }
 
   // Mid-Range LOD Tier: Render structural high-density abstract rows (dots/lines)
   if (lodTier === 'MID') {
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', padding: '8px 4px' }}>
+      <div style={shellStyle}>
         {commits.map((c) => (
           <div key={c.commit_hash} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <div style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: accentColor }} />
@@ -65,15 +96,7 @@ export function CommitTimeline({ branchId, densityLimit, lodTier, isDark, accent
   return (
     <div 
       ref={scrollContainerRef}
-      style={{
-        maxHeight: maxHeight ?? '180px',
-        overflowY: 'auto',
-        paddingRight: '4px',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '8px',
-        position: 'relative'
-      }}
+      style={shellStyle}
     >
       {commits.map((commit) => {
         const shortHash = commit.commit_hash.substring(0, 7);

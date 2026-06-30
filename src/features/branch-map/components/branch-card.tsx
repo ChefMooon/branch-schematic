@@ -132,7 +132,7 @@ export function BranchCard({ data }: NodeProps<BranchCardNode>) {
       />
 
       {/* Card Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: !isCompact && lodTier !== 'BIRD' ? 8 : 0 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: !isCompact ? 8 : 0, gap: '12px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, flex: 1 }}>
           <div style={{ width: '4px', height: '16px', backgroundColor: accentColor, borderRadius: '2px', flexShrink: 0 }} />
           <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600, color: isDark ? '#f9fafb' : '#111827', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -140,24 +140,22 @@ export function BranchCard({ data }: NodeProps<BranchCardNode>) {
           </h3>
         </div>
 
-        {lodTier !== 'BIRD' && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
-            <span style={{ fontSize: '11px', fontWeight: 500, padding: '2px 6px', borderRadius: '4px', ...badgeStyles[data.status || 'Draft'] }}>
-              {data.status}
-            </span>
-            <button 
-              onClick={() => setMenuOpen(!menuOpen)}
-              style={{ background: 'none', border: 'none', color: '#71717a', cursor: 'pointer', fontSize: '14px', padding: '2px' }}
-            >
-              ⋮
-            </button>
-          </div>
-        )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0, minWidth: 72, justifyContent: 'flex-end', minHeight: 24, opacity: lodTier === 'BIRD' ? 0 : 1, visibility: lodTier === 'BIRD' ? 'hidden' : 'visible', pointerEvents: lodTier === 'BIRD' ? 'none' : 'auto' }}>
+          <span style={{ fontSize: '11px', fontWeight: 500, padding: '2px 6px', borderRadius: '4px', ...badgeStyles[data.status || 'Draft'] }}>
+            {data.status}
+          </span>
+          <button 
+            onClick={() => setMenuOpen(!menuOpen)}
+            style={{ background: 'none', border: 'none', color: '#71717a', cursor: 'pointer', fontSize: '14px', padding: '2px' }}
+          >
+            ⋮
+          </button>
+        </div>
       </div>
 
       {/* Inline Configuration Dropdown Menu */}
-      {menuOpen && lodTier !== 'BIRD' && (
-        <div style={{ position: 'absolute', top: '40px', right: '12px', backgroundColor: isDark ? '#1c1c1f' : '#ffffff', border: `1px solid ${isDark ? '#2d2d30' : '#e5e7eb'}`, borderRadius: '6px', padding: '8px', zIndex: 10, display: 'flex', flexDirection: 'column', gap: '6px', boxShadow: '0 4px 12px rgba(0,0,0,0.2)' }}>
+      {menuOpen && (
+        <div style={{ position: 'absolute', top: '40px', right: '12px', backgroundColor: isDark ? '#1c1c1f' : '#ffffff', border: `1px solid ${isDark ? '#2d2d30' : '#e5e7eb'}`, borderRadius: '6px', padding: '8px', zIndex: 10, display: 'flex', flexDirection: 'column', gap: '6px', boxShadow: '0 4px 12px rgba(0,0,0,0.2)', opacity: lodTier === 'BIRD' ? 0 : 1, visibility: lodTier === 'BIRD' ? 'hidden' : 'visible', pointerEvents: lodTier === 'BIRD' ? 'none' : 'auto' }}>
           <div style={{ fontSize: '10px', fontWeight: 'bold', color: '#a1a1aa' }}>VIEW MODE</div>
           <div style={{ display: 'flex', gap: '4px' }}>
             <button 
@@ -220,9 +218,9 @@ export function BranchCard({ data }: NodeProps<BranchCardNode>) {
       )}
 
       {/* Internal Timeline Render Area */}
-      {!isCompact && lodTier !== 'BIRD' && (
-        <div style={{ marginTop: '10px', borderTop: `1px solid ${isDark ? '#262626' : '#e5e7eb'}`, paddingTop: '8px' }}>
-          <div style={{ display: 'flex', gap: '12px', marginBottom: '8px', fontSize: '11px', color: isDark ? '#a1a1aa' : '#4b5563' }}>
+      {!isCompact && (
+        <div style={{ marginTop: '10px', borderTop: `1px solid ${isDark ? '#262626' : '#e5e7eb'}`, paddingTop: '8px', minHeight: timelineMaxHeight, display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <div style={{ display: 'flex', gap: '12px', fontSize: '11px', color: isDark ? '#a1a1aa' : '#4b5563', opacity: lodTier === 'BIRD' ? 0.35 : 1 }}>
             <div>▲ <strong>{data.aheadCount ?? 0}</strong> ahead</div>
             <div>▼ <strong>{data.behindCount ?? 0}</strong> behind</div>
           </div>
