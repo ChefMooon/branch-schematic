@@ -4,11 +4,8 @@ import {
   GitBranchIcon,
   DatabaseIcon,
   GearSixIcon,
-  FolderOpenIcon,
-  CaretRightIcon,
   WrenchIcon,
 } from '@phosphor-icons/react';
-import { useWorkspaceStore } from '../../stores/workspace-store';
 import './AppSidebar.css';
 
 interface NavItem {
@@ -20,8 +17,6 @@ interface NavItem {
 interface AppSidebarProps {
   isOpen: boolean;
   onClose: () => void;
-  isProjectHubOpen: boolean;
-  onToggleProjectHub: () => void;
   onOpenManagementModal?: () => void;
 }
 
@@ -31,11 +26,9 @@ const NAV_ITEMS: NavItem[] = [
   { label: 'DatabaseIcon',       icon: <DatabaseIcon size={16} color="currentColor" style={{ display: 'block' }} />,   to: '/database' },
 ];
 
-export function AppSidebar({ isOpen, onClose, isProjectHubOpen, onToggleProjectHub, onOpenManagementModal }: AppSidebarProps) {
+export function AppSidebar({ isOpen, onClose, onOpenManagementModal }: AppSidebarProps) {
   const navigate = useNavigate();
   const location = useLocation();
-  const { repos, activeRepoId, selectRepo } = useWorkspaceStore();
-  const activeRepo = repos.find((r) => r.id === activeRepoId) ?? null;
 
   return (
     <>
@@ -52,50 +45,6 @@ export function AppSidebar({ isOpen, onClose, isProjectHubOpen, onToggleProjectH
         </div>
 
         <hr style={styles.divider} />
-
-        {/* Project Hub toggle */}
-        <button
-          onClick={onToggleProjectHub}
-          className={`sidebar-nav-item ${isProjectHubOpen ? 'is-active' : ''}`}
-          title="Project Hub"
-        >
-          <FolderOpenIcon size={16} weight={isProjectHubOpen ? 'fill' : 'regular'} color="currentColor" style={{ display: 'block' }} />
-          <span style={styles.navLabel}>Project Hub</span>
-          <CaretRightIcon
-            size={12}
-            color="currentColor"
-            style={{
-              marginLeft: 'auto',
-              opacity: 0.4,
-              transform: isProjectHubOpen ? 'rotate(90deg)' : 'none',
-              transition: 'transform 0.2s ease',
-              display: 'block',
-            }}
-          />
-        </button>
-
-        {/* Repo list */}
-        {isProjectHubOpen && repos.length > 0 && (
-          <div style={styles.repoList}>
-            {repos.map((repo) => {
-              const selected = activeRepo?.id === repo.id;
-              return (
-                <button
-                  key={repo.id}
-                  onClick={() => {
-                    selectRepo(repo);
-                    onClose();
-                  }}
-                  className={`sidebar-repo-item ${selected ? 'is-selected' : ''}`}
-                  title={repo.absolute_path}
-                >
-                  <span style={styles.repoIcon}>📁</span>
-                  <span style={styles.repoName}>{repo.display_name}</span>
-                </button>
-              );
-            })}
-          </div>
-        )}
 
         <hr style={styles.divider} />
 
@@ -196,24 +145,6 @@ const styles: Record<string, React.CSSProperties> = {
   navLabel: {
     fontSize: '13px',
     fontWeight: 500,
-  },
-  repoList: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '1px',
-    paddingLeft: '24px',
-    marginBottom: '4px',
-  },
-  repoIcon: {
-    fontSize: '13px',
-    lineHeight: 1,
-  },
-  repoName: {
-    fontSize: '12px',
-    fontWeight: 500,
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
-    whiteSpace: 'nowrap',
   },
   bottomArea: {
     marginTop: 'auto',

@@ -51,7 +51,6 @@ function useLayoutThemeMode() {
 
 export function AppLayout({ children }: AppLayoutProps) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [isProjectHubOpen, setIsProjectHubOpen] = useState(false);
   const [isRepositoryDropdownOpen, setIsRepositoryDropdownOpen] = useState(false);
   const [activeRepositoryModal, setActiveRepositoryModal] = useState<RepositoryModalAction | null>(null);
   const [isManagementModalOpen, setIsManagementModalOpen] = useState(false);
@@ -61,8 +60,6 @@ export function AppLayout({ children }: AppLayoutProps) {
   const themeMode = useLayoutThemeMode();
   const { isMac } = useOS();
   const {
-    repos,
-    activeRepoId,
     hydrateFromBackend,
     quickFilterMetadata,
     hydrateQuickFilterMetadata,
@@ -75,7 +72,6 @@ export function AppLayout({ children }: AppLayoutProps) {
     cleanupDanglingTags,
   } = useWorkspaceStore();
   const createNewView = useCanvasStore((state) => state.createNewView);
-  const activeRepo = repos.find((r) => r.id === activeRepoId) ?? null;
 
   const HEADER_H = 48;
 
@@ -140,8 +136,6 @@ export function AppLayout({ children }: AppLayoutProps) {
       <AppSidebar
         isOpen={isSidebarOpen}
         onClose={() => setIsSidebarOpen(false)}
-        isProjectHubOpen={isProjectHubOpen}
-        onToggleProjectHub={() => setIsProjectHubOpen((v) => !v)}
         onOpenManagementModal={() => setIsManagementModalOpen(true)}
       />
 
@@ -173,14 +167,8 @@ export function AppLayout({ children }: AppLayoutProps) {
         {/* Dedicated drag surface so buttons remain clickable */}
         <div data-tauri-drag-region style={styles.dragRegion} />
 
-        {/* Right: actions + repo badge */}
+        {/* Right: actions */}
         <div style={styles.headerRight}>
-          {activeRepo && (
-            <span style={styles.repoBadge} title={activeRepo.absolute_path}>
-              📁 {activeRepo.display_name}
-            </span>
-          )}
-
           <button
             style={styles.iconBtn}
             title="Notifications"
@@ -331,19 +319,6 @@ const styles: Record<string, AppStyle> = {
     display: 'flex',
     alignItems: 'center',
     gap: '6px',
-  },
-
-  repoBadge: {
-    fontSize: '12px',
-    color: 'var(--app-muted)',
-    backgroundColor: 'var(--app-surface-muted)',
-    border: '1px solid var(--app-border)',
-    borderRadius: '20px',
-    padding: '3px 10px',
-    whiteSpace: 'nowrap',
-    maxWidth: '160px',
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
   },
 
   iconBtn: {
