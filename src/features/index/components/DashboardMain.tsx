@@ -134,7 +134,7 @@ export function DashboardMain() {
 
           <div className="dashboard-select-wrapper dashboard-control-shell" onPointerDown={(event) => handleSelectShellPointerDown(event, provenanceSelectRef)}>
             <select ref={provenanceSelectRef} className="dashboard-select" value={filterType} onChange={(e) => setFilterType(e.target.value as any)}>
-              <option value="ALL">All Provenance Types</option>
+              <option value="ALL">All</option>
               <option value="OWNED">Owned / Created</option>
               <option value="FORK">Forks Ecosystem</option>
               <option value="LOCAL_ONLY">Local-Only Frameworks</option>
