@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useNotificationListener, type NotificationPayload } from '../../hooks/useNotificationListener';
-import { Toast } from './Toast';
+import { Toast } from './toast';
 
 export type NotificationVariant = 'info' | 'success' | 'warning' | 'error';
 

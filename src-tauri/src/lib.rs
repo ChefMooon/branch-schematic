@@ -361,6 +361,7 @@ pub fn run() {
             git::scan_local_repository,
             git::execute_git_checkout,
             git::create_git_branch,
+            git::initialize_new_repository,
             git::add_new_tracked_path,
             git::untrack_repository,
             git::get_tracked_workspaces,

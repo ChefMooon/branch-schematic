@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useLocation } from '@tanstack/react-router';
+import { useLocation, useNavigate } from '@tanstack/react-router';
 import {
   BellIcon,
   PlusIcon,
@@ -11,6 +11,12 @@ import { useWorkspaceStore } from '../../stores/workspace-store';
 import { useOS } from '../../hooks/useOS';
 import { WindowControls } from '../titlebar/WindowControls';
 import { AppSidebar } from './AppSidebar';
+import { RepositoryDropdown } from '../../features/repository/components/RepositoryDropdown';
+import { AddLocalRepositoryModal } from '../../features/repository/components/AddLocalRepositoryModal';
+import { CreateRepositoryModal } from '../../features/repository/components/CreateRepositoryModal';
+import { CreateViewModal } from '../../features/canvas-views/components/CreateViewModal';
+import { useCanvasStore } from '../../stores/canvas-store';
+import type { RepositoryModalAction } from '../../features/repository/types';
 
 interface AppLayoutProps {
   children: React.ReactNode;
@@ -44,11 +50,15 @@ function useLayoutThemeMode() {
 export function AppLayout({ children }: AppLayoutProps) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isProjectHubOpen, setIsProjectHubOpen] = useState(false);
+  const [isRepositoryDropdownOpen, setIsRepositoryDropdownOpen] = useState(false);
+  const [activeRepositoryModal, setActiveRepositoryModal] = useState<RepositoryModalAction | null>(null);
 
   const location = useLocation();
+  const navigate = useNavigate();
   const themeMode = useLayoutThemeMode();
   const { isMac } = useOS();
   const { repos, activeRepoId, hydrateFromBackend } = useWorkspaceStore();
+  const createNewView = useCanvasStore((state) => state.createNewView);
   const activeRepo = repos.find((r) => r.id === activeRepoId) ?? null;
 
   const HEADER_H = 48;
@@ -68,6 +78,23 @@ export function AppLayout({ children }: AppLayoutProps) {
     '/settings': 'Settings',
   };
   const currentTitle = pageTitle[location.pathname] ?? 'Branch Schematic Canvas';
+
+  const handleCreateView = async (options: {
+    name: string;
+    isFavorite: boolean;
+    viewportDefaults: {
+      zoomLevel: number;
+      panX: number;
+      panY: number;
+    };
+    scope?: {
+      visiblePathIds?: string[];
+      branchVisibility?: Record<string, string[]>;
+    };
+  }) => {
+    await createNewView(options);
+    await navigate({ to: '/branch-map' });
+  };
 
   return (
     <div style={{ ...styles.root, '--header-h': `${HEADER_H}px` } as React.CSSProperties}>
@@ -124,13 +151,27 @@ export function AppLayout({ children }: AppLayoutProps) {
             <BellIcon size={18} color="var(--app-text)" style={{ display: 'block' }} />
           </button>
 
-          <button
-            style={styles.iconBtn}
-            title="New"
-            onClick={() => {/* TODO */}}
-          >
-            <PlusIcon size={18} color="var(--app-text)" style={{ display: 'block' }} />
-          </button>
+          <div style={{ position: 'relative' }}>
+            <button
+              style={styles.iconBtn}
+              title="New"
+              onClick={() => setIsRepositoryDropdownOpen((value) => !value)}
+            >
+              <PlusIcon size={18} color="var(--app-text)" style={{ display: 'block' }} />
+            </button>
+            <RepositoryDropdown
+              isOpen={isRepositoryDropdownOpen}
+              onClose={() => setIsRepositoryDropdownOpen(false)}
+              onSelect={(action) => {
+                setIsRepositoryDropdownOpen(false);
+                if (action === 'create-view') {
+                  setActiveRepositoryModal('create-view');
+                  return;
+                }
+                setActiveRepositoryModal(action);
+              }}
+            />
+          </div>
 
           <button
             style={styles.iconBtn}
@@ -148,6 +189,22 @@ export function AppLayout({ children }: AppLayoutProps) {
           {!isMac && <WindowControls />}
         </div>
       </header>
+
+      <AddLocalRepositoryModal
+        isOpen={activeRepositoryModal === 'add-local'}
+        onClose={() => setActiveRepositoryModal(null)}
+      />
+
+      <CreateRepositoryModal
+        isOpen={activeRepositoryModal === 'create'}
+        onClose={() => setActiveRepositoryModal(null)}
+      />
+
+      <CreateViewModal
+        isOpen={activeRepositoryModal === 'create-view'}
+        onClose={() => setActiveRepositoryModal(null)}
+        onCreate={handleCreateView}
+      />
 
       {/* ── MAIN CONTENT ── */}
       <main style={{ ...styles.main, top: HEADER_H }}>

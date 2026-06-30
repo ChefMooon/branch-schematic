@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::{fs, path::Path};
 use uuid::Uuid;
 use git2::{BranchType, Repository};
 use serde::{Deserialize, Serialize};
@@ -149,6 +149,165 @@ pub fn create_git_branch(absolute_path: &str, new_branch_name: &str) -> Result<S
         .map_err(|e| format!("Failed creating branch '{}': {}", new_branch_name, e))?;
 
     Ok(format!("Successfully created branch '{}'", new_branch_name))
+}
+
+fn sanitize_repository_name(name: &str) -> String {
+    let trimmed = name.trim();
+    if trimmed.is_empty() {
+        return "Repository".to_string();
+    }
+
+    trimmed
+        .chars()
+        .map(|char| match char {
+            '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|' => '-',
+            c if c.is_whitespace() => '-',
+            c => c,
+        })
+        .collect::<String>()
+        .trim_matches('-')
+        .to_string()
+}
+
+fn resolve_repository_target_path(parent_path: &Path, repo_name: &str, create_in_subfolder: bool) -> Result<std::path::PathBuf, String> {
+    let cleaned_name = sanitize_repository_name(repo_name);
+    if create_in_subfolder {
+        let target_dir = parent_path.join(cleaned_name);
+        Ok(target_dir)
+    } else {
+        Ok(parent_path.to_path_buf())
+    }
+}
+
+fn initialize_repository_structure(path: &Path, include_readme: bool, repo_name: &str, repo_description: &str, gitignore_template: &str, license_template: &str) -> Result<(), String> {
+    if path.exists() && path.is_file() {
+        return Err(format!("'{}' is a file, not a directory.", path.display()));
+    }
+
+    if !path.exists() {
+        fs::create_dir_all(path)
+            .map_err(|error| format!("Failed to create repository directory '{}': {}", path.display(), error))?;
+    }
+
+    let is_existing_repo = Repository::open(path).is_ok();
+    if !is_existing_repo {
+        Repository::init(path)
+            .map_err(|error| format!("Failed to initialize Git repository at '{}': {}", path.display(), error))?;
+    }
+
+    if include_readme {
+        let readme_path = path.join("README.md");
+        if !readme_path.exists() {
+            let repo_label = if repo_name.trim().is_empty() {
+                "Repository"
+            } else {
+                repo_name.trim()
+            };
+            let description_text = if repo_description.trim().is_empty() {
+                String::new()
+            } else {
+                format!("\n\n{}", repo_description.trim())
+            };
+            let content = format!("# {}{}\n", repo_label, description_text);
+            fs::write(&readme_path, content)
+                .map_err(|error| format!("Failed to write README at '{}': {}", readme_path.display(), error))?;
+        }
+    }
+
+    let gitignore_path = path.join(".gitignore");
+    if !gitignore_path.exists() {
+        let default_gitignore = match gitignore_template {
+            "node" => "node_modules/\ndist/\n.env\n",
+            "rust" => "target/\nCargo.lock\n",
+            _ => "*.log\n",
+        };
+        fs::write(&gitignore_path, default_gitignore)
+            .map_err(|error| format!("Failed to write .gitignore at '{}': {}", gitignore_path.display(), error))?;
+    }
+
+    let gitattributes_path = path.join(".gitattributes");
+    if !gitattributes_path.exists() {
+        let default_gitattributes = "# Auto detect text files and perform LF normalization\n* text=auto\n";
+        fs::write(&gitattributes_path, default_gitattributes)
+            .map_err(|error| format!("Failed to write .gitattributes at '{}': {}", gitattributes_path.display(), error))?;
+    }
+
+    let license_path = path.join("LICENSE");
+    if !license_path.exists() {
+        let default_license = match license_template {
+            "mit" => "MIT License\n\nCopyright (c) 2026\n",
+            "apache" => "Apache License 2.0\n\nCopyright (c) 2026\n",
+            _ => "Copyright (c) 2026\n",
+        };
+        fs::write(&license_path, default_license)
+            .map_err(|error| format!("Failed to write LICENSE at '{}': {}", license_path.display(), error))?;
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn initialize_new_repository(
+    state: tauri::State<'_, DbState>,
+    name: String,
+    absolute_path: String,
+    initialize_with_readme: bool,
+    description: String,
+    create_in_subfolder: bool,
+    gitignore_template: String,
+    license_template: String,
+) -> Result<(), String> {
+    let parent_path = Path::new(&absolute_path);
+    let trimmed_name = name.trim();
+    let display_name = if trimmed_name.is_empty() {
+        parent_path
+            .file_name()
+            .and_then(|os_str| os_str.to_str())
+            .unwrap_or("New Repository")
+            .to_string()
+    } else {
+        trimmed_name.to_string()
+    };
+
+    let target_path = resolve_repository_target_path(parent_path, &display_name, create_in_subfolder)?;
+
+    initialize_repository_structure(
+        &target_path,
+        initialize_with_readme,
+        &display_name,
+        &description,
+        &gitignore_template,
+        &license_template,
+    )?;
+
+    let repo = Repository::open(&target_path)
+        .map_err(|error| format!("The repository path was not created successfully: {}", error))?;
+
+    let mut remote_url: Option<String> = None;
+    let mut repo_origin_type = "LOCAL_ONLY";
+
+    if let Ok(remote) = repo.find_remote("origin") {
+        if let Some(url) = remote.url() {
+            remote_url = Some(url.to_string());
+            repo_origin_type = "OWNED";
+        }
+    }
+
+    let id = Uuid::new_v4().to_string();
+
+    db::insert_tracked_path(
+        &state.0,
+        &id,
+        &display_name,
+        &target_path.to_string_lossy(),
+        remote_url.as_deref(),
+        repo_origin_type,
+    )
+    .await
+    .map_err(|error| format!("Database indexing loop failure: {}", error))?;
+
+    println!("Repository '{}' initialized and committed to SQLite catalog cache successfully.", display_name);
+    Ok(())
 }
 
 #[tauri::command]
@@ -602,6 +761,30 @@ mod tests {
             &[],
         )
         .unwrap();
+    }
+
+    #[test]
+    fn test_resolve_repository_target_path_uses_subfolder_when_enabled() {
+        let parent = std::path::Path::new("repos");
+        let target = resolve_repository_target_path(parent, "My Repo", true).unwrap();
+
+        assert_eq!(target, parent.join("My-Repo"));
+    }
+
+    #[test]
+    fn test_resolve_repository_target_path_uses_parent_when_disabled() {
+        let parent = std::path::Path::new("repos");
+        let target = resolve_repository_target_path(parent, "My Repo", false).unwrap();
+
+        assert_eq!(target, parent.to_path_buf());
+    }
+
+    #[test]
+    fn test_resolve_repository_target_path_replaces_spaces_with_hyphens() {
+        let parent = std::path::Path::new("repos");
+        let target = resolve_repository_target_path(parent, "My New Repo", true).unwrap();
+
+        assert_eq!(target, parent.join("My-New-Repo"));
     }
 
     #[test]
