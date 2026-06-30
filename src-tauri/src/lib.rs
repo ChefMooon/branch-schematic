@@ -373,6 +373,7 @@ pub fn run() {
             git::update_custom_group,
             git::delete_custom_group,
             git::get_custom_groups_with_usage,
+            git::create_global_tag,
             git::add_repository_tag,
             git::remove_repository_tag,
             git::get_repository_tags,

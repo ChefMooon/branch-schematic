@@ -601,7 +601,26 @@ pub async fn create_custom_group(
     group_name: String,
     color_hex: Option<String>,
 ) -> Result<db::CustomGroupRow, String> {
-    db::create_custom_group(&state.0, &group_name, color_hex.as_deref())
+    let trimmed_name = group_name.trim().to_string();
+    if trimmed_name.is_empty() {
+        return Err("Group name cannot be empty.".to_string());
+    }
+
+    let tag_conflict = db::tag_name_exists(&state.0, &trimmed_name, None)
+        .await
+        .map_err(|err| format!("Failed to validate tag name: {}", err))?;
+    if tag_conflict {
+        return Err("A tag with this name already exists. Tags and groups must have unique names.".to_string());
+    }
+
+    let group_conflict = db::group_name_exists(&state.0, &trimmed_name, None)
+        .await
+        .map_err(|err| format!("Failed to validate group name: {}", err))?;
+    if group_conflict {
+        return Err("A group with this name already exists.".to_string());
+    }
+
+    db::create_custom_group(&state.0, &trimmed_name, color_hex.as_deref())
         .await
         .map_err(|err| format!("Failed to create custom group: {}", err))
 }
@@ -613,7 +632,26 @@ pub async fn update_custom_group(
     group_name: String,
     color_hex: String,
 ) -> Result<(), String> {
-    db::update_custom_group(&state.0, &id, &group_name, &color_hex)
+    let trimmed_name = group_name.trim().to_string();
+    if trimmed_name.is_empty() {
+        return Err("Group name cannot be empty.".to_string());
+    }
+
+    let tag_conflict = db::tag_name_exists(&state.0, &trimmed_name, None)
+        .await
+        .map_err(|err| format!("Failed to validate tag name: {}", err))?;
+    if tag_conflict {
+        return Err("A tag with this name already exists. Tags and groups must have unique names.".to_string());
+    }
+
+    let group_conflict = db::group_name_exists(&state.0, &trimmed_name, Some(&id))
+        .await
+        .map_err(|err| format!("Failed to validate group name: {}", err))?;
+    if group_conflict {
+        return Err("A group with this name already exists.".to_string());
+    }
+
+    db::update_custom_group(&state.0, &id, &trimmed_name, &color_hex)
         .await
         .map_err(|err| format!("Failed to update custom group: {}", err))
 }
@@ -638,6 +676,36 @@ pub async fn get_custom_groups_with_usage(
 }
 
 #[tauri::command]
+pub async fn create_global_tag(
+    state: tauri::State<'_, DbState>,
+    tag_name: String,
+    color_hex: Option<String>,
+) -> Result<db::RepoTagRow, String> {
+    let trimmed_name = tag_name.trim().to_string();
+    if trimmed_name.is_empty() {
+        return Err("Tag name cannot be empty.".to_string());
+    }
+
+    let tag_conflict = db::tag_name_exists(&state.0, &trimmed_name, None)
+        .await
+        .map_err(|err| format!("Failed to validate tag name: {}", err))?;
+    if tag_conflict {
+        return Err("A tag with this name already exists.".to_string());
+    }
+
+    let group_conflict = db::group_name_exists(&state.0, &trimmed_name, None)
+        .await
+        .map_err(|err| format!("Failed to validate group name: {}", err))?;
+    if group_conflict {
+        return Err("A group with this name already exists. Tags and groups must have unique names.".to_string());
+    }
+
+    db::create_global_tag(&state.0, &trimmed_name, color_hex.as_deref())
+        .await
+        .map_err(|err| format!("Failed to create global tag: {}", err))
+}
+
+#[tauri::command]
 pub async fn get_global_tags_with_usage(
     state: tauri::State<'_, DbState>,
 ) -> Result<Vec<db::TagFilterSummaryRow>, String> {
@@ -653,7 +721,26 @@ pub async fn update_global_tag(
     tag_name: String,
     color_hex: String,
 ) -> Result<(), String> {
-    db::update_global_tag(&state.0, &id, &tag_name, &color_hex)
+    let trimmed_name = tag_name.trim().to_string();
+    if trimmed_name.is_empty() {
+        return Err("Tag name cannot be empty.".to_string());
+    }
+
+    let tag_conflict = db::tag_name_exists(&state.0, &trimmed_name, Some(&id))
+        .await
+        .map_err(|err| format!("Failed to validate tag name: {}", err))?;
+    if tag_conflict {
+        return Err("A tag with this name already exists.".to_string());
+    }
+
+    let group_conflict = db::group_name_exists(&state.0, &trimmed_name, None)
+        .await
+        .map_err(|err| format!("Failed to validate group name: {}", err))?;
+    if group_conflict {
+        return Err("A group with this name already exists. Tags and groups must have unique names.".to_string());
+    }
+
+    db::update_global_tag(&state.0, &id, &trimmed_name, &color_hex)
         .await
         .map_err(|err| format!("Failed to update global tag: {}", err))
 }

@@ -65,6 +65,8 @@ export function AppLayout({ children }: AppLayoutProps) {
     hydrateQuickFilterMetadata,
     groupDirectory,
     tagDirectory,
+    createCustomGroup,
+    createGlobalTag,
     updateCustomGroup,
     deleteCustomGroup,
     updateGlobalTag,
@@ -243,6 +245,8 @@ export function AppLayout({ children }: AppLayoutProps) {
         tags={tagDirectory}
         danglingTagNames={quickFilterMetadata?.dangling_tags.map((tag) => tag.tag_name) ?? []}
         onClose={() => setIsManagementModalOpen(false)}
+        onCreateGroup={createCustomGroup}
+        onCreateTag={createGlobalTag}
         onUpdateGroup={updateCustomGroup}
         onDeleteGroup={deleteCustomGroup}
         onUpdateTag={updateGlobalTag}

@@ -834,6 +834,93 @@ pub async fn update_repository_group(
     Ok(())
 }
 
+pub async fn tag_name_exists(pool: &SqlitePool, tag_name: &str, exclude_id: Option<&str>) -> Result<bool, sqlx::Error> {
+    let normalized = tag_name.trim();
+    if normalized.is_empty() {
+        return Ok(false);
+    }
+
+    if let Some(exclude_id) = exclude_id {
+        let exists: Option<i64> = sqlx::query_scalar(
+            "SELECT 1 FROM global_tags WHERE tag_name = ? COLLATE NOCASE AND id != ? LIMIT 1;",
+        )
+        .bind(normalized)
+        .bind(exclude_id)
+        .fetch_optional(pool)
+        .await?;
+        Ok(exists.is_some())
+    } else {
+        let exists: Option<i64> = sqlx::query_scalar(
+            "SELECT 1 FROM global_tags WHERE tag_name = ? COLLATE NOCASE LIMIT 1;",
+        )
+        .bind(normalized)
+        .fetch_optional(pool)
+        .await?;
+        Ok(exists.is_some())
+    }
+}
+
+pub async fn group_name_exists(pool: &SqlitePool, group_name: &str, exclude_id: Option<&str>) -> Result<bool, sqlx::Error> {
+    let normalized = group_name.trim();
+    if normalized.is_empty() {
+        return Ok(false);
+    }
+
+    if let Some(exclude_id) = exclude_id {
+        let exists: Option<i64> = sqlx::query_scalar(
+            "SELECT 1 FROM custom_groups WHERE group_name = ? COLLATE NOCASE AND id != ? LIMIT 1;",
+        )
+        .bind(normalized)
+        .bind(exclude_id)
+        .fetch_optional(pool)
+        .await?;
+        Ok(exists.is_some())
+    } else {
+        let exists: Option<i64> = sqlx::query_scalar(
+            "SELECT 1 FROM custom_groups WHERE group_name = ? COLLATE NOCASE LIMIT 1;",
+        )
+        .bind(normalized)
+        .fetch_optional(pool)
+        .await?;
+        Ok(exists.is_some())
+    }
+}
+
+pub async fn create_global_tag(
+    pool: &SqlitePool,
+    tag_name: &str,
+    color_hex: Option<&str>,
+) -> Result<RepoTagRow, sqlx::Error> {
+    let normalized = tag_name.trim();
+    if normalized.is_empty() {
+        return Err(sqlx::Error::RowNotFound);
+    }
+
+    let tag_id = Uuid::new_v4().to_string();
+    let color = color_hex.unwrap_or("#3B82F6");
+
+    sqlx::query(
+        "INSERT INTO global_tags (id, tag_name, color_hex)
+         VALUES (?, ?, ?)
+         ON CONFLICT(tag_name) DO NOTHING;",
+    )
+    .bind(&tag_id)
+    .bind(normalized)
+    .bind(color)
+    .execute(pool)
+    .await?;
+
+    sqlx::query_as::<_, RepoTagRow>(
+        "SELECT id, tag_name, color_hex
+         FROM global_tags
+         WHERE tag_name = ? COLLATE NOCASE
+         LIMIT 1;",
+    )
+    .bind(normalized)
+    .fetch_one(pool)
+    .await
+}
+
 pub async fn create_custom_group(
     pool: &SqlitePool,
     group_name: &str,

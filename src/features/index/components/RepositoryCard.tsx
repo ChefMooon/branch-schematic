@@ -167,9 +167,18 @@ export function RepositoryCard({ repo, onRefresh, onOpenManagement }: Repository
   const handleCreateGroup = async () => {
     const name = window.prompt("Enter a new group name:");
     if (!name || !name.trim()) return;
-    const createdId = await createCustomGroup(name.trim());
-    if (createdId) {
-      await setRepositoryGroup(repo.id, createdId);
+
+    try {
+      const createdId = await createCustomGroup(name.trim());
+      if (createdId) {
+        await setRepositoryGroup(repo.id, createdId);
+      }
+    } catch (error) {
+      addToast({
+        variant: "error",
+        title: "Group creation failed",
+        message: error instanceof Error ? error.message : "The group could not be created.",
+      });
     }
   };
 

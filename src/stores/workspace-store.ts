@@ -51,6 +51,7 @@ interface WorkspaceState {
   removeTag: (repoId: string, tagName: string) => Promise<void>;
   touchLastAccessed: (repoId: string) => Promise<void>;
   createCustomGroup: (groupName: string, colorHex?: string) => Promise<string | null>;
+  createGlobalTag: (tagName: string, colorHex?: string) => Promise<string | null>;
   updateCustomGroup: (id: string, groupName: string, colorHex: string) => Promise<void>;
   deleteCustomGroup: (id: string) => Promise<void>;
   updateGlobalTag: (id: string, tagName: string, colorHex: string) => Promise<void>;
@@ -257,15 +258,17 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   },
 
   createCustomGroup: async (groupName, colorHex) => {
-    try {
-      const created = await invoke<CustomGroup>('create_custom_group', { groupName, colorHex });
-      await get().hydrateManagementDirectory();
-      await get().hydrateQuickFilterMetadata();
-      return created.id;
-    } catch (error) {
-      console.error('Failed to create custom group:', error);
-      return null;
-    }
+    const created = await invoke<CustomGroup>('create_custom_group', { groupName, colorHex });
+    await get().hydrateManagementDirectory();
+    await get().hydrateQuickFilterMetadata();
+    return created.id;
+  },
+
+  createGlobalTag: async (tagName, colorHex) => {
+    const created = await invoke<RepoTag>('create_global_tag', { tagName, colorHex });
+    await get().hydrateManagementDirectory();
+    await get().hydrateQuickFilterMetadata();
+    return created.id;
   },
 
   updateCustomGroup: async (id, groupName, colorHex) => {
@@ -274,6 +277,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       await get().hydrateFromBackend();
     } catch (error) {
       console.error('Failed to update custom group:', error);
+      throw error;
     }
   },
 
@@ -283,6 +287,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       await get().hydrateFromBackend();
     } catch (error) {
       console.error('Failed to delete custom group:', error);
+      throw error;
     }
   },
 
@@ -292,6 +297,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       await get().hydrateFromBackend();
     } catch (error) {
       console.error('Failed to update global tag:', error);
+      throw error;
     }
   },
 
@@ -301,6 +307,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       await get().hydrateFromBackend();
     } catch (error) {
       console.error('Failed to delete global tag:', error);
+      throw error;
     }
   },
 
@@ -311,7 +318,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       return removed;
     } catch (error) {
       console.error('Failed to cleanup dangling tags:', error);
-      return 0;
+      throw error;
     }
   },
 

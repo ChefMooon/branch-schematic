@@ -1149,6 +1149,10 @@
   z-index: 40;
 }
 
+.management-modal-overlay {
+  background: transparent;
+}
+
 .app-modal {
   width: min(560px, 94vw);
   background: var(--modal-bg);
@@ -1287,6 +1291,40 @@
   display: flex;
   flex-direction: column;
   gap: 0.45rem;
+}
+
+.management-create-row {
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 0.45rem;
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) auto auto;
+  gap: 0.45rem;
+  align-items: center;
+}
+
+.management-create-row input[type='text'] {
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  padding: 0.42rem 0.55rem;
+}
+
+.management-create-row input[type='color'] {
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  width: 36px;
+  height: 30px;
+  padding: 0;
+}
+
+.management-helper-text {
+  margin: -0.1rem 0 0;
+  font-size: 0.78rem;
+  color: #64748b;
+}
+
+.management-helper-text.error {
+  color: #b91c1c;
 }
 
 .management-row {
