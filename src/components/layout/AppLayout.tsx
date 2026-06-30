@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, isValidElement, cloneElement, type ReactElement } from 'react';
 import { useLocation, useNavigate } from '@tanstack/react-router';
 import {
   BellIcon,
@@ -15,6 +15,7 @@ import { RepositoryDropdown } from '../../features/repository/components/Reposit
 import { AddLocalRepositoryModal } from '../../features/repository/components/AddLocalRepositoryModal';
 import { CreateRepositoryModal } from '../../features/repository/components/CreateRepositoryModal';
 import { CreateViewModal } from '../../features/canvas-views/components/CreateViewModal';
+import { SettingsManagementModal } from '../../features/management/components/SettingsManagementModal';
 import { useCanvasStore } from '../../stores/canvas-store';
 import type { RepositoryModalAction } from '../../features/repository/types';
 
@@ -52,12 +53,26 @@ export function AppLayout({ children }: AppLayoutProps) {
   const [isProjectHubOpen, setIsProjectHubOpen] = useState(false);
   const [isRepositoryDropdownOpen, setIsRepositoryDropdownOpen] = useState(false);
   const [activeRepositoryModal, setActiveRepositoryModal] = useState<RepositoryModalAction | null>(null);
+  const [isManagementModalOpen, setIsManagementModalOpen] = useState(false);
 
   const location = useLocation();
   const navigate = useNavigate();
   const themeMode = useLayoutThemeMode();
   const { isMac } = useOS();
-  const { repos, activeRepoId, hydrateFromBackend } = useWorkspaceStore();
+  const {
+    repos,
+    activeRepoId,
+    hydrateFromBackend,
+    quickFilterMetadata,
+    hydrateQuickFilterMetadata,
+    groupDirectory,
+    tagDirectory,
+    updateCustomGroup,
+    deleteCustomGroup,
+    updateGlobalTag,
+    deleteGlobalTag,
+    cleanupDanglingTags,
+  } = useWorkspaceStore();
   const createNewView = useCanvasStore((state) => state.createNewView);
   const activeRepo = repos.find((r) => r.id === activeRepoId) ?? null;
 
@@ -66,6 +81,10 @@ export function AppLayout({ children }: AppLayoutProps) {
   useEffect(() => {
     void hydrateFromBackend();
   }, [hydrateFromBackend]);
+
+  useEffect(() => {
+    void hydrateQuickFilterMetadata();
+  }, [hydrateQuickFilterMetadata]);
 
   useEffect(() => {
     setIsSidebarOpen(false);
@@ -96,6 +115,12 @@ export function AppLayout({ children }: AppLayoutProps) {
     await navigate({ to: '/branch-map' });
   };
 
+  const childrenWithProps = isValidElement(children)
+    ? cloneElement(children as ReactElement<{ onOpenManagementModal?: () => void }>, {
+        onOpenManagementModal: () => setIsManagementModalOpen(true),
+      })
+    : children;
+
   return (
     <div style={{ ...styles.root, '--header-h': `${HEADER_H}px` } as React.CSSProperties}>
 
@@ -105,6 +130,7 @@ export function AppLayout({ children }: AppLayoutProps) {
         onClose={() => setIsSidebarOpen(false)}
         isProjectHubOpen={isProjectHubOpen}
         onToggleProjectHub={() => setIsProjectHubOpen((v) => !v)}
+        onOpenManagementModal={() => setIsManagementModalOpen(true)}
       />
 
       {/* ── TOPBAR (FULL WIDTH) ── */}
@@ -206,9 +232,22 @@ export function AppLayout({ children }: AppLayoutProps) {
         onCreate={handleCreateView}
       />
 
+      <SettingsManagementModal
+        isOpen={isManagementModalOpen}
+        groups={groupDirectory}
+        tags={tagDirectory}
+        danglingTagNames={quickFilterMetadata?.dangling_tags.map((tag) => tag.tag_name) ?? []}
+        onClose={() => setIsManagementModalOpen(false)}
+        onUpdateGroup={updateCustomGroup}
+        onDeleteGroup={deleteCustomGroup}
+        onUpdateTag={updateGlobalTag}
+        onDeleteTag={deleteGlobalTag}
+        onCleanupDanglingTags={cleanupDanglingTags}
+      />
+
       {/* ── MAIN CONTENT ── */}
       <main style={{ ...styles.main, top: HEADER_H }}>
-        {children}
+        {childrenWithProps}
       </main>
     </div>
   );

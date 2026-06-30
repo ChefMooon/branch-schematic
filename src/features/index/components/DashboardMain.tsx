@@ -3,17 +3,19 @@ import { MagnifyingGlass, CaretDown } from "@phosphor-icons/react";
 import { RepositoryCard } from "./RepositoryCard";
 import { WorkspaceQuickFilters } from "./WorkspaceQuickFilters";
 import { useWorkspaceStore } from "../../../stores/workspace-store";
-import { SettingsManagementModal } from "../../management/components/SettingsManagementModal";
 import "./Dashboard.css";
 
-export function DashboardMain() {
+type DashboardMainProps = {
+  onOpenManagementModal?: () => void;
+};
+
+export function DashboardMain({ onOpenManagementModal }: DashboardMainProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [filterType, setFilterType] = useState<"ALL" | "OWNED" | "FORK" | "LOCAL_ONLY">("ALL");
   const [sortBy, setSortBy] = useState<"LAST_VIEWED" | "ALPHABETICAL" | "PENDING_CHANGES">("LAST_VIEWED");
   const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
   const [selectedGroup, setSelectedGroup] = useState<string | null>(null);
   const [favoritesOnly, setFavoritesOnly] = useState(false);
-  const [isManagementOpen, setIsManagementOpen] = useState(false);
   const provenanceSelectRef = useRef<HTMLSelectElement>(null);
   const sortSelectRef = useRef<HTMLSelectElement>(null);
   const {
@@ -22,12 +24,6 @@ export function DashboardMain() {
     quickFilterMetadata,
     hydrateQuickFilterMetadata,
     groupDirectory,
-    tagDirectory,
-    updateCustomGroup,
-    deleteCustomGroup,
-    updateGlobalTag,
-    deleteGlobalTag,
-    cleanupDanglingTags,
   } = useWorkspaceStore();
 
   useEffect(() => {
@@ -90,11 +86,7 @@ export function DashboardMain() {
   return (
     <div className="dashboard-container">
       <header className="dashboard-header-actions">
-        <div className="action-buttons-group">
-          <button className="btn-secondary" onClick={() => setIsManagementOpen(true)}>
-            Manage Tags/Groups
-          </button>
-        </div>
+        <div className="action-buttons-group" />
 
         <div className="filter-controls-group">
           <div className="search-input-wrapper dashboard-control-shell">
@@ -155,25 +147,12 @@ export function DashboardMain() {
                 key={repo.id}
                 repo={repo}
                 onRefresh={fetchRepositoriesData}
-                onOpenManagement={() => setIsManagementOpen(true)}
+                onOpenManagement={() => onOpenManagementModal?.()}
               />
             ))}
           </div>
         )}
       </section>
-
-      <SettingsManagementModal
-        isOpen={isManagementOpen}
-        groups={groupDirectory}
-        tags={tagDirectory}
-        danglingTagNames={quickFilterMetadata?.dangling_tags.map((tag) => tag.tag_name) ?? []}
-        onClose={() => setIsManagementOpen(false)}
-        onUpdateGroup={updateCustomGroup}
-        onDeleteGroup={deleteCustomGroup}
-        onUpdateTag={updateGlobalTag}
-        onDeleteTag={deleteGlobalTag}
-        onCleanupDanglingTags={cleanupDanglingTags}
-      />
     </div>
   );
 }

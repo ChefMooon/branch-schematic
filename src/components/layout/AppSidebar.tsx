@@ -6,6 +6,7 @@ import {
   GearSixIcon,
   FolderOpenIcon,
   CaretRightIcon,
+  WrenchIcon,
 } from '@phosphor-icons/react';
 import { useWorkspaceStore } from '../../stores/workspace-store';
 import './AppSidebar.css';
@@ -21,6 +22,7 @@ interface AppSidebarProps {
   onClose: () => void;
   isProjectHubOpen: boolean;
   onToggleProjectHub: () => void;
+  onOpenManagementModal?: () => void;
 }
 
 const NAV_ITEMS: NavItem[] = [
@@ -29,7 +31,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: 'DatabaseIcon',       icon: <DatabaseIcon size={16} color="currentColor" style={{ display: 'block' }} />,   to: '/database' },
 ];
 
-export function AppSidebar({ isOpen, onClose, isProjectHubOpen, onToggleProjectHub }: AppSidebarProps) {
+export function AppSidebar({ isOpen, onClose, isProjectHubOpen, onToggleProjectHub, onOpenManagementModal }: AppSidebarProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const { repos, activeRepoId, selectRepo } = useWorkspaceStore();
@@ -118,9 +120,19 @@ export function AppSidebar({ isOpen, onClose, isProjectHubOpen, onToggleProjectH
           })}
         </nav>
 
-        {/* Bottom: Settings */}
         <div style={styles.bottomArea}>
           <hr style={styles.divider} />
+          <button
+            onClick={() => {
+              onOpenManagementModal?.();
+              onClose();
+            }}
+            className="sidebar-nav-item"
+            title="Manage Tags/Groups"
+          >
+            <WrenchIcon size={16} color="currentColor" style={{ display: 'block' }} />
+            <span style={styles.navLabel}>Manage Tags/Groups</span>
+          </button>
           <button
             onClick={() => {
               navigate({ to: '/settings' });
