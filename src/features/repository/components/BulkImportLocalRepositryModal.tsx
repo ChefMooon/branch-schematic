@@ -175,7 +175,7 @@ export function BulkImportLocalRepositoryModal({
             disabled={isScanning || !rootPath.trim()}
             style={secondaryButtonStyle}
           >
-            {isScanning ? 'Scanning…' : 'Preview'}
+            {isScanning ? 'Scanning…' : 'Scan'}
           </button>
           <button
             type="button"
