@@ -125,7 +125,7 @@ interface CanvasState {
   toggleTagFilter: (tagId: string) => void;
   clearTagFilters: () => void;
   setActiveView: (viewId: string) => Promise<void>;
-  createNewView: (name: string) => Promise<void>;
+  createNewView: (options: { name: string; isFavorite?: boolean; viewportDefaults?: { zoomLevel: number; panX: number; panY: number }; scope?: { visiblePathIds?: string[]; branchVisibility?: Record<string, string[]> } }) => Promise<void>;
   duplicateView: (sourceId: string, newName: string) => Promise<void>;
   deleteView: (viewId: string) => Promise<void>;
   renameView: (viewId: string, name: string) => Promise<void>;
@@ -303,10 +303,43 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
     await get().hydrateWorkspaceNodes();
   },
 
-  createNewView: async (name) => {
+  createNewView: async ({ name, isFavorite = false, viewportDefaults, scope }) => {
     const viewId = `view-${crypto.randomUUID()}`;
     try {
-      await invoke('create_canvas_view', { id: viewId, name });
+      await invoke('create_canvas_view', {
+        id: viewId,
+        name,
+        zoomLevel: viewportDefaults?.zoomLevel ?? 1,
+        panX: viewportDefaults?.panX ?? 0,
+        panY: viewportDefaults?.panY ?? 0,
+      });
+
+      if (scope?.visiblePathIds) {
+        const scopeState = await invoke<CanvasViewScopeState>('get_canvas_view_scope', { viewId });
+        const allPathIds = new Set([...scopeState.visible_path_ids, ...scopeState.hidden_path_ids]);
+        const selectedPathIds = new Set(scope.visiblePathIds);
+
+        for (const pathId of allPathIds) {
+          await get().togglePathVisibility(viewId, pathId, selectedPathIds.has(pathId));
+        }
+      }
+
+      if (scope?.branchVisibility) {
+        const scopeState = await invoke<CanvasViewScopeState>('get_canvas_view_scope', { viewId });
+        for (const [branchKey, isVisible] of Object.entries(scopeState.branch_visibility)) {
+          const [repoId, branchName] = branchKey.split('::');
+          const selectedBranchNames = scope.branchVisibility?.[repoId] ?? [];
+          const shouldBeVisible = Boolean(repoId && branchName && selectedBranchNames.includes(branchName));
+          if (isVisible !== shouldBeVisible) {
+            await get().toggleBranchVisibility(viewId, branchKey, shouldBeVisible);
+          }
+        }
+      }
+
+      if (isFavorite) {
+        await get().setViewFavorite(viewId, true);
+      }
+
       await get().hydrateViewsList();
       await get().setActiveView(viewId);
     } catch (error) {

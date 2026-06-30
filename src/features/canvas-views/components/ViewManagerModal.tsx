@@ -58,7 +58,7 @@ export function ViewManagerModal({ isDark, isOpen, onClose }: ViewManagerModalPr
   const handleCreate = async () => {
     const name = window.prompt('Enter a name for your new canvas view layer:');
     if (!name || !name.trim()) return;
-    await createNewView(name.trim());
+    await createNewView({ name: name.trim() });
   };
 
   const handleSelect = async (viewId: string) => {

@@ -1,5 +1,5 @@
 use serde::Serialize;
-use sqlx::{FromRow, Row, SqlitePool};
+use sqlx::{FromRow, SqlitePool};
 use std::collections::HashMap;
 use tauri::Manager;
 use tauri_plugin_sql::{Migration, MigrationKind};
@@ -230,6 +230,7 @@ pub fn get_migrations() -> Vec<Migration> {
             CREATE TABLE IF NOT EXISTS canvas_view_visible_paths (
                 view_id TEXT NOT NULL,
                 repo_path_id TEXT NOT NULL,
+                is_visible INTEGER NOT NULL DEFAULT 1,
                 PRIMARY KEY (view_id, repo_path_id),
                 FOREIGN KEY(view_id) REFERENCES canvas_views(id) ON DELETE CASCADE,
                 FOREIGN KEY(repo_path_id) REFERENCES tracked_paths(id) ON DELETE CASCADE
@@ -424,38 +425,17 @@ pub async fn set_canvas_view_path_visibility(
 ) -> Result<(), sqlx::Error> {
     ensure_canvas_view_exists(pool, view_id, "Workspace View").await?;
 
-    if visible {
-        sqlx::query(
-            "INSERT OR IGNORE INTO canvas_view_visible_paths (view_id, repo_path_id)
-             VALUES (?, ?);",
-        )
-        .bind(view_id)
-        .bind(repo_path_id)
-        .execute(pool)
-        .await?;
-    } else {
-                // If this view has not been seeded yet, backfill once so removal is deterministic.
-                sqlx::query(
-                        "INSERT INTO canvas_view_visible_paths (view_id, repo_path_id)
-                         SELECT ?, tracked_paths.id
-                         FROM tracked_paths
-                         WHERE tracked_paths.is_active = 1
-                             AND tracked_paths.archived_at IS NULL
-                         ON CONFLICT(view_id, repo_path_id) DO NOTHING;",
-                )
-                .bind(view_id)
-                .execute(pool)
-                .await?;
-
-        sqlx::query(
-            "DELETE FROM canvas_view_visible_paths
-             WHERE view_id = ? AND repo_path_id = ?;",
-        )
-        .bind(view_id)
-        .bind(repo_path_id)
-        .execute(pool)
-        .await?;
-    }
+    sqlx::query(
+        "INSERT INTO canvas_view_visible_paths (view_id, repo_path_id, is_visible)
+         VALUES (?, ?, ?)
+         ON CONFLICT(view_id, repo_path_id) DO UPDATE SET
+            is_visible = excluded.is_visible;",
+    )
+    .bind(view_id)
+    .bind(repo_path_id)
+    .bind(if visible { 1_i64 } else { 0_i64 })
+    .execute(pool)
+    .await?;
 
     Ok(())
 }
@@ -494,22 +474,15 @@ pub async fn fetch_canvas_view_scope(
     ensure_canvas_view_exists(pool, view_id, "Workspace View").await?;
 
     let path_rows = sqlx::query_as::<_, (String, i64)>(
-        "SELECT
-            tracked_paths.id AS repo_path_id,
-            CASE
-                WHEN EXISTS(SELECT 1 FROM canvas_view_visible_paths vp WHERE vp.view_id = ?)
-                    THEN CASE WHEN visible_paths.repo_path_id IS NULL THEN 0 ELSE 1 END
-                ELSE 1
-            END AS is_visible
-         FROM tracked_paths
-         LEFT JOIN canvas_view_visible_paths AS visible_paths
-            ON visible_paths.view_id = ?
-           AND visible_paths.repo_path_id = tracked_paths.id
-         WHERE tracked_paths.is_active = 1
-           AND tracked_paths.archived_at IS NULL
+        "SELECT 
+            tracked_paths.id AS repo_path_id, 
+            COALESCE(visible_paths.is_visible, 1) AS is_visible 
+         FROM tracked_paths 
+         LEFT JOIN canvas_view_visible_paths AS visible_paths 
+           ON visible_paths.view_id = ? AND visible_paths.repo_path_id = tracked_paths.id 
+         WHERE tracked_paths.is_active = 1 AND tracked_paths.archived_at IS NULL 
          ORDER BY tracked_paths.display_name ASC;",
     )
-    .bind(view_id)
     .bind(view_id)
     .fetch_all(pool)
     .await?;
@@ -627,7 +600,7 @@ pub async fn fetch_workspace_nodes(
                     NOT EXISTS(
                         SELECT 1 FROM canvas_view_visible_paths visibility_seed WHERE visibility_seed.view_id = ?
                     )
-                    OR visible_paths.repo_path_id IS NOT NULL
+                    OR COALESCE(visible_paths.is_visible, 0) = 1
                 )
                 AND COALESCE(visible_branches.is_visible, 1) = 1
                 AND (
@@ -1250,8 +1223,8 @@ pub async fn clone_canvas_view(
     .await?;
 
         sqlx::query(
-           "INSERT INTO canvas_view_visible_paths (view_id, repo_path_id)
-            SELECT ?, repo_path_id
+           "INSERT INTO canvas_view_visible_paths (view_id, repo_path_id, is_visible)
+            SELECT ?, repo_path_id, is_visible
             FROM canvas_view_visible_paths
             WHERE view_id = ?"
         )
@@ -1483,7 +1456,14 @@ pub async fn move_canvas_view_display_order(
     Ok(())
 }
 
-pub async fn create_new_environment_view(pool: &SqlitePool, id: &str, name: &str) -> Result<(), sqlx::Error> {
+pub async fn create_new_environment_view(
+    pool: &SqlitePool,
+    id: &str,
+    name: &str,
+    zoom_level: f64,
+    pan_x: f64,
+    pan_y: f64,
+) -> Result<(), sqlx::Error> {
     let mut tx = pool.begin().await?;
 
     let next_display_order: i64 = sqlx::query_scalar(
@@ -1492,16 +1472,19 @@ pub async fn create_new_environment_view(pool: &SqlitePool, id: &str, name: &str
     .fetch_one(&mut *tx)
     .await?;
 
-    sqlx::query("INSERT INTO canvas_views (id, view_name, zoom_level, pan_x, pan_y, is_favorite, display_order, card_state_json) VALUES (?, ?, 1.0, 0.0, 0.0, 0, ?, NULL);")
+    sqlx::query("INSERT INTO canvas_views (id, view_name, zoom_level, pan_x, pan_y, is_favorite, display_order, card_state_json) VALUES (?, ?, ?, ?, ?, 0, ?, NULL);")
         .bind(id)
         .bind(name)
+        .bind(zoom_level)
+        .bind(pan_x)
+        .bind(pan_y)
         .bind(next_display_order)
         .execute(&mut *tx)
         .await?;
 
     sqlx::query(
-        "INSERT INTO canvas_view_visible_paths (view_id, repo_path_id)
-         SELECT ?, tracked_paths.id
+        "INSERT INTO canvas_view_visible_paths (view_id, repo_path_id, is_visible)
+         SELECT ?, tracked_paths.id, 1
          FROM tracked_paths
          WHERE tracked_paths.is_active = 1
            AND tracked_paths.archived_at IS NULL;",

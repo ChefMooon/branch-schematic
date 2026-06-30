@@ -48,8 +48,11 @@ async fn create_canvas_view(
     state: tauri::State<'_, DbState>,
     id: String,
     name: String,
+    zoom_level: f64,
+    pan_x: f64,
+    pan_y: f64,
 ) -> Result<(), String> {
-    db::create_new_environment_view(&state.0, &id, &name)
+    db::create_new_environment_view(&state.0, &id, &name, zoom_level, pan_x, pan_y)
         .await
         .map_err(|error| error.to_string())
 }

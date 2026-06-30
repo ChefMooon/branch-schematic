@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useViewport } from '@xyflow/react';
 import { useCanvasStore } from '../../../stores/canvas-store';
+import { CreateViewModal } from '../../canvas-views/components/CreateViewModal';
 import { ViewManagerModal } from '../../canvas-views/components/ViewManagerModal';
 import { ViewActionsDropdown } from './ViewActionsDropdown';
 
@@ -18,6 +19,7 @@ export function ViewSelectorTabs({
   const [internalModalOpen, setInternalModalOpen] = useState(false);
   const [isOverflowOpen, setIsOverflowOpen] = useState(false);
   const [isActionsOpen, setIsActionsOpen] = useState(false);
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isNarrowLayout, setIsNarrowLayout] = useState(
     () => typeof window !== 'undefined' && window.innerWidth < 1160,
   );
@@ -101,11 +103,8 @@ export function ViewSelectorTabs({
     };
   }, [activeView, isNarrowLayout, orderedViews]);
 
-  const handlePromptCreateView = () => {
-    const name = prompt('Enter a name for your new canvas view layer:');
-    if (name && name.trim().length > 0) {
-      createNewView(name.trim());
-    }
+  const handleCreateView = async (options: { name: string; isFavorite: boolean; viewportDefaults?: { zoomLevel: number; panX: number; panY: number }; scope?: { visiblePathIds?: string[]; branchVisibility?: Record<string, string[]> } }) => {
+    await createNewView(options);
   };
 
   return (
@@ -243,7 +242,7 @@ export function ViewSelectorTabs({
         )}
         
         <button
-          onClick={handlePromptCreateView}
+          onClick={() => setIsCreateModalOpen(true)}
           style={{
             padding: '6px 10px',
             borderRadius: '6px',
@@ -275,6 +274,13 @@ export function ViewSelectorTabs({
           }}
         />
       </div>
+
+      <CreateViewModal
+        isDark={isDark}
+        isOpen={isCreateModalOpen}
+        onClose={() => setIsCreateModalOpen(false)}
+        onCreate={handleCreateView}
+      />
 
       <ViewManagerModal isDark={isDark} isOpen={isModalOpen} onClose={() => setModalOpen(false)} />
     </>
