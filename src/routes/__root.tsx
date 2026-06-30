@@ -3,8 +3,8 @@ import { TanStackRouterDevtools } from "@tanstack/react-router-devtools";
 import { useEffect, useState } from "react";
 import "../App.css";
 import { applyTheme, loadThemePreference, type ThemePreference } from "../theme";
-import { AppLayout } from "../components/layout/app-layout";
-import { NotificationProvider } from "../components/notifications/notification-provider";
+import { AppLayout } from "../components/layout/AppLayout";
+import { NotificationProvider } from "../components/notifications/NotificationProvider";
 import '@xyflow/react/dist/style.css';
 
 const RootLayout = () => {

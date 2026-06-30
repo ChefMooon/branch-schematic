@@ -16,7 +16,7 @@ import { useWorkspaceStore } from "../../../stores/workspace-store";
 import { RepoCardHeader } from "./RepositoryCard/RepoCardHeader";
 import { RepoCardTags } from "./RepositoryCard/RepoCardTags";
 import { TagSelectionModal } from "../../../components/Modal/TagSelectionModal";
-import { useNotifications } from "../../../components/notifications/notification-provider";
+import { useNotifications } from "../../../components/notifications/NotificationProvider";
 
 interface RepositoryCardProps {
   repo: TrackedPath;

@@ -2,7 +2,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useWorkspaceStore } from "../stores/workspace-store";
-import { useNotifications } from "../components/notifications/notification-provider";
+import { useNotifications } from "../components/notifications/NotificationProvider";
 import { TrackedPath, CachedBranch, DiscoveredBranch } from "../types/git";
 import { openAppDatabase } from "../lib/db";
 

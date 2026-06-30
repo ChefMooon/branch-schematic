@@ -10,7 +10,7 @@ import {
   applyNodeChanges,
   applyEdgeChanges,
 } from '@xyflow/react';
-import type { BranchCardNode } from '../features/branch-map/components/branch-card';
+import type { BranchCardNode } from '../features/branch-map/components/BranchCard';
 import type { RepoTag } from '../types/git';
 
 export interface CanvasViewRecord {

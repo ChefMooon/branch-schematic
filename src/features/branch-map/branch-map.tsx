@@ -10,10 +10,10 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 
-import { BranchCard } from './components/branch-card';
-import type { BranchCardNode } from './components/branch-card';
-import { MapToolbar } from './components/map-toolbar';
-import { ViewSelectorTabs } from './components/view-selector-tabs';
+import { BranchCard } from './components/BranchCard';
+import type { BranchCardNode } from './components/BranchCard';
+import { MapToolbar } from './components/MapToolbar';
+import { ViewSelectorTabs } from './components/ViewSelectorTabs';
 import { useCanvasStore } from '../../stores/canvas-store';
 
 const nodeTypes = {

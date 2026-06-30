@@ -1,5 +1,5 @@
 import type { CSSProperties } from 'react';
-import type { NotificationToast, NotificationVariant } from './notification-provider';
+import type { NotificationToast, NotificationVariant } from './NotificationProvider';
 
 interface ToastProps {
   toast: NotificationToast;

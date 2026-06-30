@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { listen } from '@tauri-apps/api/event';
-import { useNotifications } from '../components/notifications/notification-provider';
+import { useNotifications } from '../components/notifications/NotificationProvider';
 
 export interface NotificationPayload {
   title?: string;

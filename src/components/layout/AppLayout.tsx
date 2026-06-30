@@ -8,9 +8,9 @@ import {
   XIcon,
 } from '@phosphor-icons/react';
 import { useWorkspaceStore } from '../../stores/workspace-store';
-import { useOS } from '../../hooks/use-os';
-import { WindowControls } from '../titlebar/window-controls';
-import { AppSidebar } from './app-sidebar';
+import { useOS } from '../../hooks/useOS';
+import { WindowControls } from '../titlebar/WindowControls';
+import { AppSidebar } from './AppSidebar';
 
 interface AppLayoutProps {
   children: React.ReactNode;

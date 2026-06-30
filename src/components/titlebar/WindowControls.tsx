@@ -1,6 +1,6 @@
 import { MinusIcon, SquareIcon, XIcon } from '@phosphor-icons/react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { useOS } from '../../hooks/use-os';
+import { useOS } from '../../hooks/useOS';
 
 const appWindow = getCurrentWindow();
 

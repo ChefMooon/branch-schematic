@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Handle, Position, NodeProps, Node, useViewport } from '@xyflow/react';
 import { useCanvasStore } from '../../../stores/canvas-store';
-import { CommitTimeline } from './commit-timeline';
+import { CommitTimeline } from './CommitTimeline';
 import type { RepoTag } from '../../../types/git';
 
 export type BranchCardNode = Node<{

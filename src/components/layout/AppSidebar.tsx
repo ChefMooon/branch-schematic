@@ -8,7 +8,7 @@ import {
   CaretRightIcon,
 } from '@phosphor-icons/react';
 import { useWorkspaceStore } from '../../stores/workspace-store';
-import './app-sidebar.css';
+import './AppSidebar.css';
 
 interface NavItem {
   label: string;

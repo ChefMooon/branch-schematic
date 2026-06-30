@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { PencilSimple, Star, Trash } from '@phosphor-icons/react';
 import type { GroupSummary, TrackedPath } from '../../../../types/git';
-import { AliasEditPopover } from '../../../repositories/components/RepositoryCard/AliasEditPopover';
+import { AliasEditPopover } from './AliasEditPopover';
 
 type RepoCardHeaderProps = {
   repo: TrackedPath;
