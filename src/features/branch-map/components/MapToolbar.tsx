@@ -39,7 +39,7 @@ export function MapToolbar({ isDark = false, hidden = false }: MapToolbarProps) 
     <div
       style={{
         position: 'absolute',
-        top: '24px',
+        top: '16px',
         right: '24px',
         zIndex: 15,
         display: 'flex',

@@ -140,11 +140,10 @@ function MapWorkspace() {
   return (
     <div 
       style={{
-        position: 'fixed',
-        top: '60px',
-        left: '0px',
-        width: '100vw',
-        height: 'calc(100vh - 60px)',
+        position: 'absolute',
+        inset: 0,
+        width: '100%',
+        height: '100%',
         backgroundColor: isDark ? '#0a0a0a' : '#f8fafc',
         overflow: 'hidden',
         zIndex: 1
