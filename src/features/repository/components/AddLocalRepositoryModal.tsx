@@ -144,7 +144,7 @@ const secondaryButtonStyle: React.CSSProperties = {
 
 const primaryButtonStyle: React.CSSProperties = {
   border: 'none',
-  background: '#4f46e5',
+  background: 'var(--app-accent)',
   color: '#ffffff',
   borderRadius: 8,
   padding: '8px 12px',
