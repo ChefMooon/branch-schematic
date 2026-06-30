@@ -11,6 +11,7 @@ type ViewActionsDropdownProps = {
     y: number;
   };
   onOpenManager: () => void;
+  onOpenCreateView?: () => void;
   isOpen?: boolean;
   onOpenChange?: (isOpen: boolean) => void;
 };
@@ -20,12 +21,14 @@ export function ViewActionsDropdown({
   activeView,
   viewport,
   onOpenManager,
+  onOpenCreateView,
   isOpen: isOpenProp,
   onOpenChange,
 }: ViewActionsDropdownProps) {
   const [internalOpen, setInternalOpen] = useState(false);
   const [isRenameOpen, setIsRenameOpen] = useState(false);
   const [renameValue, setRenameValue] = useState('');
+  const [menuPosition, setMenuPosition] = useState<{ top: number; left: number } | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const isOpen = isOpenProp ?? internalOpen;
 
@@ -68,7 +71,27 @@ export function ViewActionsDropdown({
   const canMoveDown = activeIndex >= 0 && activeIndex < orderedViews.length - 1;
 
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen) {
+      setMenuPosition(null);
+      return;
+    }
+
+    const updateMenuPosition = () => {
+      if (!menuRef.current) return;
+
+      const buttonRect = menuRef.current.getBoundingClientRect();
+      const menuWidth = 220;
+      const menuHeight = Math.min(360, window.innerHeight - 24);
+      const left = Math.min(buttonRect.right - menuWidth, window.innerWidth - menuWidth - 8);
+      const top = Math.min(buttonRect.bottom + 6, window.innerHeight - menuHeight - 8);
+
+      setMenuPosition({
+        top: Math.max(8, top),
+        left: Math.max(8, left),
+      });
+    };
+
+    updateMenuPosition();
 
     const handleOutsideClick = (event: MouseEvent) => {
       if (!menuRef.current) return;
@@ -77,8 +100,16 @@ export function ViewActionsDropdown({
       }
     };
 
+    const handleResize = () => {
+      updateMenuPosition();
+    };
+
     document.addEventListener('mousedown', handleOutsideClick);
-    return () => document.removeEventListener('mousedown', handleOutsideClick);
+    window.addEventListener('resize', handleResize);
+    return () => {
+      document.removeEventListener('mousedown', handleOutsideClick);
+      window.removeEventListener('resize', handleResize);
+    };
   }, [isOpen]);
 
   useEffect(() => {
@@ -188,27 +219,37 @@ export function ViewActionsDropdown({
     <div ref={menuRef} style={{ position: 'relative' }}>
       <button
         onClick={() => setIsOpen(!isOpen)}
+        aria-label="View actions"
+        title="View actions"
         style={{
-          padding: '6px 10px',
+          width: '30px',
+          height: '30px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
           borderRadius: '6px',
           border: `1px solid ${isDark ? '#404040' : '#e2e8f0'}`,
           backgroundColor: isDark ? '#111111' : '#ffffff',
           color: isDark ? '#d4d4d4' : '#475569',
-          fontSize: '12px',
-          fontWeight: 600,
+          fontSize: '16px',
+          lineHeight: 1,
           cursor: 'pointer',
+          padding: 0,
         }}
       >
-        Actions
+        ⋯
       </button>
 
-      {isOpen && (
+      {isOpen && menuPosition && (
         <div
           style={{
-            position: 'absolute',
-            top: 'calc(100% + 6px)',
-            right: 0,
-            minWidth: '220px',
+            position: 'fixed',
+            top: menuPosition.top,
+            left: menuPosition.left,
+            width: '220px',
+            maxWidth: 'calc(100vw - 16px)',
+            maxHeight: 'min(360px, calc(100vh - 16px))',
+            overflowY: 'auto',
             background: isDark ? '#111111' : '#ffffff',
             border: `1px solid ${isDark ? '#262626' : '#e2e8f0'}`,
             borderRadius: '10px',
@@ -219,6 +260,16 @@ export function ViewActionsDropdown({
             zIndex: 18,
           }}
         >
+          <button
+            onClick={() => {
+              onOpenCreateView?.();
+              setIsOpen(false);
+            }}
+            style={menuButtonStyle(isDark)}
+          >
+            New View
+          </button>
+
           <button
             onClick={handleDuplicate}
             style={menuButtonStyle(isDark)}

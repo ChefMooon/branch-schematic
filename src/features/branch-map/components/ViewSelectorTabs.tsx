@@ -103,7 +103,19 @@ export function ViewSelectorTabs({
     };
   }, [activeView, isNarrowLayout, orderedViews]);
 
-  const handleCreateView = async (options: { name: string; isFavorite: boolean; viewportDefaults?: { zoomLevel: number; panX: number; panY: number }; scope?: { visiblePathIds?: string[]; branchVisibility?: Record<string, string[]> } }) => {
+  const handleCreateView = async (options: {
+    name: string;
+    isFavorite: boolean;
+    viewportDefaults: {
+      zoomLevel: number;
+      panX: number;
+      panY: number;
+    };
+    scope?: {
+      visiblePathIds?: string[];
+      branchVisibility?: Record<string, string[]>;
+    };
+  }) => {
     await createNewView(options);
   };
 
@@ -240,31 +252,13 @@ export function ViewSelectorTabs({
             )}
           </div>
         )}
-        
-        <button
-          onClick={() => setIsCreateModalOpen(true)}
-          style={{
-            padding: '6px 10px',
-            borderRadius: '6px',
-            fontSize: '12px',
-            fontWeight: 600,
-            cursor: 'pointer',
-            border: 'none',
-            backgroundColor: '#4f46e5',
-            color: '#ffffff',
-            transition: 'background-color 0.15s ease'
-          }}
-          onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#4338ca'}
-          onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#4f46e5'}
-        >
-          ＋ New View
-        </button>
 
         <ViewActionsDropdown
           isDark={isDark}
           activeView={activeView}
           viewport={{ zoom, x, y }}
           onOpenManager={() => setModalOpen(true)}
+          onOpenCreateView={() => setIsCreateModalOpen(true)}
           isOpen={isActionsOpen}
           onOpenChange={(isOpen) => {
             setIsActionsOpen(isOpen);
