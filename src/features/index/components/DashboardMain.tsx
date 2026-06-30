@@ -1,7 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { invoke } from "@tauri-apps/api/core";
-import { open } from "@tauri-apps/plugin-dialog";
-import { MagnifyingGlass, FolderOpen, CaretDown } from "@phosphor-icons/react";
+import { MagnifyingGlass, CaretDown } from "@phosphor-icons/react";
 import { RepositoryCard } from "./RepositoryCard";
 import { WorkspaceQuickFilters } from "./WorkspaceQuickFilters";
 import { useWorkspaceStore } from "../../../stores/workspace-store";
@@ -60,25 +58,6 @@ export function DashboardMain() {
     }
   };
 
-  const handleOpenLocalDirectory = async () => {
-    try {
-      const selectedPath = await open({
-        directory: true,
-        multiple: false,
-        title: "Select Local Git Repository Location"
-      });
-
-      if (selectedPath && typeof selectedPath === 'string') {
-        await invoke("add_new_tracked_path", { absolutePath: selectedPath });
-        // Triggers an instant reactive interface sync right after insert completes!
-        await fetchRepositoriesData();
-        await hydrateQuickFilterMetadata();
-      }
-    } catch (err) {
-      console.error("Directory onboarding exception encountered:", err);
-    }
-  };
-
   const toggleTagFilter = (tagId: string) => {
     setSelectedTagIds((prev) =>
       prev.includes(tagId) ? prev.filter((id) => id !== tagId) : [...prev, tagId]
@@ -112,10 +91,6 @@ export function DashboardMain() {
     <div className="dashboard-container">
       <header className="dashboard-header-actions">
         <div className="action-buttons-group">
-          <button className="btn-primary" onClick={handleOpenLocalDirectory}>
-            <FolderOpen size={18} weight="bold" />
-            <span>Open Local Repository</span>
-          </button>
           <button className="btn-secondary" onClick={() => setIsManagementOpen(true)}>
             Manage Tags/Groups
           </button>
