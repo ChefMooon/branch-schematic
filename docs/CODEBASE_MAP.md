@@ -1,7 +1,7 @@
 # Codebase Context Snapshot
 
 =========================================
-📅 **Snapshot Updated:** Jun 26, 2026, 4:22 PM
+📅 **Snapshot Updated:** Jun 29, 2026, 9:54 PM
 📦 **Key Dependencies:**
   - `react`: ^19.1.0
   - `react-dom`: ^19.1.0
@@ -24,35 +24,51 @@ branch-schematic/
 │   │   └── react.svg
 │   ├── components
 │   │   ├── layout
-│   │   │   ├── app-layout.tsx
-│   │   │   ├── app-sidebar.css
-│   │   │   └── app-sidebar.tsx
-│   │   └── notifications
-│   │       ├── notification-provider.tsx
-│   │       └── toast.tsx
+│   │   │   ├── AppLayout.tsx
+│   │   │   ├── AppSidebar.css
+│   │   │   └── AppSidebar.tsx
+│   │   ├── Modal
+│   │   │   └── TagSelectionModal.tsx
+│   │   ├── notifications
+│   │   │   ├── NotificationProvider.tsx
+│   │   │   └── Toast.tsx
+│   │   └── titlebar
+│   │       └── WindowControls.tsx
 │   ├── features
 │   │   ├── branch-map
 │   │   │   ├── branch-map.tsx
 │   │   │   └── components
-│   │   │       ├── branch-card.tsx
-│   │   │       ├── commit-timeline.tsx
-│   │   │       ├── map-toolbar.tsx
-│   │   │       └── view-selector-tabs.tsx
+│   │   │       ├── BranchCard.tsx
+│   │   │       ├── CommitTimeline.tsx
+│   │   │       ├── MapToolbar.tsx
+│   │   │       ├── ViewActionsDropdown.tsx
+│   │   │       └── ViewSelectorTabs.tsx
 │   │   ├── canvas-views
 │   │   │   └── components
+│   │   │       ├── CreateViewModal.tsx
+│   │   │       ├── RepositoryScopeRow.tsx
 │   │   │       ├── Tabs
 │   │   │       │   ├── TabMetadataSettings.tsx
 │   │   │       │   └── TabScopeSettings.tsx
 │   │   │       ├── ViewDetailsConfigurator.tsx
 │   │   │       ├── ViewManagerModal.tsx
 │   │   │       └── ViewManagerSidebar.tsx
-│   │   └── index
+│   │   ├── index
+│   │   │   └── components
+│   │   │       ├── Dashboard.css
+│   │   │       ├── DashboardMain.tsx
+│   │   │       ├── RepositoryCard
+│   │   │       │   ├── AliasEditPopover.tsx
+│   │   │       │   ├── RepoCardHeader.tsx
+│   │   │       │   └── RepoCardTags.tsx
+│   │   │       ├── RepositoryCard.tsx
+│   │   │       └── WorkspaceQuickFilters.tsx
+│   │   └── management
 │   │       └── components
-│   │           ├── Dashboard.css
-│   │           ├── DashboardMain.tsx
-│   │           └── RepositoryCard.tsx
+│   │           └── SettingsManagementModal.tsx
 │   ├── hooks
-│   │   └── use-notification-listener.ts
+│   │   ├── useNotificationListener.ts
+│   │   └── useOS.ts
 │   ├── lib
 │   │   └── db.ts
 │   ├── main.tsx
@@ -92,7 +108,9 @@ branch-schematic/
 │   │   ├── git.rs
 │   │   ├── lib.rs
 │   │   └── main.rs
-│   └── tauri.conf.json
+│   ├── tauri.conf.json
+│   ├── tauri.linux.conf.json
+│   └── tauri.windows.conf.json
 ├── tsconfig.json
 ├── tsconfig.node.json
 └── vite.config.ts
