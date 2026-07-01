@@ -812,6 +812,19 @@ pub async fn update_repository_alias(
     Ok(())
 }
 
+pub async fn update_repository_origin_type(
+    pool: &sqlx::SqlitePool,
+    path_id: &str,
+    origin_type: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE tracked_paths SET repo_origin_type = ? WHERE id = ?;")
+        .bind(origin_type)
+        .bind(path_id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
 pub async fn update_default_branch_name(
     pool: &SqlitePool,
     path_id: &str,

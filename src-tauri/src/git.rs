@@ -619,6 +619,23 @@ pub async fn set_repository_favorite(
 }
 
 #[tauri::command]
+pub async fn set_repository_origin_type(
+    state: tauri::State<'_, DbState>,
+    path_id: String,
+    origin_type: String,
+) -> Result<(), String> {
+    if !["OWNED", "FORK", "CONTRIBUTOR", "LOCAL_ONLY"].contains(&origin_type.as_str()) {
+        return Err("Invalid repository origin type provided.".to_string());
+    }
+
+    crate::db::update_repository_origin_type(&state.0, &path_id, &origin_type)
+        .await
+        .map_err(|err| format!("Failed to update origin status: {}", err))?;
+
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn set_repository_group(
     state: tauri::State<'_, DbState>,
     path_id: String,

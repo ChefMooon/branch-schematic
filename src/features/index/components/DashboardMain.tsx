@@ -1,7 +1,9 @@
 import { useState, useEffect, useRef } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { MagnifyingGlass, CaretDown } from "@phosphor-icons/react";
 import { RepositoryCard } from "./RepositoryCard";
 import { WorkspaceQuickFilters } from "./WorkspaceQuickFilters";
+import { BulkActionToolbar } from "./BulkActionToolbar";
 import { useWorkspaceStore } from "../../../stores/workspace-store";
 import "./Dashboard.css";
 
@@ -11,11 +13,12 @@ type DashboardMainProps = {
 
 export function DashboardMain({ onOpenManagementModal }: DashboardMainProps) {
   const [searchQuery, setSearchQuery] = useState("");
-  const [filterType, setFilterType] = useState<"ALL" | "OWNED" | "FORK" | "LOCAL_ONLY">("ALL");
+  const [filterType, setFilterType] = useState<"ALL" | "OWNED" | "FORK" | "LOCAL_ONLY" | "CONTRIBUTOR">("ALL");
   const [sortBy, setSortBy] = useState<"LAST_VIEWED" | "ALPHABETICAL" | "PENDING_CHANGES">("LAST_VIEWED");
   const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
   const [selectedGroup, setSelectedGroup] = useState<string | null>(null);
   const [favoritesOnly, setFavoritesOnly] = useState(false);
+  const [selectedRepoIds, setSelectedRepoIds] = useState<Set<string>>(new Set());
   const provenanceSelectRef = useRef<HTMLSelectElement>(null);
   const sortSelectRef = useRef<HTMLSelectElement>(null);
   const {
@@ -24,6 +27,7 @@ export function DashboardMain({ onOpenManagementModal }: DashboardMainProps) {
     quickFilterMetadata,
     hydrateQuickFilterMetadata,
     groupDirectory,
+    refreshRepositoryGitStatus,
   } = useWorkspaceStore();
 
   useEffect(() => {
@@ -58,6 +62,44 @@ export function DashboardMain({ onOpenManagementModal }: DashboardMainProps) {
     setSelectedTagIds((prev) =>
       prev.includes(tagId) ? prev.filter((id) => id !== tagId) : [...prev, tagId]
     );
+  };
+
+  const toggleRepoSelection = (repoId: string) => {
+    setSelectedRepoIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(repoId)) {
+        next.delete(repoId);
+      } else {
+        next.add(repoId);
+      }
+      return next;
+    });
+  };
+
+  const handleBulkRefresh = async () => {
+    const selectedRepos = allRepos.filter((repo) => selectedRepoIds.has(repo.id));
+    if (selectedRepos.length === 0) return;
+
+    await Promise.allSettled(
+      selectedRepos.map((repo) => refreshRepositoryGitStatus(repo.id, repo.absolute_path))
+    );
+    setSelectedRepoIds(new Set());
+  };
+
+  const handleBulkUntrack = async () => {
+    const selectedRepos = allRepos.filter((repo) => selectedRepoIds.has(repo.id));
+    if (selectedRepos.length === 0) return;
+
+    const confirmed = window.confirm(
+      `Untrack ${selectedRepos.length} selected workspace${selectedRepos.length === 1 ? "" : "s"}?`
+    );
+    if (!confirmed) return;
+
+    await Promise.allSettled(
+      selectedRepos.map((repo) => invoke("untrack_repository", { pathId: repo.id }))
+    );
+    await fetchRepositoriesData();
+    setSelectedRepoIds(new Set());
   };
 
   const processedRepositories = allRepos
@@ -105,6 +147,7 @@ export function DashboardMain({ onOpenManagementModal }: DashboardMainProps) {
               <option value="OWNED">Owned / Created</option>
               <option value="FORK">Forks Ecosystem</option>
               <option value="LOCAL_ONLY">Local-Only Frameworks</option>
+              <option value="CONTRIBUTOR">Contributors</option>
             </select>
             <CaretDown size={16} className="dashboard-select-icon" />
           </div>
@@ -133,8 +176,17 @@ export function DashboardMain({ onOpenManagementModal }: DashboardMainProps) {
 
       <section className="repo-grid-section">
         <h2 className="repo-grid-title">
-          Tracked Ecosystem Workspaces ({processedRepositories.length})
+          Tracked Repositories ({processedRepositories.length})
         </h2>
+
+        {selectedRepoIds.size > 0 ? (
+        <BulkActionToolbar
+          selectedCount={selectedRepoIds.size}
+          onBulkRefresh={handleBulkRefresh}
+          onBulkUntrack={handleBulkUntrack}
+          onClearSelection={() => setSelectedRepoIds(new Set())}
+        />
+      ) : null}
         
         {processedRepositories.length === 0 ? (
           <div className="repo-grid-empty-state">
@@ -148,6 +200,8 @@ export function DashboardMain({ onOpenManagementModal }: DashboardMainProps) {
                 repo={repo}
                 onRefresh={fetchRepositoriesData}
                 onOpenManagement={() => onOpenManagementModal?.()}
+                isSelected={selectedRepoIds.has(repo.id)}
+                onToggleSelection={() => toggleRepoSelection(repo.id)}
               />
             ))}
           </div>

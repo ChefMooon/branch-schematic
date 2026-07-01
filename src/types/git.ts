@@ -50,7 +50,7 @@ export interface TrackedPath {
   /** Optional URL remote tracking coordinate string configuration if registered */
   remote_url?: string | null;
   /** Repository provenance classification for the UI */
-  repo_origin_type?: "OWNED" | "FORK" | "LOCAL_ONLY";
+  repo_origin_type?: "OWNED" | "FORK" | "LOCAL_ONLY" | "CONTRIBUTOR";
   /** Number of locally modified files or changes pending */
   uncommitted_changes_count?: number;
   /** Currently checked out branch name */

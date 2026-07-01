@@ -372,6 +372,7 @@ pub fn run() {
             git::git_push_operation,
             git::set_repository_alias,
             git::set_repository_favorite,
+            git::set_repository_origin_type,
             git::set_repository_group,
             git::create_custom_group,
             git::update_custom_group,

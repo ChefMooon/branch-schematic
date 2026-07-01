@@ -1,10 +1,12 @@
-import { PencilSimple, Star, Trash } from '@phosphor-icons/react';
 import type { TrackedPath } from '../../../../types/git';
 import { AliasEditPopover } from './AliasEditPopover';
+import { RepoCardOverflowMenu } from './RepoCardActionMenu';
 
 type RepoCardHeaderProps = {
   repo: TrackedPath;
-  originType: 'OWNED' | 'FORK' | 'LOCAL_ONLY';
+  originType: 'OWNED' | 'FORK' | 'LOCAL_ONLY' | 'CONTRIBUTOR';
+  isSelected?: boolean;
+  onToggleSelection?: () => void;
   isEditingAlias: boolean;
   aliasInput: string;
   isAnyLoading: boolean;
@@ -13,13 +15,19 @@ type RepoCardHeaderProps = {
   onSaveAlias: () => Promise<void>;
   onResetAlias: () => void;
   onStopEditing: () => void;
-  onUntrack: (event: React.MouseEvent) => void;
-  onFavoriteToggle: () => void;
+  onRefreshStatus: () => void | Promise<void>;
+  onFetch: () => void | Promise<void>;
+  onPull: () => void | Promise<void>;
+  onPush: () => void | Promise<void>;
+  onToggleFavorite: () => void | Promise<void>;
+  onUntrack: (event: React.MouseEvent<HTMLButtonElement>) => void;
 };
 
 export function RepoCardHeader({
   repo,
   originType,
+  isSelected = false,
+  onToggleSelection,
   isEditingAlias,
   aliasInput,
   isAnyLoading,
@@ -28,11 +36,16 @@ export function RepoCardHeader({
   onSaveAlias,
   onResetAlias,
   onStopEditing,
+  onRefreshStatus,
+  onFetch,
+  onPull,
+  onPush,
+  onToggleFavorite,
   onUntrack,
-  onFavoriteToggle,
 }: RepoCardHeaderProps) {
   const isFavorite = (repo.is_favorite ?? 0) === 1;
   const primaryTitle = repo.alias_name || repo.display_name;
+  const formatOriginType = (value: string) => value === 'CONTRIBUTOR' ? 'Contributor' : value.replace('_', ' ');
 
   return (
     <div className="repo-meta-details">
@@ -40,9 +53,6 @@ export function RepoCardHeader({
         <div className="repo-title-shell">
           <div className="repo-title-inline-row" title="Double click to add alias context">
             <h3 onDoubleClick={onStartEditing} title={primaryTitle}>{primaryTitle}</h3>
-            <button type="button" className="repo-card-action-button is-muted" onClick={onStartEditing}>
-              <PencilSimple size={14} />
-            </button>
           </div>
           <AliasEditPopover
             isOpen={isEditingAlias}
@@ -59,27 +69,27 @@ export function RepoCardHeader({
         </div>
 
         <div className="repo-title-actions">
-          <button
-            type="button"
-            onClick={onFavoriteToggle}
-            className={`favorite-toggle repo-card-action-button ${isFavorite ? 'active' : ''}`}
-            title={isFavorite ? 'Remove from favorites' : 'Add to favorites'}
-          >
-            {isFavorite ? (
-              <Star size={16} weight="fill" className="favorite-star-icon" />
-            ) : (
-              <Star size={16} weight="regular" className="favorite-star-icon" />
-            )}
-          </button>
-          <span className="badge-origin-type">{originType.replace('_', ' ')}</span>
-          <button
-            type="button"
-            onClick={onUntrack}
-            className="repo-card-action-button is-danger"
-            title="Untrack Repository"
-          >
-            <Trash size={16} />
-          </button>
+          <label className="repo-card-selection-control" onClick={(event) => event.stopPropagation()}>
+            <input
+              type="checkbox"
+              checked={isSelected}
+              onChange={() => onToggleSelection?.()}
+              onClick={(event) => event.stopPropagation()}
+              onPointerDown={(event) => event.stopPropagation()}
+            />
+          </label>
+          <RepoCardOverflowMenu
+            isFavorite={isFavorite}
+            isBusy={isAnyLoading}
+            canUseRemoteActions={originType !== 'LOCAL_ONLY'}
+            onRefreshStatus={onRefreshStatus}
+            onFetch={onFetch}
+            onPull={onPull}
+            onPush={onPush}
+            onRenameAlias={onStartEditing}
+            onToggleFavorite={onToggleFavorite}
+            onUntrack={onUntrack}
+          />
         </div>
       </div>
 
@@ -87,9 +97,12 @@ export function RepoCardHeader({
         <span className="repo-title-alias" title={repo.display_name}>{repo.display_name}</span>
       ) : null}
 
-      <span className="repo-absolute-path" title={repo.absolute_path}>
-        {repo.absolute_path}
-      </span>
+      <div className="repo-path-row">
+        <span className="repo-absolute-path" title={repo.absolute_path}>
+          {repo.absolute_path}
+        </span>
+        <span className="badge-origin-type badge-origin-type-inline">{formatOriginType(originType)}</span>
+      </div>
     </div>
   );
 }

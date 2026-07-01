@@ -2,8 +2,6 @@ import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import {
   GitBranch,
-  ArrowClockwise,
-  ArrowsClockwise,
   ArrowDown,
   ArrowUp,
   Desktop,
@@ -12,6 +10,7 @@ import {
   House,
   CircleNotch,
   WarningCircle,
+  UsersThree,
 } from "@phosphor-icons/react";
 import type { TrackedPath } from "../../../types/git";
 import { useWorkspaceStore } from "../../../stores/workspace-store";
@@ -25,9 +24,11 @@ interface RepositoryCardProps {
   repo: TrackedPath;
   onRefresh: () => void;
   onOpenManagement: () => void;
+  isSelected?: boolean;
+  onToggleSelection?: () => void;
 }
 
-export function RepositoryCard({ repo, onRefresh, onOpenManagement }: RepositoryCardProps) {
+export function RepositoryCard({ repo, onRefresh, onOpenManagement, isSelected = false, onToggleSelection }: RepositoryCardProps) {
   const originType = repo.repo_origin_type ?? "LOCAL_ONLY";
   const setRepositoryFavorite = useWorkspaceStore((state) => state.setRepositoryFavorite);
   const setRepositoryGroup = useWorkspaceStore((state) => state.setRepositoryGroup);
@@ -50,6 +51,7 @@ export function RepositoryCard({ repo, onRefresh, onOpenManagement }: Repository
     switch (originType) {
       case "FORK": return <GitFork size={20} />;
       case "OWNED": return <Cloud size={20} />;
+      case "CONTRIBUTOR": return <UsersThree size={20} />;
       default: return <Desktop size={20} />;
     }
   };
@@ -115,7 +117,7 @@ export function RepositoryCard({ repo, onRefresh, onOpenManagement }: Repository
     }
   };
 
-  const handleUntrackProject = async (e: React.MouseEvent) => {
+  const handleUntrackProject = async (e: React.MouseEvent<HTMLButtonElement>) => {
     e.stopPropagation(); // Avoid triggering any higher-level card selection flows
     if (confirm(`Are you sure you want to stop tracking ${repo.display_name}?`)) {
       try {
@@ -214,9 +216,8 @@ export function RepositoryCard({ repo, onRefresh, onOpenManagement }: Repository
 
   return (
     <div
-      className={`repo-card origin-${originType.toLowerCase()} ${(repo.is_favorite ?? 0) === 1 ? 'is-favorited' : ''}`}
+      className={`repo-card origin-${originType.toLowerCase()} ${(repo.is_favorite ?? 0) === 1 ? 'is-favorited' : ''} ${isSelected ? 'is-selected' : ''}`}
     >
-      
       {/* Top Header Information Stack */}
       <div className="repo-card-top">
         <div className="repo-icon-wrapper">
@@ -225,6 +226,8 @@ export function RepositoryCard({ repo, onRefresh, onOpenManagement }: Repository
         <RepoCardHeader
           repo={repo}
           originType={originType}
+          isSelected={isSelected}
+          onToggleSelection={onToggleSelection}
           isEditingAlias={isEditingAlias}
           aliasInput={aliasInput}
           isAnyLoading={isAnyLoading}
@@ -235,10 +238,20 @@ export function RepositoryCard({ repo, onRefresh, onOpenManagement }: Repository
             void saveAlias("");
           }}
           onStopEditing={() => setIsEditingAlias(false)}
-          onUntrack={handleUntrackProject}
-          onFavoriteToggle={() => {
+          onRefreshStatus={handleRefreshGitStatus}
+          onFetch={() => {
+            void executeGitOperation("fetch");
+          }}
+          onPull={() => {
+            void executeGitOperation("pull");
+          }}
+          onPush={() => {
+            void executeGitOperation("push");
+          }}
+          onToggleFavorite={() => {
             void handleFavoriteToggle();
           }}
+          onUntrack={handleUntrackProject}
         />
       </div>
 
@@ -328,7 +341,7 @@ export function RepositoryCard({ repo, onRefresh, onOpenManagement }: Repository
         )}
       </div>
 
-      {/* Sync Status Aggregator Metrics & Interactive Cluster Buttons */}
+      {/* Sync Status Aggregator Metrics */}
       <div className="repo-sync-actions-row">
         <div className="status-indicator-pills">
           {(repo.uncommitted_changes_count ?? 0) > 0 && (
@@ -370,47 +383,11 @@ export function RepositoryCard({ repo, onRefresh, onOpenManagement }: Repository
             </div>
           )}
         </div>
-
-        {/* Sync Trigger Grid Layout Elements */}
-        <div className={`sync-buttons-cluster ${isAnyLoading ? 'is-loading' : ''}`}>
-          <button
-            className="btn-sync-action"
-            onClick={handleRefreshGitStatus}
-            disabled={isAnyLoading}
-            title="Refresh branch & sync status"
-          >
-            {loadingAction === "refresh" ? <CircleNotch size={16} className="animate-spin-svg" /> : <ArrowsClockwise size={16} />}
-          </button>
-          <button 
-            className="btn-sync-action" 
-            onClick={() => executeGitOperation("fetch")}
-            disabled={isAnyLoading}
-            title="Fetch Origin"
-          >
-            {loadingAction === "fetch" ? <CircleNotch size={16} className="animate-spin-svg" /> : <ArrowClockwise size={16} />}
-          </button>
-          
-          {originType !== "LOCAL_ONLY" && (
-            <>
-              <button 
-                className="btn-sync-action" 
-                onClick={() => executeGitOperation("pull")}
-                disabled={isAnyLoading}
-                title="Pull Remote Upstream"
-              >
-                {loadingAction === "pull" ? <CircleNotch size={16} className="animate-spin-svg" /> : <ArrowDown size={16} />}
-              </button>
-              <button 
-                className="btn-sync-action" 
-                onClick={() => executeGitOperation("push")}
-                disabled={isAnyLoading}
-                title="Push Local Changes"
-              >
-                {loadingAction === "push" ? <CircleNotch size={16} className="animate-spin-svg" /> : <ArrowUp size={16} />}
-              </button>
-            </>
-          )}
-        </div>
+        {isAnyLoading && (
+          <div className="sync-loading-indicator" title="A repository action is in progress">
+            <CircleNotch size={16} className="animate-spin-svg" />
+          </div>
+        )}
       </div>
 
     </div>
