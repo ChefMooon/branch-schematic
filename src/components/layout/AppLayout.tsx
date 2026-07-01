@@ -54,6 +54,7 @@ function useLayoutThemeMode() {
 export function AppLayout({ children }: AppLayoutProps) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isRepositoryDropdownOpen, setIsRepositoryDropdownOpen] = useState(false);
+  const [repositoryDropdownAnchor, setRepositoryDropdownAnchor] = useState<HTMLElement | null>(null);
   const [isNotificationDropdownOpen, setIsNotificationDropdownOpen] = useState(false);
   const [activeRepositoryModal, setActiveRepositoryModal] = useState<RepositoryModalAction | null>(null);
   const [isManagementModalOpen, setIsManagementModalOpen] = useState(false);
@@ -240,6 +241,8 @@ export function AppLayout({ children }: AppLayoutProps) {
 
           <div style={{ position: 'relative' }}>
             <button
+              ref={(node) => setRepositoryDropdownAnchor(node)}
+              data-repository-dropdown-trigger
               style={styles.iconBtn}
               title="New"
               onClick={() => setIsRepositoryDropdownOpen((value) => !value)}
@@ -249,6 +252,7 @@ export function AppLayout({ children }: AppLayoutProps) {
             <RepositoryDropdown
               isOpen={isRepositoryDropdownOpen}
               onClose={() => setIsRepositoryDropdownOpen(false)}
+              anchorElement={repositoryDropdownAnchor}
               onSelect={(action) => {
                 setIsRepositoryDropdownOpen(false);
                 if (action === 'create-view') {

@@ -8,6 +8,7 @@ import {
   Star,
   Trash,
 } from "@phosphor-icons/react";
+import { ConfirmationModal } from "../../../../components/Modal/ConfirmationModal";
 
 type RepoCardOverflowMenuProps = {
   isFavorite: boolean;
@@ -36,6 +37,7 @@ export function RepoCardOverflowMenu({
 }: RepoCardOverflowMenuProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [menuPosition, setMenuPosition] = useState<{ top: number; left: number } | null>(null);
+  const [showUntrackConfirmation, setShowUntrackConfirmation] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -75,18 +77,42 @@ export function RepoCardOverflowMenu({
       updateMenuPosition();
     };
 
+    const handleScroll = () => {
+      updateMenuPosition();
+    };
+
     document.addEventListener("pointerdown", handlePointerDown);
     window.addEventListener("resize", handleResize);
+    document.addEventListener("scroll", handleScroll, true);
 
     return () => {
       document.removeEventListener("pointerdown", handlePointerDown);
       window.removeEventListener("resize", handleResize);
+      document.removeEventListener("scroll", handleScroll, true);
     };
   }, [isOpen]);
 
   const handleAction = (action: () => void | Promise<void>) => {
     setIsOpen(false);
     void action();
+  };
+
+  const handleUntrackClick = (event: React.MouseEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    setShowUntrackConfirmation(true);
+  };
+
+  const confirmUntrack = (event?: React.MouseEvent<HTMLButtonElement>) => {
+    event?.preventDefault();
+    setShowUntrackConfirmation(false);
+    setIsOpen(false);
+
+    const syntheticEvent = {
+      preventDefault: () => undefined,
+      stopPropagation: () => undefined,
+    } as React.MouseEvent<HTMLButtonElement>;
+
+    void onUntrack(event ?? syntheticEvent);
   };
 
   return (
@@ -109,7 +135,7 @@ export function RepoCardOverflowMenu({
           ref={menuRef}
           role="menu"
           aria-label="Repository actions"
-          style={{ top: menuPosition.top, left: menuPosition.left }}
+          style={{ top: menuPosition.top, left: menuPosition.left, overflow: "hidden" }}
         >
           <div className="overflow-section">
             <div className="overflow-section-title">Git Operations</div>
@@ -185,10 +211,7 @@ export function RepoCardOverflowMenu({
             <button
               type="button"
               className="overflow-menu-item overflow-menu-item-danger"
-              onClick={(event) => {
-                setIsOpen(false);
-                void onUntrack(event);
-              }}
+              onClick={handleUntrackClick}
               disabled={isBusy}
             >
               <Trash size={16} />
@@ -197,6 +220,22 @@ export function RepoCardOverflowMenu({
           </div>
         </div>
       ) : null}
+
+      <ConfirmationModal
+        isOpen={showUntrackConfirmation}
+        title="Untrack repository"
+        message={
+          <>
+            This will remove the repository from your workspace. This action cannot be undone.
+          </>
+        }
+        confirmLabel="Yes, untrack"
+        cancelLabel="Cancel"
+        variant="danger"
+        isBusy={isBusy}
+        onConfirm={() => confirmUntrack()}
+        onCancel={() => setShowUntrackConfirmation(false)}
+      />
     </div>
   );
 }
