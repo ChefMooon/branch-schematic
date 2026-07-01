@@ -1,5 +1,5 @@
 use serde::Serialize;
-use sqlx::{FromRow, SqlitePool};
+use sqlx::{FromRow, Row, SqlitePool};
 use std::collections::HashMap;
 use tauri::Manager;
 use tauri_plugin_sql::{Migration, MigrationKind};
@@ -161,6 +161,7 @@ pub fn get_migrations() -> Vec<Migration> {
                 group_id TEXT DEFAULT NULL,
                 is_favorite INTEGER NOT NULL DEFAULT 0,
                 last_accessed_at TEXT DEFAULT NULL,
+                default_branch_name TEXT DEFAULT NULL,
                 
                 is_active INTEGER NOT NULL DEFAULT 1,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -221,6 +222,9 @@ pub fn get_migrations() -> Vec<Migration> {
                 is_head INTEGER NOT NULL DEFAULT 0,
                 ahead_count INTEGER NOT NULL DEFAULT 0,
                 behind_count INTEGER NOT NULL DEFAULT 0,
+                has_upstream INTEGER NOT NULL DEFAULT 0,
+                ahead_of_default_count INTEGER NOT NULL DEFAULT 0,
+                behind_default_count INTEGER NOT NULL DEFAULT 0,
                 last_commit_hash TEXT NOT NULL,
                 updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY(path_id) REFERENCES tracked_paths(id) ON DELETE CASCADE
@@ -805,6 +809,75 @@ pub async fn update_repository_alias(
         .bind(path_id)
         .execute(pool)
         .await?;
+    Ok(())
+}
+
+pub async fn update_default_branch_name(
+    pool: &SqlitePool,
+    path_id: &str,
+    default_branch_name: Option<&str>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE tracked_paths SET default_branch_name = ? WHERE id = ?;")
+        .bind(default_branch_name)
+        .bind(path_id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+pub async fn get_absolute_path_for_id(
+    pool: &SqlitePool,
+    path_id: &str,
+) -> Result<String, sqlx::Error> {
+    let row = sqlx::query("SELECT absolute_path FROM tracked_paths WHERE id = ?;")
+        .bind(path_id)
+        .fetch_one(pool)
+        .await?;
+    Ok(row.get("absolute_path"))
+}
+
+/// Upserts the cached sync-status snapshot for a repository's currently checked-out
+/// (HEAD) branch. Called by the background indexer daemon and by the manual
+/// refresh/fetch/pull/push commands so the dashboard always reads fresh cached values.
+pub async fn upsert_head_branch_git_status(
+    pool: &SqlitePool,
+    path_id: &str,
+    branch_name: &str,
+    last_commit_hash: &str,
+    ahead_count: i64,
+    behind_count: i64,
+    has_upstream: bool,
+    ahead_of_default_count: i64,
+    behind_default_count: i64,
+) -> Result<(), sqlx::Error> {
+    let branch_id = format!("{}-{}", path_id, branch_name);
+    sqlx::query(
+        "INSERT INTO cached_git_branches (
+            id, path_id, branch_name, is_head, ahead_count, behind_count,
+            has_upstream, ahead_of_default_count, behind_default_count, last_commit_hash, updated_at
+         )
+         VALUES (?1, ?2, ?3, 1, ?4, ?5, ?6, ?7, ?8, ?9, CURRENT_TIMESTAMP)
+         ON CONFLICT(path_id, branch_name) DO UPDATE SET
+            is_head = 1,
+            ahead_count = excluded.ahead_count,
+            behind_count = excluded.behind_count,
+            has_upstream = excluded.has_upstream,
+            ahead_of_default_count = excluded.ahead_of_default_count,
+            behind_default_count = excluded.behind_default_count,
+            last_commit_hash = excluded.last_commit_hash,
+            updated_at = CURRENT_TIMESTAMP;"
+    )
+    .bind(&branch_id)
+    .bind(path_id)
+    .bind(branch_name)
+    .bind(ahead_count)
+    .bind(behind_count)
+    .bind(if has_upstream { 1_i64 } else { 0_i64 })
+    .bind(ahead_of_default_count)
+    .bind(behind_default_count)
+    .bind(last_commit_hash)
+    .execute(pool)
+    .await?;
     Ok(())
 }
 

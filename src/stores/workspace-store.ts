@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
-import type { CustomGroup, GroupSummary, QuickFilterMetadata, RepoTag, TagFilterSummary, TrackedPath } from '../types/git';
+import type { CustomGroup, GroupSummary, QuickFilterMetadata, RepoGitStatusSnapshot, RepoTag, TagFilterSummary, TrackedPath } from '../types/git';
 
 function parseRepoTags(tagsJson: unknown): RepoTag[] {
   if (typeof tagsJson !== 'string' || tagsJson.trim().length === 0) {
@@ -47,6 +47,7 @@ interface WorkspaceState {
   removeRepo: (repoId: string) => void;
   setRepositoryFavorite: (repoId: string, favorite: boolean) => Promise<void>;
   setRepositoryGroup: (repoId: string, groupId: string | null) => Promise<void>;
+  refreshRepositoryGitStatus: (repoId: string, absolutePath: string) => Promise<void>;
   addTag: (repoId: string, tagName: string, colorHex?: string) => Promise<void>;
   removeTag: (repoId: string, tagName: string) => Promise<void>;
   touchLastAccessed: (repoId: string) => Promise<void>;
@@ -93,6 +94,10 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         available_branches: repo.available_branches || ["main"],
         ahead_count: repo.ahead_count || 0,
         behind_count: repo.behind_count || 0,
+        has_upstream: Boolean(repo.has_upstream),
+        default_branch_name: repo.default_branch_name ?? null,
+        ahead_of_default_count: repo.ahead_of_default_count || 0,
+        behind_default_count: repo.behind_default_count || 0,
         is_favorite: Number(repo.is_favorite || 0),
         group_id: repo.group_id ?? null,
         custom_group: repo.custom_group ?? null,
@@ -195,6 +200,36 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       await get().hydrateManagementDirectory();
     } catch (error) {
       console.error('Failed to set custom group:', error);
+    }
+  },
+
+  refreshRepositoryGitStatus: async (repoId, absolutePath) => {
+    try {
+      const snapshot = await invoke<RepoGitStatusSnapshot>('refresh_repository_git_status', {
+        pathId: repoId,
+        absolutePath,
+      });
+      set({
+        repos: get().repos.map((repo) =>
+          repo.id === repoId
+            ? {
+                ...repo,
+                current_branch: snapshot.current_branch,
+                available_branches: snapshot.available_branches,
+                uncommitted_changes_count: snapshot.uncommitted_changes_count,
+                default_branch_name: snapshot.default_branch_name,
+                ahead_count: snapshot.ahead_count,
+                behind_count: snapshot.behind_count,
+                has_upstream: snapshot.has_upstream,
+                ahead_of_default_count: snapshot.ahead_of_default_count,
+                behind_default_count: snapshot.behind_default_count,
+              }
+            : repo
+        ),
+      });
+    } catch (error) {
+      console.error('Failed to refresh repository git status:', error);
+      throw error;
     }
   },
 

@@ -182,6 +182,14 @@ impl IndexerDaemon {
             .await
             .map_err(|e| format!("Transaction commit sequence structural failure: {}", e))?;
 
+        // Recompute default branch + ahead/behind sync status for the HEAD branch and
+        // cache it, so the dashboard reflects fresh sync status without waiting on a
+        // manual refresh. Failures here are logged but don't fail the whole index pass --
+        // file-system indexing succeeded even if sync analysis hit a snag.
+        if let Err(e) = crate::git::refresh_and_cache_git_status(pool, path_id, absolute_path).await {
+            println!("Failed to refresh cached git sync status for '{}': {}", absolute_path, e);
+        }
+
         if let Some(app_handle) = app_handle {
             let payload = IndexingNotificationPayload {
                 title: "Repository indexed".to_string(),

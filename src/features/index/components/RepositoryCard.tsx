@@ -3,17 +3,20 @@ import { invoke } from "@tauri-apps/api/core";
 import {
   GitBranch,
   ArrowClockwise,
+  ArrowsClockwise,
   ArrowDown,
   ArrowUp,
   Desktop,
   GitFork,
   Cloud,
+  House,
   CircleNotch,
   WarningCircle,
 } from "@phosphor-icons/react";
 import type { TrackedPath } from "../../../types/git";
 import { useWorkspaceStore } from "../../../stores/workspace-store";
 import { RepoCardHeader } from "./RepositoryCard/RepoCardHeader";
+import { RepoGroupMenu } from "./RepositoryCard/RepoGroupMenu";
 import { RepoCardTags } from "./RepositoryCard/RepoCardTags";
 import { TagSelectionModal } from "../../../components/Modal/TagSelectionModal";
 import { useNotifications } from "../../../components/notifications/NotificationProvider";
@@ -28,6 +31,7 @@ export function RepositoryCard({ repo, onRefresh, onOpenManagement }: Repository
   const originType = repo.repo_origin_type ?? "LOCAL_ONLY";
   const setRepositoryFavorite = useWorkspaceStore((state) => state.setRepositoryFavorite);
   const setRepositoryGroup = useWorkspaceStore((state) => state.setRepositoryGroup);
+  const refreshRepositoryGitStatus = useWorkspaceStore((state) => state.refreshRepositoryGitStatus);
   const addTag = useWorkspaceStore((state) => state.addTag);
   const removeTag = useWorkspaceStore((state) => state.removeTag);
   const getCustomGroups = useWorkspaceStore((state) => state.getCustomGroups);
@@ -39,7 +43,7 @@ export function RepositoryCard({ repo, onRefresh, onOpenManagement }: Repository
   const [isEditingAlias, setIsEditingAlias] = useState(false);
   const [isTagModalOpen, setIsTagModalOpen] = useState(false);
   const [aliasInput, setAliasInput] = useState("");
-  const [loadingAction, setLoadingAction] = useState<"fetch" | "pull" | "push" | "checkout" | "alias" | null>(null);
+  const [loadingAction, setLoadingAction] = useState<"fetch" | "pull" | "push" | "checkout" | "alias" | "refresh" | null>(null);
 
   // Helper template assignment for classification visual elements
   const getOriginIcon = () => {
@@ -76,12 +80,38 @@ export function RepositoryCard({ repo, onRefresh, onOpenManagement }: Repository
   const executeGitOperation = async (operation: "fetch" | "pull" | "push") => {
     setLoadingAction(operation);
     try {
-      await invoke(`git_${operation}_operation`, { pathId: repo.id });
+      const message = await invoke<string>(`git_${operation}_operation`, { pathId: repo.id });
+      addToast({
+        variant: "success",
+        title: operation === "fetch" ? "Fetch Complete" : operation === "pull" ? "Pull Complete" : "Push Complete",
+        message: message || "Operation completed successfully.",
+      });
     } catch (err) {
       console.error(`Git execution failure during ${operation}:`, err);
+      addToast({
+        variant: "error",
+        title: operation === "fetch" ? "Fetch Failed" : operation === "pull" ? "Pull Failed" : "Push Failed",
+        message: typeof err === "string" ? err : `Could not ${operation} ${repo.display_name}.`,
+      });
     } finally {
       setLoadingAction(null);
       onRefresh();
+    }
+  };
+
+  const handleRefreshGitStatus = async () => {
+    setLoadingAction("refresh");
+    try {
+      await refreshRepositoryGitStatus(repo.id, repo.absolute_path);
+    } catch (err) {
+      console.error("Failed to refresh branch & sync status:", err);
+      addToast({
+        variant: "error",
+        title: "Refresh Failed",
+        message: `Could not refresh branch status for ${repo.display_name}.`,
+      });
+    } finally {
+      setLoadingAction(null);
     }
   };
 
@@ -198,7 +228,6 @@ export function RepositoryCard({ repo, onRefresh, onOpenManagement }: Repository
           isEditingAlias={isEditingAlias}
           aliasInput={aliasInput}
           isAnyLoading={isAnyLoading}
-          availableGroups={availableGroups}
           onAliasInputChange={setAliasInput}
           onStartEditing={handleStartEditing}
           onSaveAlias={saveAlias}
@@ -210,6 +239,14 @@ export function RepositoryCard({ repo, onRefresh, onOpenManagement }: Repository
           onFavoriteToggle={() => {
             void handleFavoriteToggle();
           }}
+        />
+      </div>
+
+      {/* Group + Tags share a single wrapping row to avoid excess vertical whitespace */}
+      <div className="repo-secondary-row">
+        <RepoGroupMenu
+          repo={repo}
+          availableGroups={availableGroups}
           onGroupChange={(group) => {
             void handleGroupChange(group);
           }}
@@ -218,19 +255,18 @@ export function RepositoryCard({ repo, onRefresh, onOpenManagement }: Repository
           }}
           onOpenManagement={onOpenManagement}
         />
+        <RepoCardTags
+          tags={repo.tags ?? []}
+          isAnyLoading={isAnyLoading}
+          onOpenTagModal={() => {
+            setIsTagModalOpen(true);
+          }}
+          onRemoveTag={async (tagName) => {
+            await removeTag(repo.id, tagName);
+            await onRefresh();
+          }}
+        />
       </div>
-
-      <RepoCardTags
-        tags={repo.tags ?? []}
-        isAnyLoading={isAnyLoading}
-        onOpenTagModal={() => {
-          setIsTagModalOpen(true);
-        }}
-        onRemoveTag={async (tagName) => {
-          await removeTag(repo.id, tagName);
-          await onRefresh();
-        }}
-      />
 
       <TagSelectionModal
         isOpen={isTagModalOpen}
@@ -276,9 +312,20 @@ export function RepositoryCard({ repo, onRefresh, onOpenManagement }: Repository
             ? repo.available_branches 
             : [repo.current_branch ?? "main"]
           ).map((br) => (
-            <option key={br} value={br}>{br}</option>
+            <option key={br} value={br}>
+              {br}{br === repo.default_branch_name ? " — default" : ""}
+            </option>
           ))}
         </select>
+        {repo.default_branch_name && (
+          <span
+            className={`default-branch-badge ${repo.current_branch === repo.default_branch_name ? "is-active" : ""}`}
+            title={`Default branch: ${repo.default_branch_name}`}
+          >
+            <House size={12} weight="bold" />
+            <span>{repo.default_branch_name}</span>
+          </span>
+        )}
       </div>
 
       {/* Sync Status Aggregator Metrics & Interactive Cluster Buttons */}
@@ -291,21 +338,49 @@ export function RepositoryCard({ repo, onRefresh, onOpenManagement }: Repository
             </div>
           )}
           {originType !== "LOCAL_ONLY" && (
-            <>
-              <div className="status-pill" title="Ahead of origin remote context">
+            <div className="status-pills-group">
+              {repo.has_upstream ? (
+                <>
+                  <div className="status-pill" title="Commits ahead of the upstream remote branch">
+                    <ArrowUp size={14} />
+                    <span>{repo.ahead_count ?? 0}</span>
+                  </div>
+                  <div className="status-pill" title="Commits behind the upstream remote branch">
+                    <ArrowDown size={14} />
+                    <span>{repo.behind_count ?? 0}</span>
+                  </div>
+                </>
+              ) : (
+                <div className="status-pill no-upstream" title="No upstream remote-tracking branch configured for this branch">
+                  <span>No upstream</span>
+                </div>
+              )}
+            </div>
+          )}
+          {repo.default_branch_name && repo.current_branch !== repo.default_branch_name && (
+            <div className="status-pills-group">
+              <div className="status-pill vs-default" title={`Commits ahead of ${repo.default_branch_name}`}>
                 <ArrowUp size={14} />
-                <span>{repo.ahead_count ?? 0}</span>
+                <span>{repo.ahead_of_default_count ?? 0}</span>
               </div>
-              <div className="status-pill" title="Behind origin remote context">
+              <div className="status-pill vs-default" title={`Commits behind ${repo.default_branch_name}`}>
                 <ArrowDown size={14} />
-                <span>{repo.behind_count ?? 0}</span>
+                <span>{repo.behind_default_count ?? 0}</span>
               </div>
-            </>
+            </div>
           )}
         </div>
 
         {/* Sync Trigger Grid Layout Elements */}
         <div className={`sync-buttons-cluster ${isAnyLoading ? 'is-loading' : ''}`}>
+          <button
+            className="btn-sync-action"
+            onClick={handleRefreshGitStatus}
+            disabled={isAnyLoading}
+            title="Refresh branch & sync status"
+          >
+            {loadingAction === "refresh" ? <CircleNotch size={16} className="animate-spin-svg" /> : <ArrowsClockwise size={16} />}
+          </button>
           <button 
             className="btn-sync-action" 
             onClick={() => executeGitOperation("fetch")}

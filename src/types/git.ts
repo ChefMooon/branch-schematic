@@ -61,6 +61,14 @@ export interface TrackedPath {
   ahead_count?: number;
   /** Number of commits behind the remote branch */
   behind_count?: number;
+  /** Whether the currently checked-out branch has an upstream remote-tracking branch configured */
+  has_upstream?: boolean;
+  /** The repository's default/head branch name (e.g. "main"), resolved from origin/HEAD or a main/master heuristic */
+  default_branch_name?: string | null;
+  /** Number of commits the current branch has that the default branch doesn't */
+  ahead_of_default_count?: number;
+  /** Number of commits the default branch has that the current branch doesn't */
+  behind_default_count?: number;
   /** Numeric boolean flag mapping (1 = True, 0 = False) tracking active visibility initialization */
   is_active?: number;
   /** ISO datetime text format string recording entry initialization timestamps */
@@ -77,6 +85,24 @@ export interface TrackedPath {
   last_accessed_at?: string | null;
   /** Relational tags resolved through global_tags + tracked_path_tags */
   tags?: RepoTag[];
+}
+
+/**
+ * Snapshot of branch/sync status for a repository's currently checked-out (HEAD)
+ * branch, returned by `refresh_repository_git_status` and the fetch/pull/push commands.
+ * Matches Rust struct: `git::RepoGitStatusSnapshot`
+ */
+export interface RepoGitStatusSnapshot {
+  current_branch: string;
+  available_branches: string[];
+  uncommitted_changes_count: number;
+  default_branch_name: string | null;
+  last_commit_hash: string;
+  ahead_count: number;
+  behind_count: number;
+  has_upstream: boolean;
+  ahead_of_default_count: number;
+  behind_default_count: number;
 }
 
 export interface RepoTag {
