@@ -7,6 +7,9 @@ export interface NotificationPayload {
   message?: string;
   variant?: 'info' | 'success' | 'warning' | 'error';
   duration?: number;
+  target?: 'toast' | 'inbox' | 'both';
+  route?: string;
+  routeParams?: Record<string, string>;
 }
 
 const EVENT_NAME = 'repo-index-complete';

@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { invoke } from '@tauri-apps/api/core';
 import { useNotificationListener, type NotificationPayload } from '../../hooks/useNotificationListener';
 import { Toast } from './toast';
 
@@ -10,10 +11,30 @@ export interface NotificationToast extends NotificationPayload {
   duration: number;
 }
 
+export interface NotificationEntry {
+  id: string;
+  title: string;
+  message: string;
+  variant: NotificationVariant;
+  isRead: boolean;
+  isPinned: boolean;
+  isArchived: boolean;
+  createdAt: string;
+  route?: string;
+  routeParams?: Record<string, string>;
+}
+
 interface NotificationContextValue {
   toasts: NotificationToast[];
+  inbox: NotificationEntry[];
+  unreadCount: number;
   addToast: (payload: NotificationPayload) => void;
   dismissToast: (id: number) => void;
+  markNotificationAsRead: (id: string) => void;
+  togglePinnedNotification: (id: string) => void;
+  archiveNotification: (id: string) => void;
+  markAllNotificationsAsRead: () => void;
+  archiveAllNotifications: () => void;
 }
 
 const NotificationContext = createContext<NotificationContextValue | undefined>(undefined);
@@ -46,8 +67,22 @@ function NotificationBridge() {
 
 export function NotificationProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<NotificationToast[]>([]);
+  const [inbox, setInbox] = useState<NotificationEntry[]>([]);
   const themeMode = useAppThemeMode();
   const isDark = themeMode === 'dark';
+
+  useEffect(() => {
+    const loadNotifications = async () => {
+      try {
+        const persisted = await invoke<NotificationEntry[]>('get_notifications');
+        setInbox(persisted.filter((item) => !item.isArchived));
+      } catch {
+        setInbox([]);
+      }
+    };
+
+    void loadNotifications();
+  }, []);
 
   const addToast = useCallback((payload: NotificationPayload) => {
     const id = Date.now() + Math.floor(Math.random() * 1000);
@@ -61,6 +96,24 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
 
     setToasts((current) => [...current, nextToast]);
 
+    if (payload.target === 'inbox' || payload.target === 'both') {
+      const createdAt = new Date().toISOString();
+      const entry: NotificationEntry = {
+        id: `notif-${id}`,
+        title: payload.title ?? 'Update',
+        message: payload.message ?? 'A background task completed.',
+        variant: payload.variant ?? 'info',
+        isRead: false,
+        isPinned: false,
+        isArchived: false,
+        createdAt,
+        route: payload.route,
+        routeParams: payload.routeParams,
+      };
+      setInbox((current) => [entry, ...current.filter((item) => item.id !== entry.id)]);
+      void invoke('save_notification', { notification: entry });
+    }
+
     window.setTimeout(() => {
       setToasts((current) => current.filter((toast) => toast.id !== id));
     }, nextToast.duration);
@@ -70,11 +123,45 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
     setToasts((current) => current.filter((toast) => toast.id !== id));
   }, []);
 
+  const markNotificationAsRead = useCallback(async (id: string) => {
+    setInbox((current) => current.map((item) => item.id === id ? { ...item, isRead: true } : item));
+    await invoke('mark_notification_read', { id });
+  }, []);
+
+  const togglePinnedNotification = useCallback(async (id: string) => {
+    setInbox((current) => current.map((item) => item.id === id ? { ...item, isPinned: !item.isPinned } : item));
+    await invoke('toggle_notification_pin', { id });
+  }, []);
+
+  const archiveNotification = useCallback(async (id: string) => {
+    setInbox((current) => current.filter((item) => item.id !== id));
+    await invoke('archive_notification', { id });
+  }, []);
+
+  const markAllNotificationsAsRead = useCallback(async () => {
+    setInbox((current) => current.map((item) => ({ ...item, isRead: true })));
+    await invoke('mark_all_notifications_read');
+  }, []);
+
+  const archiveAllNotifications = useCallback(async () => {
+    setInbox([]);
+    await invoke('archive_all_notifications');
+  }, []);
+
+  const unreadCount = useMemo(() => inbox.filter((item) => !item.isRead).length, [inbox]);
+
   const value = useMemo<NotificationContextValue>(() => ({
     toasts,
+    inbox,
+    unreadCount,
     addToast,
     dismissToast,
-  }), [addToast, dismissToast, toasts]);
+    markNotificationAsRead,
+    togglePinnedNotification,
+    archiveNotification,
+    markAllNotificationsAsRead,
+    archiveAllNotifications,
+  }), [addToast, archiveAllNotifications, archiveNotification, dismissToast, inbox, markAllNotificationsAsRead, markNotificationAsRead, toasts, togglePinnedNotification, unreadCount]);
 
   return (
     <NotificationContext.Provider value={value}>

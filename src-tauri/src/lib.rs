@@ -274,6 +274,55 @@ async fn get_branch_commits(
         .map_err(|error| error.to_string())
 }
 
+#[tauri::command]
+async fn get_notifications(state: tauri::State<'_, DbState>) -> Result<Vec<db::NotificationRow>, String> {
+    db::fetch_notifications(&state.0)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+async fn save_notification(state: tauri::State<'_, DbState>, notification: db::NotificationRow) -> Result<(), String> {
+    db::insert_notification(&state.0, &notification)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+async fn mark_notification_read(state: tauri::State<'_, DbState>, id: String) -> Result<(), String> {
+    db::mark_notification_read(&state.0, &id)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+async fn toggle_notification_pin(state: tauri::State<'_, DbState>, id: String) -> Result<(), String> {
+    db::toggle_notification_pin(&state.0, &id)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+async fn archive_notification(state: tauri::State<'_, DbState>, id: String) -> Result<(), String> {
+    db::archive_notification(&state.0, &id)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+async fn mark_all_notifications_read(state: tauri::State<'_, DbState>) -> Result<(), String> {
+    db::mark_all_notifications_read(&state.0)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+async fn archive_all_notifications(state: tauri::State<'_, DbState>) -> Result<(), String> {
+    db::archive_all_notifications(&state.0)
+        .await
+        .map_err(|error| error.to_string())
+}
+
 pub fn run() {
     // Generate context cleanly
     let context = tauri::generate_context!();
@@ -389,6 +438,13 @@ pub fn run() {
             git::touch_repository_last_accessed,
             git::get_quick_filter_metadata,
             git::determine_branch_topology,
+            get_notifications,
+            save_notification,
+            mark_notification_read,
+            toggle_notification_pin,
+            archive_notification,
+            mark_all_notifications_read,
+            archive_all_notifications,
         ])
         .run(context)
         .expect("error while running tauri application");

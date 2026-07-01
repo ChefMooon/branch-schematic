@@ -1,4 +1,4 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, Row, SqlitePool};
 use std::collections::HashMap;
 use tauri::Manager;
@@ -112,6 +112,21 @@ pub struct CanvasEdgeRow {
     pub edge_style: String,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone, FromRow)]
+#[serde(rename_all = "camelCase")]
+pub struct NotificationRow {
+    pub id: String,
+    pub title: String,
+    pub message: String,
+    pub variant: String,
+    pub is_read: i64,
+    pub is_pinned: i64,
+    pub is_archived: i64,
+    pub created_at: String,
+    pub route: Option<String>,
+    pub route_params_json: Option<String>,
+}
+
 pub const DB_NAME: &str = "branch-schematic.db";
 pub const DB_URL: &str = "sqlite:branch-schematic.db";
 pub const DEFAULT_CANVAS_VIEW_ID: &str = "default-workspace-view";
@@ -215,6 +230,21 @@ pub fn get_migrations() -> Vec<Migration> {
             VALUES ('default-workspace-view', 'Default Workspace', 1.0, 0.0, 0.0, 1, 0);
 
             -- Daemon local cache index tables
+            CREATE TABLE IF NOT EXISTS notifications (
+                id TEXT PRIMARY KEY NOT NULL,
+                title TEXT NOT NULL,
+                message TEXT NOT NULL,
+                variant TEXT NOT NULL DEFAULT 'info',
+                is_read INTEGER NOT NULL DEFAULT 0,
+                is_pinned INTEGER NOT NULL DEFAULT 0,
+                is_archived INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL,
+                route TEXT,
+                route_params_json TEXT
+            );
+            CREATE INDEX IF NOT EXISTS idx_notifications_unarchived ON notifications(is_archived, created_at);
+            CREATE INDEX IF NOT EXISTS idx_notifications_pinned ON notifications(is_pinned DESC, created_at);
+
             CREATE TABLE IF NOT EXISTS cached_git_branches (
                 id TEXT PRIMARY KEY NOT NULL,
                 path_id TEXT NOT NULL,
@@ -657,6 +687,74 @@ pub async fn fetch_workspace_nodes(
     .await?;
 
     Ok(rows)
+}
+
+pub async fn fetch_notifications(pool: &SqlitePool) -> Result<Vec<NotificationRow>, sqlx::Error> {
+    let rows = sqlx::query_as::<_, NotificationRow>(
+        "SELECT id, title, message, variant, is_read, is_pinned, is_archived, created_at, route, route_params_json FROM notifications WHERE is_archived = 0 ORDER BY is_pinned DESC, created_at DESC"
+    )
+    .fetch_all(pool)
+    .await?;
+    Ok(rows)
+}
+
+pub async fn insert_notification(pool: &SqlitePool, notification: &NotificationRow) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "INSERT OR REPLACE INTO notifications (id, title, message, variant, is_read, is_pinned, is_archived, created_at, route, route_params_json) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)"
+    )
+    .bind(&notification.id)
+    .bind(&notification.title)
+    .bind(&notification.message)
+    .bind(&notification.variant)
+    .bind(notification.is_read)
+    .bind(notification.is_pinned)
+    .bind(notification.is_archived)
+    .bind(&notification.created_at)
+    .bind(&notification.route)
+    .bind(&notification.route_params_json)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+pub async fn mark_notification_read(pool: &SqlitePool, id: &str) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE notifications SET is_read = 1 WHERE id = $1")
+        .bind(id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+pub async fn toggle_notification_pin(pool: &SqlitePool, id: &str) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "UPDATE notifications SET is_pinned = CASE WHEN is_pinned = 1 THEN 0 ELSE 1 END WHERE id = $1"
+    )
+    .bind(id)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+pub async fn archive_notification(pool: &SqlitePool, id: &str) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE notifications SET is_archived = 1 WHERE id = $1")
+        .bind(id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+pub async fn mark_all_notifications_read(pool: &SqlitePool) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE notifications SET is_read = 1")
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+pub async fn archive_all_notifications(pool: &SqlitePool) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE notifications SET is_archived = 1")
+        .execute(pool)
+        .await?;
+    Ok(())
 }
 
 pub async fn fetch_branch_commits(

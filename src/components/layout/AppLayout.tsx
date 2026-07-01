@@ -18,6 +18,8 @@ import { CreateRepositoryModal } from '../../features/repository/components/Crea
 import { CreateViewModal } from '../../features/canvas-views/components/CreateViewModal';
 import { SettingsManagementModal } from '../../features/management/components/SettingsManagementModal';
 import { useCanvasStore } from '../../stores/canvas-store';
+import { NotificationDropdown } from '../notifications/NotificationDropdown';
+import { useNotifications } from '../notifications/NotificationProvider';
 import type { RepositoryModalAction } from '../../features/repository/types';
 
 interface AppLayoutProps {
@@ -52,6 +54,7 @@ function useLayoutThemeMode() {
 export function AppLayout({ children }: AppLayoutProps) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isRepositoryDropdownOpen, setIsRepositoryDropdownOpen] = useState(false);
+  const [isNotificationDropdownOpen, setIsNotificationDropdownOpen] = useState(false);
   const [activeRepositoryModal, setActiveRepositoryModal] = useState<RepositoryModalAction | null>(null);
   const [isManagementModalOpen, setIsManagementModalOpen] = useState(false);
 
@@ -74,6 +77,15 @@ export function AppLayout({ children }: AppLayoutProps) {
     cleanupDanglingTags,
   } = useWorkspaceStore();
   const createNewView = useCanvasStore((state) => state.createNewView);
+  const {
+    inbox,
+    unreadCount,
+    markNotificationAsRead,
+    togglePinnedNotification,
+    archiveNotification,
+    markAllNotificationsAsRead,
+    archiveAllNotifications,
+  } = useNotifications();
 
   const HEADER_H = 48;
 
@@ -99,6 +111,29 @@ export function AppLayout({ children }: AppLayoutProps) {
       window.removeEventListener('open-bulk-import-modal', handleOpenBulkImportModal);
     };
   }, []);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const isNotificationShortcut = event.altKey && event.key.toLowerCase() === 'n';
+      if (isNotificationShortcut) {
+        event.preventDefault();
+        setIsNotificationDropdownOpen((value) => !value);
+        return;
+      }
+
+      if (event.key === 'Escape' && isNotificationDropdownOpen) {
+        event.preventDefault();
+        setIsNotificationDropdownOpen(false);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isNotificationDropdownOpen]);
+
+  useEffect(() => {
+    setIsNotificationDropdownOpen(false);
+  }, [location.pathname]);
 
   const pageTitle: Record<string, string> = {
     '/': 'Home',
@@ -171,13 +206,37 @@ export function AppLayout({ children }: AppLayoutProps) {
 
         {/* Right: actions */}
         <div style={styles.headerRight}>
-          <button
-            style={styles.iconBtn}
-            title="Notifications"
-            onClick={() => {/* TODO */}}
-          >
-            <BellIcon size={18} color="var(--app-text)" style={{ display: 'block' }} />
-          </button>
+          <div style={{ position: 'relative' }}>
+            <button
+              style={styles.iconBtn}
+              title="Notifications"
+              onClick={() => setIsNotificationDropdownOpen((value) => !value)}
+            >
+              <BellIcon size={18} color="var(--app-text)" style={{ display: 'block' }} />
+              {unreadCount > 0 && (
+                <span style={styles.badge}>
+                  {unreadCount > 9 ? '9+' : unreadCount}
+                </span>
+              )}
+            </button>
+            <NotificationDropdown
+              isOpen={isNotificationDropdownOpen}
+              onClose={() => setIsNotificationDropdownOpen(false)}
+              notifications={inbox}
+              unreadCount={unreadCount}
+              onMarkAsRead={markNotificationAsRead}
+              onTogglePin={togglePinnedNotification}
+              onArchive={archiveNotification}
+              onMarkAllAsRead={markAllNotificationsAsRead}
+              onArchiveAll={archiveAllNotifications}
+              onNavigate={(notification) => {
+                setIsNotificationDropdownOpen(false);
+                if (notification.route) {
+                  void navigate({ to: notification.route as never });
+                }
+              }}
+            />
+          </div>
 
           <div style={{ position: 'relative' }}>
             <button
@@ -337,6 +396,25 @@ const styles: Record<string, AppStyle> = {
     padding: 0,
     cursor: 'pointer',
     flexShrink: 0,
+    position: 'relative',
+  },
+
+  badge: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    minWidth: 16,
+    height: 16,
+    padding: '0 4px',
+    borderRadius: 999,
+    backgroundColor: 'var(--accent, #3b82f6)',
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: 700,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    lineHeight: 1,
   },
 
   main: {
