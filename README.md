@@ -24,3 +24,8 @@ This template should help get you started developing with Tauri, React and Types
 ```
 node scripts/generate-codebase-map.js
 ```
+
+**Generate 'docs/Database.md`**
+```
+npm run docs:db
+```

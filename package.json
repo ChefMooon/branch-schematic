@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "docs:db": "node scripts/generate-database.js"
   },
   "dependencies": {
     "@phosphor-icons/react": "^2.1.10",
