@@ -43,8 +43,8 @@ export function ProfileIndicator({ profile, status, isOpen, onToggle, onAnchorRe
             <UserCircle size={18} color="var(--app-text)" />
           )}
         </div>
-        <span style={{ ...styles.statusDot, backgroundColor: statusColor[status] }} />
       </button>
+      <span style={{ ...styles.statusDot, backgroundColor: statusColor[status] }} />
     </div>
   );
 }
@@ -79,8 +79,8 @@ const styles: Record<string, CSSProperties> = {
   },
   statusDot: {
     position: 'absolute',
-    bottom: 2,
-    right: 1,
+    bottom: -2,
+    right: -3,
     width: '10px',
     height: '10px',
     borderRadius: '999px',
