@@ -102,19 +102,23 @@ function MapWorkspace() {
     return () => clearInterval(pollInterval);
   }, [activeViewId, hydrateWorkspaceNodes]);
 
-  // 4. Update view offsets when active view layout switches
+  // 4. Sync the viewport only when the active view selection changes so metadata-only actions
+  // do not reapply the stored camera state and cause a visible jump.
   useEffect(() => {
-    if (activeViewId) {
-      const activeViewObj = views.find(v => v.id === activeViewId);
-      if (activeViewObj) {
-        setViewport({
-          zoom: activeViewObj.zoom_level || 1.0,
-          x: activeViewObj.pan_x || 0.0,
-          y: activeViewObj.pan_y || 0.0,
-        }, { duration: 300 });
-      }
-    }
-  }, [activeViewId, views, setViewport]);
+    if (!activeViewId) return;
+
+    const activeViewObj = views.find((view) => view.id === activeViewId);
+    if (!activeViewObj) return;
+
+    setViewport(
+      {
+        zoom: activeViewObj.zoom_level || 1.0,
+        x: activeViewObj.pan_x || 0.0,
+        y: activeViewObj.pan_y || 0.0,
+      },
+      { duration: 300 },
+    );
+  }, [activeViewId, setViewport]);
 
   const handleNodeDragStop: OnNodeDrag<BranchCardNode> = async (_event, node) => {
     if (!activeViewId) return;
