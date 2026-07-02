@@ -108,6 +108,23 @@ export function CreateViewModal({
     [repositories],
   );
 
+  const handleSelectAll = () => {
+    if (repositories.length === 0) return;
+
+    const nextPathIds = repositories.map((repo) => repo.id);
+    const nextBranchSelection = Object.fromEntries(
+      repositories.map((repo) => [repo.id, [...(repo.available_branches ?? [])]]),
+    );
+
+    setSelectedPathIds(nextPathIds);
+    setSelectedBranchNames(nextBranchSelection);
+  };
+
+  const handleClearAll = () => {
+    setSelectedPathIds([]);
+    setSelectedBranchNames({});
+  };
+
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
@@ -340,6 +357,38 @@ export function CreateViewModal({
                     <div style={{ fontSize: 11, color: isDark ? '#a3a3a3' : '#64748b' }}>
                       Choose which repositories and branches should appear in the new view.
                     </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <button
+                      type="button"
+                      onClick={handleSelectAll}
+                      style={{
+                        border: `1px solid ${isDark ? '#404040' : '#cbd5e1'}`,
+                        background: isDark ? '#1a1a1d' : '#ffffff',
+                        color: isDark ? '#f5f5f5' : '#0f172a',
+                        borderRadius: 6,
+                        padding: '4px 8px',
+                        cursor: 'pointer',
+                        fontSize: 11,
+                      }}
+                    >
+                      Select all
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleClearAll}
+                      style={{
+                        border: `1px solid ${isDark ? '#404040' : '#cbd5e1'}`,
+                        background: isDark ? '#1a1a1d' : '#ffffff',
+                        color: isDark ? '#f5f5f5' : '#0f172a',
+                        borderRadius: 6,
+                        padding: '4px 8px',
+                        cursor: 'pointer',
+                        fontSize: 11,
+                      }}
+                    >
+                      Clear all
+                    </button>
                   </div>
                 </div>
 
