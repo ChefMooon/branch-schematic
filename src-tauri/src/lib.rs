@@ -1,6 +1,7 @@
 use sqlx::sqlite::SqlitePool;
 use tauri::Manager;
 
+mod auth;
 mod daemon;
 mod db;
 mod git;
@@ -334,7 +335,8 @@ pub fn run() {
         .unwrap_or_else(|_| std::env::current_dir().unwrap_or_default())
         .join("com.justi.branch-schematic");
     let _ = std::fs::create_dir_all(&app_dir);
-    let target_db_url = format!("sqlite:{}", app_dir.join(db::DB_NAME).to_string_lossy());
+    let target_db_path = app_dir.join(db::DB_NAME);
+    let target_db_url = format!("sqlite:{}", target_db_path.to_string_lossy());
 
     tauri::Builder::default()
         .setup(|app| {
@@ -382,6 +384,9 @@ pub fn run() {
         )
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_oauth::init())
+        .plugin(tauri_plugin_keyring::init())
         .invoke_handler(tauri::generate_handler![
             greet,
             watch_project_directory,
@@ -438,6 +443,13 @@ pub fn run() {
             git::touch_repository_last_accessed,
             git::get_quick_filter_metadata,
             git::determine_branch_topology,
+            auth::get_profiles,
+            auth::add_profile,
+            auth::update_profile,
+            auth::delete_profile,
+            auth::check_profile_tokens,
+            auth::begin_oauth_loopback_listener,
+            auth::exchange_code_for_token,
             get_notifications,
             save_notification,
             mark_notification_read,

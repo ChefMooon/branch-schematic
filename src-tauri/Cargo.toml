@@ -29,7 +29,18 @@ auth-git2 = "0.5"
 notify = "6.1.1"
 tokio = { version = "1", features = ["sync", "time", "rt"] }
 tauri-plugin-dialog = "2"
+tauri-plugin-shell = "2"
 uuid = { version = "1.0", features = ["v4"] }
+chrono = { version = "0.4", features = ["clock"] }
+tauri-plugin-oauth = "2"
+tauri-plugin-keyring = "0.1.0"
+reqwest = { version = "0.12", features = ["json"] }
+url = "2"
+base64 = "0.22"
+sha2 = "0.10"
+rand = { version = "0.9", features = ["std_rng"] }
+keyring = "3"
+dotenv = "0.15"
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-window-state = "2"

@@ -20,7 +20,12 @@ import { SettingsManagementModal } from '../../features/management/components/Se
 import { useCanvasStore } from '../../stores/canvas-store';
 import { NotificationDropdown } from '../notifications/NotificationDropdown';
 import { useNotifications } from '../notifications/NotificationProvider';
+import { ProfileIndicator } from '../../features/auth-profile/components/ProfileIndicator';
+import { ProfileDropdown } from '../../features/auth-profile/components/ProfileDropdown';
+import { ProfileManagementModal } from '../../features/auth-profile/components/ProfileManagementModal';
+import { useProfileContext } from '../../features/auth-profile/hooks/useProfileContext';
 import type { RepositoryModalAction } from '../../features/repository/types';
+import type { UserProfile } from '../../features/auth-profile/types';
 
 interface AppLayoutProps {
   children: React.ReactNode;
@@ -58,6 +63,20 @@ export function AppLayout({ children }: AppLayoutProps) {
   const [isNotificationDropdownOpen, setIsNotificationDropdownOpen] = useState(false);
   const [activeRepositoryModal, setActiveRepositoryModal] = useState<RepositoryModalAction | null>(null);
   const [isManagementModalOpen, setIsManagementModalOpen] = useState(false);
+  const [isProfileDropdownOpen, setIsProfileDropdownOpen] = useState(false);
+  const [profileDropdownAnchor, setProfileDropdownAnchor] = useState<HTMLButtonElement | null>(null);
+  const [isProfileManagementModalOpen, setIsProfileManagementModalOpen] = useState(false);
+  const [managedProfile, setManagedProfile] = useState<UserProfile | null>(null);
+
+  const handleProfileManagementSelection = (profileId: string | null) => {
+    const nextProfile = profileId ? profiles.find((profile) => profile.id === profileId) ?? null : null;
+    setManagedProfile(nextProfile);
+  };
+
+  const handleOpenProfileManagement = (profileId?: string | null) => {
+    handleProfileManagementSelection(profileId ?? activeProfile?.id ?? null);
+    setIsProfileManagementModalOpen(true);
+  };
 
   const location = useLocation();
   const navigate = useNavigate();
@@ -87,6 +106,15 @@ export function AppLayout({ children }: AppLayoutProps) {
     markAllNotificationsAsRead,
     archiveAllNotifications,
   } = useNotifications();
+  const {
+    profiles,
+    activeProfile,
+    tokenHealthMap,
+    selectProfile,
+    addProfile,
+    updateProfile,
+    deleteProfile,
+  } = useProfileContext();
 
   const HEADER_H = 48;
 
@@ -134,6 +162,7 @@ export function AppLayout({ children }: AppLayoutProps) {
 
   useEffect(() => {
     setIsNotificationDropdownOpen(false);
+    setIsProfileDropdownOpen(false);
   }, [location.pathname]);
 
   const pageTitle: Record<string, string> = {
@@ -277,6 +306,32 @@ export function AppLayout({ children }: AppLayoutProps) {
             <CircleHalfIcon size={18} color="var(--app-text)" style={{ display: 'block' }} />
           </button>
 
+          <div style={{ position: 'relative' }}>
+            <ProfileIndicator
+              profile={activeProfile}
+              status={activeProfile ? tokenHealthMap[activeProfile.id] ?? 'none' : 'none'}
+              isOpen={isProfileDropdownOpen}
+              onToggle={() => setIsProfileDropdownOpen((value) => !value)}
+              onAnchorRef={setProfileDropdownAnchor}
+            />
+            <ProfileDropdown
+              isOpen={isProfileDropdownOpen}
+              anchorElement={profileDropdownAnchor}
+              profiles={profiles}
+              activeProfile={activeProfile}
+              tokenHealthMap={tokenHealthMap}
+              onClose={() => setIsProfileDropdownOpen(false)}
+              onSelectProfile={(profileId) => {
+                selectProfile(profileId);
+                setIsProfileDropdownOpen(false);
+              }}
+              onToggleFavorite={(profileId, favorite) => {
+                void updateProfile(profileId, { is_favorite: favorite });
+              }}
+              onOpenManagement={() => handleOpenProfileManagement(activeProfile?.id ?? null)}
+            />
+          </div>
+
           {!isMac && <WindowControls />}
         </div>
       </header>
@@ -315,6 +370,21 @@ export function AppLayout({ children }: AppLayoutProps) {
         onUpdateTag={updateGlobalTag}
         onDeleteTag={deleteGlobalTag}
         onCleanupDanglingTags={cleanupDanglingTags}
+      />
+
+      <ProfileManagementModal
+        isOpen={isProfileManagementModalOpen}
+        onClose={() => {
+          setIsProfileManagementModalOpen(false);
+          setManagedProfile(null);
+        }}
+        profile={managedProfile}
+        profiles={profiles}
+        tokenHealthMap={tokenHealthMap}
+        onCreateProfile={addProfile}
+        onSaveProfile={updateProfile}
+        onDeleteProfile={deleteProfile}
+        onSelectProfile={handleProfileManagementSelection}
       />
 
       {/* ── MAIN CONTENT ── */}

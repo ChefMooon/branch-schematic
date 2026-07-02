@@ -327,6 +327,55 @@ pub fn get_migrations() -> Vec<Migration> {
                 FOREIGN KEY(source_repo_id) REFERENCES tracked_paths(id) ON DELETE CASCADE,
                 FOREIGN KEY(target_repo_id) REFERENCES tracked_paths(id) ON DELETE CASCADE
             );
+
+            CREATE TABLE IF NOT EXISTS auth_profiles (
+                id TEXT PRIMARY KEY NOT NULL,
+                profile_name TEXT NOT NULL,
+                is_active INTEGER NOT NULL DEFAULT 0,
+                is_favorite INTEGER NOT NULL DEFAULT 0,
+                auth_level TEXT CHECK(auth_level IN ('basic', 'local_system', 'full_oauth')) NOT NULL,
+                commit_name TEXT NOT NULL,
+                commit_email TEXT NOT NULL,
+                github_username TEXT,
+                github_avatar_url TEXT,
+                api_base_url TEXT NOT NULL DEFAULT 'https://api.github.com',
+                oauth_token TEXT
+            );
+            CREATE INDEX IF NOT EXISTS idx_auth_profiles_active ON auth_profiles(is_active);
+
+            CREATE TABLE IF NOT EXISTS profile_repo_scopes (
+                repo_path_id TEXT NOT NULL,
+                profile_id TEXT NOT NULL,
+                PRIMARY KEY (repo_path_id, profile_id),
+                FOREIGN KEY(repo_path_id) REFERENCES tracked_paths(id) ON DELETE CASCADE,
+                FOREIGN KEY(profile_id) REFERENCES auth_profiles(id) ON DELETE CASCADE
+            );
+
+            INSERT OR IGNORE INTO auth_profiles (
+                id,
+                profile_name,
+                is_active,
+                is_favorite,
+                auth_level,
+                commit_name,
+                commit_email,
+                github_username,
+                github_avatar_url,
+                api_base_url,
+                oauth_token
+            ) VALUES (
+                'local-basic-profile',
+                'Local workspace',
+                1,
+                0,
+                'basic',
+                'Local user',
+                'local@example.com',
+                NULL,
+                NULL,
+                'https://api.github.com',
+                NULL
+            );
             ",
             kind: MigrationKind::Up,
         }

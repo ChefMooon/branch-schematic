@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::Row;
 use crate::DbState;
 use crate::db;
+use crate::auth;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct CommitLog {
@@ -1141,6 +1142,10 @@ where
     action(callbacks).map_err(|e| format!("Git network operation failed: {}", e))
 }
 
+async fn resolve_profile_for_repo(state: &sqlx::SqlitePool, path_id: &str) -> Result<Option<auth::AuthProfileRow>, String> {
+    auth::resolve_profile_for_repository(state, path_id).await
+}
+
 /// Fetches all configured refspecs from the repository's `origin` remote.
 fn fetch_from_origin(repo: &Repository) -> Result<(), String> {
     repo.find_remote("origin")
@@ -1209,6 +1214,7 @@ pub async fn git_fetch_operation(
     let repo = Repository::open(&absolute_path)
         .map_err(|e| format!("Failed to open Git repository: {}", e))?;
 
+    let _ = resolve_profile_for_repo(&state.0, &path_id).await;
     let fetch_result = fetch_from_origin(&repo);
 
     let _ = refresh_and_cache_git_status(&state.0, &path_id, &absolute_path).await;
@@ -1231,6 +1237,7 @@ pub async fn git_pull_operation(
     let repo = Repository::open(&absolute_path)
         .map_err(|e| format!("Failed to open Git repository: {}", e))?;
 
+    let _ = resolve_profile_for_repo(&state.0, &path_id).await;
     fetch_from_origin(&repo)?;
 
     let pull_result = (|| -> Result<String, String> {
@@ -1318,6 +1325,7 @@ pub async fn git_push_operation(
     let repo = Repository::open(&absolute_path)
         .map_err(|e| format!("Failed to open Git repository: {}", e))?;
 
+    let _ = resolve_profile_for_repo(&state.0, &path_id).await;
     let push_result = (|| -> Result<String, String> {
         let head_ref = repo
             .head()
