@@ -6,6 +6,7 @@ import {
   GearSixIcon,
   WrenchIcon,
 } from '@phosphor-icons/react';
+import { AppLogo } from '../app-logo/AppLogo';
 import './AppSidebar.css';
 
 interface NavItem {
@@ -40,8 +41,8 @@ export function AppSidebar({ isOpen, onClose, onOpenManagementModal }: AppSideba
       >
         {/* Logo */}
         <div style={styles.logoRow} onClick={() => { navigate({ to: '/' }); onClose(); }}>
-          <span style={styles.logoMark}>🌿</span>
-          <span style={styles.logoText}>Verdant</span>
+          <AppLogo size={48} className="ml-4" style={{ marginTop: '0.5rem' }} />
+          <span style={styles.logoText}>Branch Schematic</span>
         </div>
 
         <hr style={styles.divider} />
