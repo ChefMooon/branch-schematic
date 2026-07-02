@@ -4,7 +4,13 @@ import { open } from '@tauri-apps/plugin-dialog';
 import { FolderOpen } from '@phosphor-icons/react';
 import { RepositoryModalShell } from './RepositoryModalShell';
 import { useWorkspaceStore } from '../../../stores/workspace-store';
+import { useNotifications } from '../../../components/notifications/NotificationProvider';
 import type { DiscoveredRepository } from '../types';
+
+interface RepositoryTrackResult {
+  outcome: 'added' | 'already_tracked';
+  message: string;
+}
 
 interface BulkImportLocalRepositoryModalProps {
   isOpen: boolean;
@@ -23,6 +29,7 @@ export function BulkImportLocalRepositoryModal({
   const [discoveries, setDiscoveries] = useState<DiscoveredRepository[]>([]);
   const [selectedPaths, setSelectedPaths] = useState<Record<string, boolean>>({});
   const { hydrateFromBackend, hydrateQuickFilterMetadata } = useWorkspaceStore();
+  const { addToast } = useNotifications();
 
   useEffect(() => {
     if (!isOpen) return;
@@ -102,16 +109,49 @@ export function BulkImportLocalRepositoryModal({
     setError(null);
 
     try {
+      let addedCount = 0;
+      let skippedCount = 0;
+
       for (const repository of selectedRepositories) {
-        await invoke('add_new_tracked_path', { absolutePath: repository.absolute_path });
+        const result = await invoke<RepositoryTrackResult>('add_new_tracked_path', {
+          absolutePath: repository.absolute_path,
+        });
+
+        if (result.outcome === 'added') {
+          addedCount += 1;
+        } else {
+          skippedCount += 1;
+        }
       }
 
       await hydrateFromBackend();
       await hydrateQuickFilterMetadata();
+
+      const summaryMessage =
+        skippedCount > 0
+          ? `Imported ${addedCount} repository${addedCount === 1 ? '' : 'ies'}. Skipped ${skippedCount} because it was already tracked.`
+          : `Imported ${addedCount} repository${addedCount === 1 ? '' : 'ies'}.`;
+
+      addToast({
+        title: skippedCount > 0 ? 'Bulk import completed' : 'Repositories imported',
+        message: summaryMessage,
+        variant: skippedCount > 0 ? 'warning' : 'success',
+        target: 'both',
+        duration: 7000,
+      });
+
       onClose();
     } catch (err) {
       console.error('Failed to import repositories:', err);
-      setError(err instanceof Error ? err.message : 'The selected repositories could not be imported.');
+      const message = err instanceof Error ? err.message : 'The selected repositories could not be imported.';
+      setError(message);
+      addToast({
+        title: 'Bulk import failed',
+        message,
+        variant: 'error',
+        target: 'both',
+        duration: 7000,
+      });
     } finally {
       setIsImporting(false);
     }

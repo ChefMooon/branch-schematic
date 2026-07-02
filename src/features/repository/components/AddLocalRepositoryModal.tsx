@@ -4,6 +4,12 @@ import { open } from '@tauri-apps/plugin-dialog';
 import { FolderOpen } from '@phosphor-icons/react';
 import { RepositoryModalShell } from './RepositoryModalShell';
 import { useWorkspaceStore } from '../../../stores/workspace-store';
+import { useNotifications } from '../../../components/notifications/NotificationProvider';
+
+interface RepositoryTrackResult {
+  outcome: 'added' | 'already_tracked';
+  message: string;
+}
 
 interface AddLocalRepositoryModalProps {
   isOpen: boolean;
@@ -15,6 +21,7 @@ export function AddLocalRepositoryModal({ isOpen, onClose }: AddLocalRepositoryM
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { hydrateFromBackend, hydrateQuickFilterMetadata } = useWorkspaceStore();
+  const { addToast } = useNotifications();
 
   useEffect(() => {
     if (!isOpen) return;
@@ -51,13 +58,30 @@ export function AddLocalRepositoryModal({ isOpen, onClose }: AddLocalRepositoryM
     setError(null);
 
     try {
-      await invoke('add_new_tracked_path', { absolutePath: trimmedPath });
+      const result = await invoke<RepositoryTrackResult>('add_new_tracked_path', { absolutePath: trimmedPath });
       await hydrateFromBackend();
       await hydrateQuickFilterMetadata();
+
+      addToast({
+        title: result.outcome === 'already_tracked' ? 'Repository already tracked' : 'Repository added',
+        message: result.message,
+        variant: result.outcome === 'already_tracked' ? 'warning' : 'success',
+        target: 'both',
+        duration: 6000,
+      });
+
       onClose();
     } catch (err) {
       console.error('Failed to add local repository:', err);
-      setError(err instanceof Error ? err.message : 'The repository could not be added.');
+      const message = err instanceof Error ? err.message : 'The repository could not be added.';
+      setError(message);
+      addToast({
+        title: 'Repository could not be added',
+        message,
+        variant: 'error',
+        target: 'both',
+        duration: 7000,
+      });
     } finally {
       setIsSubmitting(false);
     }

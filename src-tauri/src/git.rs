@@ -345,6 +345,12 @@ pub struct DiscoveredRepo {
     pub selected: Option<bool>,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+pub struct RepositoryTrackResult {
+    pub outcome: String,
+    pub message: String,
+}
+
 #[tauri::command]
 pub fn crawl_repositories_command(root_path: String, max_depth: u32) -> Result<Vec<DiscoveredRepo>, String> {
     let root = Path::new(&root_path);
@@ -360,7 +366,7 @@ pub fn crawl_repositories_command(root_path: String, max_depth: u32) -> Result<V
             continue;
         }
 
-        if let Ok(repo) = Repository::open(&current_path) {
+        if Repository::open(&current_path).is_ok() {
             let display_name = current_path
                 .file_name()
                 .and_then(|name| name.to_str())
@@ -402,52 +408,70 @@ pub fn crawl_repositories_command(root_path: String, max_depth: u32) -> Result<V
     Ok(discovered)
 }
 
-#[tauri::command]
-pub async fn add_new_tracked_path(
-    state: tauri::State<'_, DbState>,
-    absolute_path: String
-) -> Result<(), String> {
-    let path = Path::new(&absolute_path);
+async fn track_repository_path(
+    pool: &sqlx::SqlitePool,
+    absolute_path: &str,
+) -> Result<RepositoryTrackResult, String> {
+    let path = Path::new(absolute_path);
 
-    // 1. Validate the directory target is a healthy local Git repository
     let repo = Repository::open(path)
         .map_err(|e| format!("The selected folder is not a valid Git repository workspace context: {}", e))?;
 
-    // 2. Parse out the rightmost directory leaf fragment as the workspace display name
     let display_name = path
         .file_name()
         .and_then(|os_str| os_str.to_str())
         .unwrap_or("Unknown Repository")
         .to_string();
 
-    // 3. Extract remote upstream attributes if an origin tracker exists
     let mut remote_url: Option<String> = None;
     let mut repo_origin_type = "LOCAL_ONLY";
 
     if let Ok(remote) = repo.find_remote("origin") {
         if let Some(url) = remote.url() {
             remote_url = Some(url.to_string());
-            repo_origin_type = "OWNED"; // Default classification fallback parameter
+            repo_origin_type = "OWNED";
         }
     }
 
-    // 4. Generate standard cryptographic UUID v4 indexing parameters
-    let id = Uuid::new_v4().to_string();
+    let existing_path_id = db::fetch_tracked_path_id_by_absolute_path(pool, absolute_path)
+        .await
+        .map_err(|err| format!("Database lookup failure: {}", err))?;
 
-    // 5. Commit record vectors into the database pool
+    let id = Uuid::new_v4().to_string();
     db::insert_tracked_path(
-        &state.0, // Extracting the inner SqlitePool reference
+        pool,
         &id,
         &display_name,
-        &absolute_path,
+        absolute_path,
         remote_url.as_deref(),
         repo_origin_type,
     )
     .await
     .map_err(|err| format!("Database indexing loop failure: {}", err))?;
 
+    if existing_path_id.is_some() {
+        return Ok(RepositoryTrackResult {
+            outcome: "already_tracked".to_string(),
+            message: format!(
+                "Repository '{}' is already in your workspace catalog, so it was not added again.",
+                display_name
+            ),
+        });
+    }
+
     println!("Repository '{}' committed to SQLite catalog cache successfully.", display_name);
-    Ok(())
+    Ok(RepositoryTrackResult {
+        outcome: "added".to_string(),
+        message: format!("Added '{}' to your workspace catalog.", display_name),
+    })
+}
+
+#[tauri::command]
+pub async fn add_new_tracked_path(
+    state: tauri::State<'_, DbState>,
+    absolute_path: String
+) -> Result<RepositoryTrackResult, String> {
+    track_repository_path(&state.0, &absolute_path).await
 }
 
 #[tauri::command]
@@ -1361,6 +1385,7 @@ pub async fn git_push_operation(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sqlx::SqlitePool;
     use std::fs::{self, File};
     use std::io::Write;
 
@@ -1408,6 +1433,50 @@ mod tests {
             &[],
         )
         .unwrap();
+    }
+
+    #[test]
+    fn test_track_repository_path_reports_existing_repo_without_insert_duplicate() {
+        let (repo_path, _repo) = create_test_repo("test_track_duplicate_repo");
+        let path_str = repo_path.to_str().unwrap();
+
+        let pool = tauri::async_runtime::block_on(async {
+            let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
+            sqlx::query(
+                r#"
+                CREATE TABLE tracked_paths (
+                    id TEXT PRIMARY KEY,
+                    display_name TEXT NOT NULL,
+                    absolute_path TEXT NOT NULL UNIQUE,
+                    remote_url TEXT,
+                    repo_origin_type TEXT NOT NULL,
+                    uncommitted_changes_count INTEGER NOT NULL,
+                    is_active INTEGER NOT NULL
+                );
+                "#,
+            )
+            .execute(&pool)
+            .await
+            .unwrap();
+            pool
+        });
+
+        let first_result = tauri::async_runtime::block_on(track_repository_path(&pool, path_str)).unwrap();
+        let second_result = tauri::async_runtime::block_on(track_repository_path(&pool, path_str)).unwrap();
+
+        assert_eq!(first_result.outcome, "added");
+        assert_eq!(second_result.outcome, "already_tracked");
+
+        let count: i64 = tauri::async_runtime::block_on(async {
+            sqlx::query_scalar("SELECT COUNT(*) FROM tracked_paths")
+                .fetch_one(&pool)
+                .await
+                .unwrap()
+        });
+
+        assert_eq!(count, 1);
+
+        fs::remove_dir_all(repo_path).unwrap();
     }
 
     #[test]

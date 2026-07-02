@@ -911,6 +911,20 @@ pub async fn update_canvas_card_config(
     Ok(())
 }
 
+pub async fn fetch_tracked_path_id_by_absolute_path(
+    pool: &SqlitePool,
+    absolute_path: &str,
+) -> Result<Option<String>, sqlx::Error> {
+    let row = sqlx::query_scalar::<_, String>(
+        "SELECT id FROM tracked_paths WHERE absolute_path = ? LIMIT 1"
+    )
+    .bind(absolute_path)
+    .fetch_optional(pool)
+    .await?;
+
+    Ok(row)
+}
+
 pub async fn insert_tracked_path(
     pool: &SqlitePool,
     id: &str,
