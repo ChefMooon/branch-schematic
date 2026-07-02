@@ -42,8 +42,11 @@ export function ProfileDropdown({
 
     const updatePosition = () => {
       const rect = anchorElement.getBoundingClientRect();
-      const maxLeft = Math.max(16, window.innerWidth - 280);
-      const left = Math.min(Math.max(16, rect.left - 24), maxLeft);
+      const dropdownWidth = 260;
+      const margin = 16;
+      const rightAlignedLeft = rect.right - dropdownWidth;
+      const maxLeft = window.innerWidth - dropdownWidth - margin;
+      const left = Math.min(Math.max(margin, rightAlignedLeft), maxLeft);
       setPosition({ top: rect.bottom + 8, left });
     };
 
