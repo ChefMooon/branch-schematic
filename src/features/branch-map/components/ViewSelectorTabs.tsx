@@ -23,6 +23,12 @@ export function ViewSelectorTabs({
   const [isNarrowLayout, setIsNarrowLayout] = useState(
     () => typeof window !== 'undefined' && window.innerWidth < 1160,
   );
+  const [isWideLayout, setIsWideLayout] = useState(
+    () => typeof window !== 'undefined' && window.innerWidth >= 1400,
+  );
+  const [isMediumLayout, setIsMediumLayout] = useState(
+    () => typeof window !== 'undefined' && window.innerWidth >= 1160 && window.innerWidth < 1400,
+  );
   const overflowRef = useRef<HTMLDivElement | null>(null);
   const isModalOpen = isModalOpenProp ?? internalModalOpen;
   const { zoom, x, y } = useViewport();
@@ -54,7 +60,10 @@ export function ViewSelectorTabs({
 
   useEffect(() => {
     const handleResize = () => {
-      setIsNarrowLayout(window.innerWidth < 1160);
+      const width = window.innerWidth;
+      setIsNarrowLayout(width < 1160);
+      setIsMediumLayout(width >= 1160 && width < 1400);
+      setIsWideLayout(width >= 1400);
     };
 
     window.addEventListener('resize', handleResize);
@@ -87,7 +96,7 @@ export function ViewSelectorTabs({
   }, []);
 
   const { visibleViews, overflowViews } = useMemo(() => {
-    const maxVisible = isNarrowLayout ? 2 : 3;
+    const maxVisible = isNarrowLayout ? 1 : isMediumLayout ? 3 : isWideLayout ? 5 : 3;
     let visible = orderedViews.slice(0, maxVisible);
 
     if (activeView && !visible.some((view) => view.id === activeView.id)) {
@@ -130,7 +139,7 @@ export function ViewSelectorTabs({
           display: 'flex',
           gap: '6px',
           alignItems: 'center',
-          maxWidth: 'min(860px, calc(100vw - 160px))',
+          maxWidth: isWideLayout ? 'min(1120px, calc(100vw - 160px))' : 'min(860px, calc(100vw - 160px))',
           overflow: 'visible',
           background: isDark ? '#171717' : '#ffffff',
           padding: '6px',
@@ -152,7 +161,7 @@ export function ViewSelectorTabs({
                 fontWeight: 500,
                 cursor: 'pointer',
                 border: 'none',
-                maxWidth: isNarrowLayout ? '118px' : '172px',
+                maxWidth: isNarrowLayout ? '118px' : isWideLayout ? '140px' : '172px',
                 overflow: 'hidden',
                 textOverflow: 'ellipsis',
                 whiteSpace: 'nowrap',
