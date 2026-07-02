@@ -6,7 +6,8 @@ type RepoGroupMenuProps = {
   availableGroups: GroupSummary[];
   onGroupChange: (groupId: string | null) => void;
   onCreateGroup: () => void;
-  onOpenManagement: () => void;
+  onOpenManagement?: () => void;
+  onOpenManagementModal?: () => void;
 };
 
 export function RepoGroupMenu({
@@ -15,6 +16,7 @@ export function RepoGroupMenu({
   onGroupChange,
   onCreateGroup,
   onOpenManagement,
+  onOpenManagementModal,
 }: RepoGroupMenuProps) {
   const groupLabel = repo.custom_group ?? 'No Group';
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
@@ -87,7 +89,15 @@ export function RepoGroupMenu({
           <button type="button" className="repo-group-menu-item" onClick={() => { setIsDropdownOpen(false); onCreateGroup(); }}>
             + Create Group
           </button>
-          <button type="button" className="repo-group-menu-item" onClick={() => { setIsDropdownOpen(false); onOpenManagement(); }}>
+          <button
+            type="button"
+            className="repo-group-menu-item"
+            onClick={() => {
+              setIsDropdownOpen(false);
+              (onOpenManagement ?? onOpenManagementModal)?.();
+              window.dispatchEvent(new Event('open-management-modal'));
+            }}
+          >
             Manage Tags and Groups
           </button>
         </div>

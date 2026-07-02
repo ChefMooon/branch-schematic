@@ -268,6 +268,7 @@ export function RepositoryCard({ repo, onRefresh, onOpenManagement, onOpenManage
             void handleCreateGroup();
           }}
           onOpenManagement={onOpenManagement}
+          onOpenManagementModal={onOpenManagementModal}
         />
         <RepoCardTags
           tags={repo.tags ?? []}
