@@ -30,6 +30,7 @@ export interface CanvasViewRecord {
 export interface WorkspaceNodeRecord {
   repo_path_id?: string;
   path_id?: string;
+  display_name?: string | null;
   explode_branches: number;
   branch_id: string;
   branch_name: string;
@@ -601,6 +602,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
           data: {
             title: record.branch_name || getNodeRepoPathId(record) || 'Repository',
             repoPathId,
+            repositoryName: record.display_name?.trim() || undefined,
             branchId: record.branch_id,
             branchName: record.branch_name,
             explodeBranches: record.explode_branches === 1,

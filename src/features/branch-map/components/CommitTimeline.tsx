@@ -15,24 +15,25 @@ interface CommitTimelineProps {
   lodTier: 'CLOSE' | 'MID' | 'BIRD';
   maxRows?: number;
   maxHeight?: string;
+  isScrollable?: boolean;
   isDark: boolean;
   accentColor: string;
 }
 
-export function CommitTimeline({ branchId, densityLimit, lodTier, isDark, accentColor, maxHeight }: CommitTimelineProps) {
+export function CommitTimeline({ branchId, densityLimit, lodTier, isDark, accentColor, maxHeight, isScrollable = false }: CommitTimelineProps) {
   const [commits, setCommits] = useState<CommitRecord[]>([]);
   const [loading, setLoading] = useState(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const isBird = lodTier === 'BIRD';
-  const shellHeight = maxHeight ?? '180px';
+  const shellHeight = maxHeight ?? 'auto';
   const placeholderCount = Math.max(3, Math.min(6, Math.ceil((densityLimit === -1 ? 100 : densityLimit) / 6)));
 
   useEffect(() => {
     async function loadCommits() {
       setLoading(true);
       try {
-        // Map UI configuration token '-1' straight to an un-capped database query limit
-        const dbLimit = densityLimit === -1 ? 100 : densityLimit;
+        // Use an unbounded query for the scrollable full-history mode and a bounded query for fixed row selections.
+        const dbLimit = densityLimit === -1 ? 0 : densityLimit;
         const list = await invoke<CommitRecord[]>('get_branch_commits', { branchId, limit: dbLimit });
         setCommits(list);
       } catch (err) {
@@ -45,9 +46,12 @@ export function CommitTimeline({ branchId, densityLimit, lodTier, isDark, accent
   }, [branchId, densityLimit]);
 
   const shellStyle: React.CSSProperties = {
-    minHeight: shellHeight,
-    maxHeight: shellHeight,
-    overflowY: isBird ? 'hidden' : 'auto',
+    minHeight: isScrollable ? shellHeight : 0,
+    maxHeight: isScrollable ? shellHeight : 'none',
+    height: isScrollable ? shellHeight : 'auto',
+    overflowY: isBird || !isScrollable ? 'visible' : 'auto',
+    overflowX: 'hidden',
+    overflow: isScrollable ? 'auto' : 'visible',
     paddingRight: '4px',
     display: 'flex',
     flexDirection: 'column',
@@ -55,6 +59,9 @@ export function CommitTimeline({ branchId, densityLimit, lodTier, isDark, accent
     position: 'relative',
     justifyContent: isBird ? 'center' : 'flex-start',
     opacity: isBird ? 0.35 : 1,
+    flex: 1,
+    minWidth: 0,
+    boxSizing: 'border-box',
   };
 
   if (loading) {
@@ -92,11 +99,17 @@ export function CommitTimeline({ branchId, densityLimit, lodTier, isDark, accent
     );
   }
 
+  const handleWheel = (event: React.WheelEvent<HTMLDivElement>) => {
+    if (!isScrollable) return;
+    event.stopPropagation();
+  };
+
   // Close-Up Full Rich Text Viewport with internal scrolling framework
   return (
     <div 
       ref={scrollContainerRef}
       style={shellStyle}
+      onWheelCapture={handleWheel}
     >
       {commits.map((commit) => {
         const shortHash = commit.commit_hash.substring(0, 7);

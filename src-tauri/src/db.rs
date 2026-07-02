@@ -41,6 +41,7 @@ pub struct CanvasViewScopeState {
 #[derive(Debug, Serialize, Clone, FromRow)]
 pub struct WorkspaceNodeRow {
     pub repo_path_id: String,
+    pub display_name: String,
     pub explode_branches: i64,
     pub branch_id: String,
     pub branch_name: String,
@@ -698,6 +699,7 @@ pub async fn fetch_workspace_nodes(
         )
         SELECT
             selected_branches.path_id AS repo_path_id,
+            COALESCE(tracked_paths.display_name, selected_branches.path_id) AS display_name,
             COALESCE(card_layout.explode_branches, 0) AS explode_branches,
             COALESCE(selected_branches.branch_id, '') AS branch_id,
             COALESCE(selected_branches.branch_name, '') AS branch_name,
@@ -721,6 +723,8 @@ pub async fn fetch_workspace_nodes(
             COALESCE(card_layout.theme_color_hex, '#4F46E5') AS theme_color_hex,
             COALESCE(repo_tags.tags_json, '[]') AS tags_json
         FROM selected_branches
+        LEFT JOIN tracked_paths
+            ON tracked_paths.id = selected_branches.path_id
         LEFT JOIN card_layout
             ON card_layout.repo_path_id = selected_branches.path_id
         LEFT JOIN branch_layout

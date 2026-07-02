@@ -7,6 +7,7 @@ import type { RepoTag } from '../../../types/git';
 export type BranchCardNode = Node<{
   title: string;
   repoPathId: string;
+  repositoryName?: string;
   branchId?: string;
   branchName?: string;
   explodeBranches: boolean;
@@ -46,14 +47,18 @@ export function BranchCard({ data }: NodeProps<BranchCardNode>) {
   const updateNodeConfig = useCanvasStore((state) => state.updateNodeConfig);
 
   const [menuOpen, setMenuOpen] = useState(false);
+  const cardContainerRef = useRef<HTMLDivElement | null>(null);
   const menuContainerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!menuOpen) return;
 
-    const handlePointerDown = (event: MouseEvent) => {
-      const target = event.target as globalThis.Node | null;
-      if (menuContainerRef.current && !menuContainerRef.current.contains(target)) {
+    const handlePointerDown = (event: PointerEvent) => {
+      const cardContainer = cardContainerRef.current;
+      if (!cardContainer) return;
+
+      const path = event.composedPath();
+      if (!path.includes(cardContainer)) {
         setMenuOpen(false);
       }
     };
@@ -64,11 +69,11 @@ export function BranchCard({ data }: NodeProps<BranchCardNode>) {
       }
     };
 
-    document.addEventListener('mousedown', handlePointerDown);
+    document.addEventListener('pointerdown', handlePointerDown, true);
     document.addEventListener('keydown', handleEscape);
 
     return () => {
-      document.removeEventListener('mousedown', handlePointerDown);
+      document.removeEventListener('pointerdown', handlePointerDown, true);
       document.removeEventListener('keydown', handleEscape);
     };
   }, [menuOpen]);
@@ -80,7 +85,8 @@ export function BranchCard({ data }: NodeProps<BranchCardNode>) {
 
   const accentColor = data.themeColorHex ?? '#4F46E5';
   const isCompact = data.viewMode === 'COMPACT';
-  const timelineMaxHeight = data.commitDensity === -1 ? '400px' : `${data.commitDensity * 32}px`;
+  const isScrollableTimeline = data.commitDensity === -1;
+  const repositoryLabel = data.repositoryName?.trim() || data.repoPathId;
 
   const cardStyle: React.CSSProperties = {
     backgroundColor: isDark ? '#121214' : '#ffffff',
@@ -94,6 +100,8 @@ export function BranchCard({ data }: NodeProps<BranchCardNode>) {
     transition: 'border-color 0.2s ease, box-shadow 0.2s ease',
     opacity: data.isDimmedByTagFilter ? 0.35 : 1,
     filter: data.isDimmedByTagFilter ? 'grayscale(0.8)' : 'none',
+    overflow: isCompact ? 'visible' : 'hidden',
+    boxSizing: 'border-box',
   };
 
   const handleStyle: React.CSSProperties = {
@@ -122,7 +130,18 @@ export function BranchCard({ data }: NodeProps<BranchCardNode>) {
   };
 
   return (
-    <div style={cardStyle} ref={menuContainerRef}>
+    <div
+      style={cardStyle}
+      ref={cardContainerRef}
+      onPointerDownCapture={(event) => {
+        if (!menuOpen) return;
+
+        const menuContainer = menuContainerRef.current;
+        if (menuContainer && !event.nativeEvent.composedPath().includes(menuContainer)) {
+          setMenuOpen(false);
+        }
+      }}
+    >
       {/* Explicit Target Anchor Handle on Left Side */}
       <Handle 
         type="target" 
@@ -134,10 +153,15 @@ export function BranchCard({ data }: NodeProps<BranchCardNode>) {
       {/* Card Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: !isCompact ? 8 : 0, gap: '12px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, flex: 1 }}>
-          <div style={{ width: '4px', height: '16px', backgroundColor: accentColor, borderRadius: '2px', flexShrink: 0 }} />
-          <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600, color: isDark ? '#f9fafb' : '#111827', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {data.title}
-          </h3>
+          <div style={{ width: '4px', height: '20px', backgroundColor: accentColor, borderRadius: '2px', flexShrink: 0 }} />
+          <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, flex: 1, lineHeight: 1.1, gap: '1px' }}>
+            <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600, color: isDark ? '#f9fafb' : '#111827', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {data.title}
+            </h3>
+            <div style={{ fontSize: 11, color: isDark ? '#8b8b93' : '#6b7280', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', opacity: lodTier === 'BIRD' ? 0.35 : 1, marginTop: 0 }}>
+              {repositoryLabel}
+            </div>
+          </div>
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0, minWidth: 72, justifyContent: 'flex-end', minHeight: 24, opacity: lodTier === 'BIRD' ? 0 : 1, visibility: lodTier === 'BIRD' ? 'hidden' : 'visible', pointerEvents: lodTier === 'BIRD' ? 'none' : 'auto' }}>
@@ -146,7 +170,7 @@ export function BranchCard({ data }: NodeProps<BranchCardNode>) {
           </span>
           <button 
             onClick={() => setMenuOpen(!menuOpen)}
-            style={{ background: 'none', border: 'none', color: '#71717a', cursor: 'pointer', fontSize: '14px', padding: '2px' }}
+            style={{ background: 'none', border: 'none', color: '#71717a', cursor: 'pointer', fontSize: '14px', padding: '4px 10px', marginBottom: '2px' }}
           >
             ⋮
           </button>
@@ -155,7 +179,7 @@ export function BranchCard({ data }: NodeProps<BranchCardNode>) {
 
       {/* Inline Configuration Dropdown Menu */}
       {menuOpen && (
-        <div style={{ position: 'absolute', top: '40px', right: '12px', backgroundColor: isDark ? '#1c1c1f' : '#ffffff', border: `1px solid ${isDark ? '#2d2d30' : '#e5e7eb'}`, borderRadius: '6px', padding: '8px', zIndex: 10, display: 'flex', flexDirection: 'column', gap: '6px', boxShadow: '0 4px 12px rgba(0,0,0,0.2)', opacity: lodTier === 'BIRD' ? 0 : 1, visibility: lodTier === 'BIRD' ? 'hidden' : 'visible', pointerEvents: lodTier === 'BIRD' ? 'none' : 'auto' }}>
+        <div ref={menuContainerRef} style={{ position: 'absolute', top: '40px', right: '12px', backgroundColor: isDark ? '#1c1c1f' : '#ffffff', border: `1px solid ${isDark ? '#2d2d30' : '#e5e7eb'}`, borderRadius: '6px', padding: '8px', zIndex: 10, display: 'flex', flexDirection: 'column', gap: '6px', boxShadow: '0 4px 12px rgba(0,0,0,0.2)', opacity: lodTier === 'BIRD' ? 0 : 1, visibility: lodTier === 'BIRD' ? 'hidden' : 'visible', pointerEvents: lodTier === 'BIRD' ? 'none' : 'auto' }}>
           <div style={{ fontSize: '10px', fontWeight: 'bold', color: '#a1a1aa' }}>VIEW MODE</div>
           <div style={{ display: 'flex', gap: '4px' }}>
             <button 
@@ -219,8 +243,8 @@ export function BranchCard({ data }: NodeProps<BranchCardNode>) {
 
       {/* Internal Timeline Render Area */}
       {!isCompact && (
-        <div style={{ marginTop: '10px', borderTop: `1px solid ${isDark ? '#262626' : '#e5e7eb'}`, paddingTop: '8px', minHeight: timelineMaxHeight, display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          <div style={{ display: 'flex', gap: '12px', fontSize: '11px', color: isDark ? '#a1a1aa' : '#4b5563', opacity: lodTier === 'BIRD' ? 0.35 : 1 }}>
+        <div style={{ marginTop: '10px', borderTop: `1px solid ${isDark ? '#262626' : '#e5e7eb'}`, paddingTop: '8px', minHeight: isScrollableTimeline ? '400px' : 'auto', maxHeight: isScrollableTimeline ? '400px' : 'none', height: isScrollableTimeline ? '400px' : 'auto', display: 'flex', flexDirection: 'column', gap: '8px', boxSizing: 'border-box', overflow: 'hidden' }}>
+          <div style={{ display: 'flex', gap: '12px', fontSize: '11px', color: isDark ? '#a1a1aa' : '#4b5563', opacity: lodTier === 'BIRD' ? 0.35 : 1, flexShrink: 0 }}>
             <div>▲ <strong>{data.aheadCount ?? 0}</strong> ahead</div>
             <div>▼ <strong>{data.behindCount ?? 0}</strong> behind</div>
           </div>
@@ -230,7 +254,8 @@ export function BranchCard({ data }: NodeProps<BranchCardNode>) {
             lodTier={lodTier} 
             isDark={isDark} 
             accentColor={accentColor} 
-            maxHeight={timelineMaxHeight} 
+            maxHeight={isScrollableTimeline ? '100%' : undefined} 
+            isScrollable={isScrollableTimeline} 
           />
         </div>
       )}
