@@ -23,12 +23,13 @@ import { useNotifications } from "../../../components/notifications/Notification
 interface RepositoryCardProps {
   repo: TrackedPath;
   onRefresh: () => void;
-  onOpenManagement: () => void;
+  onOpenManagement?: () => void;
+  onOpenManagementModal?: () => void;
   isSelected?: boolean;
   onToggleSelection?: () => void;
 }
 
-export function RepositoryCard({ repo, onRefresh, onOpenManagement, isSelected = false, onToggleSelection }: RepositoryCardProps) {
+export function RepositoryCard({ repo, onRefresh, onOpenManagement, onOpenManagementModal, isSelected = false, onToggleSelection }: RepositoryCardProps) {
   const originType = repo.repo_origin_type ?? "LOCAL_ONLY";
   const setRepositoryFavorite = useWorkspaceStore((state) => state.setRepositoryFavorite);
   const setRepositoryGroup = useWorkspaceStore((state) => state.setRepositoryGroup);
@@ -287,6 +288,7 @@ export function RepositoryCard({ repo, onRefresh, onOpenManagement, isSelected =
         assignedTagNames={(repo.tags ?? []).map((tag) => tag.tag_name)}
         onClose={() => setIsTagModalOpen(false)}
         onOpenManagement={onOpenManagement}
+        onOpenManagementModal={onOpenManagementModal}
         onApply={async (nextTagNames) => {
           const current = new Set((repo.tags ?? []).map((tag) => tag.tag_name));
           const next = new Set(nextTagNames);

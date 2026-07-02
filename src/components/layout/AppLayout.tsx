@@ -117,6 +117,18 @@ export function AppLayout({ children }: AppLayoutProps) {
   } = useProfileContext();
 
   const HEADER_H = 48;
+  const openManagementModal = () => {
+    setIsManagementModalOpen(true);
+  };
+
+  useEffect(() => {
+    const handleOpenManagementModal = () => {
+      setIsManagementModalOpen(true);
+    };
+
+    window.addEventListener('open-management-modal', handleOpenManagementModal);
+    return () => window.removeEventListener('open-management-modal', handleOpenManagementModal);
+  }, []);
 
   useEffect(() => {
     void hydrateFromBackend();
@@ -192,7 +204,7 @@ export function AppLayout({ children }: AppLayoutProps) {
 
   const childrenWithProps = isValidElement(children)
     ? cloneElement(children as ReactElement<{ onOpenManagementModal?: () => void }>, {
-        onOpenManagementModal: () => setIsManagementModalOpen(true),
+        onOpenManagementModal: openManagementModal,
       })
     : children;
 
@@ -203,7 +215,7 @@ export function AppLayout({ children }: AppLayoutProps) {
       <AppSidebar
         isOpen={isSidebarOpen}
         onClose={() => setIsSidebarOpen(false)}
-        onOpenManagementModal={() => setIsManagementModalOpen(true)}
+        onOpenManagementModal={openManagementModal}
       />
 
       {/* ── TOPBAR (FULL WIDTH) ── */}

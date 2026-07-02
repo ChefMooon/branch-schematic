@@ -9,6 +9,7 @@ type TagSelectionModalProps = {
   onClose: () => void;
   onApply: (nextTagNames: string[]) => Promise<void>;
   onOpenManagement?: () => void;
+  onOpenManagementModal?: () => void;
 };
 
 export function TagSelectionModal({
@@ -18,6 +19,7 @@ export function TagSelectionModal({
   onClose,
   onApply,
   onOpenManagement,
+  onOpenManagementModal,
 }: TagSelectionModalProps) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [draftName, setDraftName] = useState('');
@@ -57,7 +59,9 @@ export function TagSelectionModal({
   const orderedSelected = Array.from(selected).sort((a, b) => a.localeCompare(b));
 
   const handleOpenManagement = () => {
-    onOpenManagement?.();
+    const openManagement = onOpenManagement ?? onOpenManagementModal;
+    openManagement?.();
+    window.dispatchEvent(new Event('open-management-modal'));
     onClose();
   };
 

@@ -75,6 +75,7 @@ export function AppSidebar({ isOpen, onClose, onOpenManagementModal }: AppSideba
           <button
             onClick={() => {
               onOpenManagementModal?.();
+              window.dispatchEvent(new Event('open-management-modal'));
               onClose();
             }}
             className="sidebar-nav-item"
