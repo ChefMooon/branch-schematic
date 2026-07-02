@@ -1,5 +1,7 @@
 use sqlx::sqlite::SqlitePool;
 use tauri::Manager;
+use tauri_plugin_autostart::ManagerExt;
+use tauri_plugin_window_state::{AppHandleExt, WindowExt};
 
 mod auth;
 mod daemon;
@@ -347,23 +349,47 @@ pub fn run() {
             let db_path = app_dir.join(db::DB_NAME);
             let target_db_url = format!("sqlite:{}", db_path.to_string_lossy());
 
+            let app_handle_for_db = handle.clone();
             tauri::async_runtime::block_on(async move {
                 let pool = SqlitePool::connect(&target_db_url).await.expect("Failed to connect to SQLite database");
-                handle.manage(DbState(pool));
+                app_handle_for_db.manage(DbState(pool));
             });
 
+            let restore_window = db::should_restore_window(&handle);
+            let hide_to_tray = db::should_hide_to_tray(&handle);
+            let start_minimized = db::should_start_minimized(&handle);
+            let launch_at_login = db::should_launch_at_login(&handle);
+
+            let autostart_manager = app.autolaunch();
+            if launch_at_login {
+                let _ = autostart_manager.enable();
+            } else {
+                let _ = autostart_manager.disable();
+            }
+
             if let Some(window_handle) = app.get_webview_window("main") {
-                let _ = window_handle.show();
-                let _ = window_handle.set_focus();
+                if restore_window {
+                    let _ = window_handle.restore_state(tauri_plugin_window_state::StateFlags::all());
+                }
+
+                if start_minimized {
+                    let _ = window_handle.hide();
+                } else {
+                    let _ = window_handle.show();
+                    let _ = window_handle.set_focus();
+                }
 
                 let _ = window_handle.on_window_event({
                     let app_handle = app.handle().clone();
+                    let window_handle = window_handle.clone();
                     move |event| {
-                        if let tauri::WindowEvent::CloseRequested { .. } = event {
-                            let _ = tauri_plugin_window_state::AppHandleExt::save_window_state(
-                                &app_handle,
-                                tauri_plugin_window_state::StateFlags::all(),
-                            );
+                        if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                            if hide_to_tray {
+                                api.prevent_close();
+                                let _ = window_handle.hide();
+                            } else if restore_window {
+                                let _ = app_handle.save_window_state(tauri_plugin_window_state::StateFlags::all());
+                            }
                         }
                     }
                 });
@@ -377,6 +403,10 @@ pub fn run() {
                 .skip_initial_state("main")
                 .build(),
         )
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            Some(vec![]),
+        ))
         .plugin(
             tauri_plugin_sql::Builder::default()
                 .add_migrations(&target_db_url, db::get_migrations())

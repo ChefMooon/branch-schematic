@@ -408,6 +408,10 @@ pub fn should_start_minimized(app: &tauri::AppHandle) -> bool {
     read_bool_setting(app, "start_minimized")
 }
 
+pub fn should_launch_at_login(app: &tauri::AppHandle) -> bool {
+    read_bool_setting(app, "launch_at_login")
+}
+
 pub async fn fetch_active_tracked_paths(
     pool: &SqlitePool,
 ) -> Result<Vec<TrackedPathRow>, sqlx::Error> {
