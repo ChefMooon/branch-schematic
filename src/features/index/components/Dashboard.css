@@ -878,13 +878,64 @@
 }
 
 .quick-filter-dangling {
-  width: 100%;
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  max-width: min(340px, 100%);
   font-size: 0.72rem;
   color: var(--text-main);
-  background: var(--favorite-active-bg);
+  background: var(--bg-nested);
   border: 1px solid var(--dropdown-border);
-  border-radius: 10px;
-  padding: 0.35rem 0.55rem;
+  border-radius: 999px;
+  padding: 0.25rem 0.6rem;
+  box-sizing: border-box;
+}
+
+.quick-filter-dangling__content {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
+  width: 100%;
+}
+
+.quick-filter-dangling__text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.2;
+}
+
+.quick-filter-dangling__action {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--dropdown-border);
+  background: var(--bg-elevated, var(--bg-nested));
+  color: var(--text-main);
+  cursor: pointer;
+  font-size: 0.72rem;
+  font-weight: 600;
+  line-height: 1;
+  padding: 0.24rem 0.62rem;
+  min-height: 24px;
+  border-radius: 999px;
+  white-space: nowrap;
+  transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.quick-filter-dangling__action:hover {
+  background: var(--item-hover);
+  color: var(--text-main);
+  border-color: var(--card-border-hover);
+}
+
+.quick-filter-dangling__action:disabled {
+  opacity: 0.7;
+  cursor: wait;
 }
 
 .repo-card-action-button {

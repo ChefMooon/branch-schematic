@@ -203,8 +203,9 @@ export function AppLayout({ children }: AppLayoutProps) {
   };
 
   const childrenWithProps = isValidElement(children)
-    ? cloneElement(children as ReactElement<{ onOpenManagementModal?: () => void }>, {
+    ? cloneElement(children as ReactElement<{ onOpenManagementModal?: () => void; onCleanupDanglingTags?: () => Promise<number> }>, {
         onOpenManagementModal: openManagementModal,
+        onCleanupDanglingTags: cleanupDanglingTags,
       })
     : children;
 

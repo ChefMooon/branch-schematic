@@ -1,6 +1,8 @@
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent } from 'react';
 import { CaretDown } from '@phosphor-icons/react';
+import { ConfirmationModal } from '../../../components/Modal/ConfirmationModal';
+import { useNotifications } from '../../../components/notifications/NotificationProvider';
 import type { QuickFilterMetadata } from '../../../types/git';
 
 type WorkspaceQuickFiltersProps = {
@@ -12,6 +14,7 @@ type WorkspaceQuickFiltersProps = {
   onToggleTag: (tagId: string) => void;
   onGroupChange: (group: string | null) => void;
   onFavoritesToggle: () => void;
+  onCleanupDanglingTags?: () => Promise<number>;
 };
 
 export function WorkspaceQuickFilters({
@@ -23,7 +26,11 @@ export function WorkspaceQuickFilters({
   onToggleTag,
   onGroupChange,
   onFavoritesToggle,
+  onCleanupDanglingTags,
 }: WorkspaceQuickFiltersProps) {
+  const { addToast } = useNotifications();
+  const [isCleanupConfirmOpen, setIsCleanupConfirmOpen] = useState(false);
+  const [isCleaningUp, setIsCleaningUp] = useState(false);
   const groupSelectRef = useRef<HTMLSelectElement>(null);
   const availableGroupOptions = (metadata?.groups?.length ? metadata.groups : groupOptions) ?? [];
   const hasTags = (metadata?.tags?.length ?? 0) > 0;
@@ -56,35 +63,85 @@ export function WorkspaceQuickFilters({
     }
   };
 
-  return (
-    <div className="workspace-quick-filters">
-      <button
-        type="button"
-        className={`quick-filter-chip ${favoritesOnly ? 'active' : ''}`}
-        onClick={onFavoritesToggle}
-      >
-        Favorites ({favoritesCount})
-      </button>
+  const handleCleanupConfirm = async () => {
+    setIsCleanupConfirmOpen(false);
 
-      <div
-        className="dashboard-select-wrapper quick-filter-group-select-wrapper"
-        onPointerDown={handleGroupFilterPointerDown}
-      >
-        <select
-          ref={groupSelectRef}
-          className="dashboard-select quick-filter-group-select"
-          value={selectedGroup ?? ''}
-          onChange={(event) => onGroupChange(event.target.value || null)}
+    if (!onCleanupDanglingTags) {
+      addToast({
+        variant: 'warning',
+        title: 'Cleanup unavailable',
+        message: 'Dangling tag cleanup is not available right now.',
+      });
+      return;
+    }
+
+    setIsCleaningUp(true);
+    try {
+      const removed = await onCleanupDanglingTags();
+      addToast({
+        variant: removed > 0 ? 'success' : 'info',
+        title: removed > 0 ? 'Dangling tags cleaned up' : 'No dangling tags to clean up',
+        message: removed > 0 ? `${removed} unused tags removed.` : 'No dangling tags needed cleanup.',
+      });
+    } catch (error) {
+      addToast({
+        variant: 'error',
+        title: 'Cleanup failed',
+        message: error instanceof Error ? error.message : 'The cleanup could not be completed.',
+      });
+    } finally {
+      setIsCleaningUp(false);
+    }
+  };
+
+  return (
+    <>
+      <div className="workspace-quick-filters">
+        <button
+          type="button"
+          className={`quick-filter-chip ${favoritesOnly ? 'active' : ''}`}
+          onClick={onFavoritesToggle}
         >
-          <option value="">All Groups</option>
-          {availableGroupOptions.map((group) => (
-            <option key={group} value={group}>
-              {group}
-            </option>
-          ))}
-        </select>
-        <CaretDown size={14} className="dashboard-select-icon" />
-      </div>
+          Favorites ({favoritesCount})
+        </button>
+
+        <div
+          className="dashboard-select-wrapper quick-filter-group-select-wrapper"
+          onPointerDown={handleGroupFilterPointerDown}
+        >
+          <select
+            ref={groupSelectRef}
+            className="dashboard-select quick-filter-group-select"
+            value={selectedGroup ?? ''}
+            onChange={(event) => onGroupChange(event.target.value || null)}
+          >
+            <option value="">All Groups</option>
+            {availableGroupOptions.map((group) => (
+              <option key={group} value={group}>
+                {group}
+              </option>
+            ))}
+          </select>
+          <CaretDown size={14} className="dashboard-select-icon" />
+        </div>
+
+        {danglingTags.length > 0 && (
+          <div className="quick-filter-dangling">
+            <div className="quick-filter-dangling__content">
+              <span className="quick-filter-dangling__text">
+                Dangling tags: {danglingTags.map((tag) => tag.tag_name).join(', ')}
+              </span>
+              <button
+                type="button"
+                className="quick-filter-dangling__action"
+                onClick={() => setIsCleanupConfirmOpen(true)}
+                disabled={isCleaningUp}
+              >
+                {isCleaningUp ? 'Cleaning…' : 'Clean up'}
+              </button>
+            </div>
+          </div>
+        )}
 
       {hasTags && (
         <div className="quick-filter-tags-row">
@@ -109,11 +166,25 @@ export function WorkspaceQuickFilters({
         </div>
       )}
 
-      {danglingTags.length > 0 && (
-        <div className="quick-filter-dangling">
-          Dangling tags: {danglingTags.map((tag) => tag.tag_name).join(', ')}
-        </div>
-      )}
     </div>
+
+      <ConfirmationModal
+        isOpen={isCleanupConfirmOpen}
+        title="Cleanup unused tags"
+        message={
+          <>
+            Remove dangling tags that are no longer associated with any repositories? This action cannot be undone.
+          </>
+        }
+        confirmLabel="Cleanup tags"
+        cancelLabel="Cancel"
+        variant="danger"
+        isBusy={isCleaningUp}
+        onConfirm={() => {
+          void handleCleanupConfirm();
+        }}
+        onCancel={() => setIsCleanupConfirmOpen(false)}
+      />
+    </>
   );
 }

@@ -9,9 +9,10 @@ import "./Dashboard.css";
 
 type DashboardMainProps = {
   onOpenManagementModal?: () => void;
+  onCleanupDanglingTags?: () => Promise<number>;
 };
 
-export function DashboardMain({ onOpenManagementModal }: DashboardMainProps) {
+export function DashboardMain({ onOpenManagementModal, onCleanupDanglingTags }: DashboardMainProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [filterType, setFilterType] = useState<"ALL" | "OWNED" | "FORK" | "LOCAL_ONLY" | "CONTRIBUTOR">("ALL");
   const [sortBy, setSortBy] = useState<"LAST_VIEWED" | "ALPHABETICAL" | "PENDING_CHANGES">("LAST_VIEWED");
@@ -172,6 +173,7 @@ export function DashboardMain({ onOpenManagementModal }: DashboardMainProps) {
         onToggleTag={toggleTagFilter}
         onGroupChange={setSelectedGroup}
         onFavoritesToggle={() => setFavoritesOnly((prev) => !prev)}
+        onCleanupDanglingTags={onCleanupDanglingTags}
       />
 
       <section className="repo-grid-section">
