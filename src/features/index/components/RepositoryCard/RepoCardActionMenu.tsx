@@ -120,7 +120,7 @@ export function RepoCardOverflowMenu({
       <button
         type="button"
         ref={triggerRef}
-        className="repo-card-action-button is-muted"
+        className="repo-card-action-button is-muted is-rectangular"
         onClick={() => setIsOpen((prev) => !prev)}
         title="Repository actions"
         aria-haspopup="menu"

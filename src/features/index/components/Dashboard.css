@@ -897,6 +897,12 @@
   opacity: 1;
 }
 
+.repo-card-action-button.is-rectangular {
+  width: 26px;
+  height: 30px;
+  border-radius: 8px;
+}
+
 .repo-card-action-button.is-confirm {
   color: #10b981;
 }
