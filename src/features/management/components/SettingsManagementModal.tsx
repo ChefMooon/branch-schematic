@@ -21,10 +21,6 @@ type SettingsManagementModalProps = {
 
 type Tab = 'tags' | 'groups';
 
-function normalizeName(value: string) {
-  return value.trim().toLowerCase();
-}
-
 function defaultTagColor() {
   return '#3B82F6';
 }
@@ -82,23 +78,6 @@ export function SettingsManagementModal({
 
   const danglingLabel = useMemo(() => danglingTagNames.join(', '), [danglingTagNames]);
 
-  const findNameConflict = (candidateName: string, excludedId?: string) => {
-    const normalized = normalizeName(candidateName);
-    if (!normalized) return null;
-
-    const conflictGroup = groups.find((group) => group.id !== excludedId && normalizeName(group.group_name) === normalized);
-    if (conflictGroup) {
-      return 'This name is already used by a group.';
-    }
-
-    const conflictTag = tags.find((tag) => tag.id !== excludedId && normalizeName(tag.tag_name) === normalized);
-    if (conflictTag) {
-      return 'This name is already used by a tag.';
-    }
-
-    return null;
-  };
-
   const handleCreateTag = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
@@ -108,16 +87,6 @@ export function SettingsManagementModal({
         variant: 'warning',
         title: 'Tag name required',
         message: 'Please enter a tag name before creating it.',
-      });
-      return;
-    }
-
-    const conflictMessage = findNameConflict(trimmedName);
-    if (conflictMessage) {
-      addToast({
-        variant: 'warning',
-        title: 'Name unavailable',
-        message: conflictMessage,
       });
       return;
     }
@@ -163,16 +132,6 @@ export function SettingsManagementModal({
       return;
     }
 
-    const conflictMessage = findNameConflict(trimmedName);
-    if (conflictMessage) {
-      addToast({
-        variant: 'warning',
-        title: 'Name unavailable',
-        message: conflictMessage,
-      });
-      return;
-    }
-
     setIsCreatingGroup(true);
     try {
       const createdId = await onCreateGroup(trimmedName, groupCreateDraft.color);
@@ -208,16 +167,6 @@ export function SettingsManagementModal({
         variant: 'warning',
         title: 'Tag name required',
         message: 'Tag names cannot be empty.',
-      });
-      return;
-    }
-
-    const conflictMessage = findNameConflict(trimmedName, tag.id);
-    if (conflictMessage) {
-      addToast({
-        variant: 'warning',
-        title: 'Name unavailable',
-        message: conflictMessage,
       });
       return;
     }
@@ -271,16 +220,6 @@ export function SettingsManagementModal({
         variant: 'warning',
         title: 'Group name required',
         message: 'Group names cannot be empty.',
-      });
-      return;
-    }
-
-    const conflictMessage = findNameConflict(trimmedName, group.id);
-    if (conflictMessage) {
-      addToast({
-        variant: 'warning',
-        title: 'Name unavailable',
-        message: conflictMessage,
       });
       return;
     }
@@ -350,8 +289,8 @@ export function SettingsManagementModal({
     }
   };
 
-  const tagCreateWarning = tagCreateDraft.name.trim() ? findNameConflict(tagCreateDraft.name) : null;
-  const groupCreateWarning = groupCreateDraft.name.trim() ? findNameConflict(groupCreateDraft.name) : null;
+  const tagCreateWarning = null;
+  const groupCreateWarning = null;
 
   if (!isOpen) return null;
 

@@ -1225,8 +1225,9 @@ pub async fn create_global_tag(
          LIMIT 1;",
     )
     .bind(normalized)
-    .fetch_one(pool)
-    .await
+    .fetch_optional(pool)
+    .await?
+    .ok_or_else(|| sqlx::Error::Protocol(format!("Unable to create tag '{normalized}'")))
 }
 
 pub async fn create_custom_group(
@@ -1260,8 +1261,9 @@ pub async fn create_custom_group(
          LIMIT 1;",
     )
     .bind(name)
-    .fetch_one(pool)
-    .await
+    .fetch_optional(pool)
+    .await?
+    .ok_or_else(|| sqlx::Error::Protocol(format!("Unable to create group '{name}'")))
 }
 
 pub async fn update_custom_group(

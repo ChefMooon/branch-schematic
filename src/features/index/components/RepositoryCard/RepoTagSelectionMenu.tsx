@@ -74,18 +74,6 @@ export function TagSelectionModal({
     return Array.from(selected).sort((a, b) => a.localeCompare(b));
   }, [selected]);
 
-  const createWarning = useMemo(() => {
-    const trimmedName = draftName.trim();
-    if (!trimmedName) return null;
-
-    const conflict = availableTags.find((tag) => normalizeName(tag.tag_name) === normalizeName(trimmedName));
-    if (conflict) {
-      return 'This tag already exists.';
-    }
-
-    return null;
-  }, [availableTags, draftName]);
-
   if (!isOpen) return null;
 
   const toggleTag = (tagName: string) => {
@@ -107,15 +95,6 @@ export function TagSelectionModal({
         variant: 'warning',
         title: 'Tag name required',
         message: 'Please enter a tag name before creating it.',
-      });
-      return;
-    }
-
-    if (createWarning) {
-      addToast({
-        variant: 'warning',
-        title: 'Tag already exists',
-        message: 'Choose a different name for this tag.',
       });
       return;
     }
@@ -252,12 +231,11 @@ export function TagSelectionModal({
                 onChange={(event) => setDraftColor(event.target.value)}
                 aria-label="Choose tag color"
               />
-              <button type="button" className="btn-primary" onClick={() => void handleCreateTag()} disabled={isCreating || !draftName.trim() || Boolean(createWarning)}>
+              <button type="button" className="btn-primary" onClick={() => void handleCreateTag()} disabled={isCreating || !draftName.trim()}>
                 <Plus size={14} />
                 {isCreating ? 'Creating…' : 'Create'}
               </button>
             </div>
-            {createWarning && <p className="management-helper-text error">{createWarning}</p>}
 
             <div className="tag-selection-grid">
               {filteredTags.map((tag) => {
