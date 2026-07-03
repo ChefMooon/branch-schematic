@@ -29,6 +29,7 @@ export function DashboardMain({ onOpenManagementModal, onCleanupDanglingTags }: 
     hydrateQuickFilterMetadata,
     groupDirectory,
     refreshRepositoryGitStatus,
+    cleanupDanglingTags: cleanupDanglingTagsFromStore,
   } = useWorkspaceStore();
 
   useEffect(() => {
@@ -173,7 +174,7 @@ export function DashboardMain({ onOpenManagementModal, onCleanupDanglingTags }: 
         onToggleTag={toggleTagFilter}
         onGroupChange={setSelectedGroup}
         onFavoritesToggle={() => setFavoritesOnly((prev) => !prev)}
-        onCleanupDanglingTags={onCleanupDanglingTags}
+        onCleanupDanglingTags={onCleanupDanglingTags ?? cleanupDanglingTagsFromStore}
       />
 
       <section className="repo-grid-section">
