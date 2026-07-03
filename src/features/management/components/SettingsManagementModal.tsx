@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { PencilSimple, Plus, Trash, Wrench, X } from '@phosphor-icons/react';
+import { ConfirmationModal } from '../../../components/Modal/ConfirmationModal';
 import { useNotifications } from '../../../components/notifications/NotificationProvider';
 import type { GroupSummary, TagFilterSummary } from '../../../types/git';
 
@@ -54,6 +55,9 @@ export function SettingsManagementModal({
   const [groupCreateDraft, setGroupCreateDraft] = useState({ name: '', color: defaultGroupColor() });
   const [isCreatingTag, setIsCreatingTag] = useState(false);
   const [isCreatingGroup, setIsCreatingGroup] = useState(false);
+  const [tagToDelete, setTagToDelete] = useState<TagFilterSummary | null>(null);
+  const [groupToDelete, setGroupToDelete] = useState<GroupSummary | null>(null);
+  const [isCleanupConfirmOpen, setIsCleanupConfirmOpen] = useState(false);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -234,10 +238,15 @@ export function SettingsManagementModal({
     }
   };
 
-  const handleDeleteTag = async (tag: TagFilterSummary) => {
-    if (!window.confirm(`Delete tag "${tag.tag_name}"? This removes it from all repositories.`)) {
-      return;
-    }
+  const handleDeleteTag = (tag: TagFilterSummary) => {
+    setTagToDelete(tag);
+  };
+
+  const confirmDeleteTag = async () => {
+    if (!tagToDelete) return;
+
+    const tag = tagToDelete;
+    setTagToDelete(null);
 
     try {
       await onDeleteTag(tag.id);
@@ -292,10 +301,15 @@ export function SettingsManagementModal({
     }
   };
 
-  const handleDeleteGroup = async (group: GroupSummary) => {
-    if (!window.confirm(`Delete group "${group.group_name}"? Repositories using it will be left without a group.`)) {
-      return;
-    }
+  const handleDeleteGroup = (group: GroupSummary) => {
+    setGroupToDelete(group);
+  };
+
+  const confirmDeleteGroup = async () => {
+    if (!groupToDelete) return;
+
+    const group = groupToDelete;
+    setGroupToDelete(null);
 
     try {
       await onDeleteGroup(group.id);
@@ -313,7 +327,13 @@ export function SettingsManagementModal({
     }
   };
 
-  const handleCleanup = async () => {
+  const handleCleanup = () => {
+    setIsCleanupConfirmOpen(true);
+  };
+
+  const confirmCleanup = async () => {
+    setIsCleanupConfirmOpen(false);
+
     try {
       const removed = await onCleanupDanglingTags();
       addToast({
@@ -440,9 +460,9 @@ export function SettingsManagementModal({
                 </div>
                 <button
                   type="button"
-                  className="btn-secondary"
+                  className="btn-secondary danger"
                   onClick={() => {
-                    void handleCleanup();
+                    handleCleanup();
                   }}
                 >
                   <Wrench size={14} />
@@ -525,6 +545,57 @@ export function SettingsManagementModal({
           )}
         </div>
       </div>
+
+      <ConfirmationModal
+        isOpen={Boolean(tagToDelete)}
+        title="Delete tag"
+        message={
+          <>
+            Delete tag <strong>{tagToDelete?.tag_name}</strong>? This removes it from all repositories.
+          </>
+        }
+        confirmLabel="Delete tag"
+        cancelLabel="Cancel"
+        variant="danger"
+        onConfirm={() => {
+          void confirmDeleteTag();
+        }}
+        onCancel={() => setTagToDelete(null)}
+      />
+
+      <ConfirmationModal
+        isOpen={Boolean(groupToDelete)}
+        title="Delete group"
+        message={
+          <>
+            Delete group <strong>{groupToDelete?.group_name}</strong>? Repositories using it will be left without a group.
+          </>
+        }
+        confirmLabel="Delete group"
+        cancelLabel="Cancel"
+        variant="danger"
+        onConfirm={() => {
+          void confirmDeleteGroup();
+        }}
+        onCancel={() => setGroupToDelete(null)}
+      />
+
+      <ConfirmationModal
+        isOpen={isCleanupConfirmOpen}
+        title="Cleanup unused tags"
+        message={
+          <>
+            Remove dangling tags that are no longer associated with any repositories? This action cannot be undone.
+          </>
+        }
+        confirmLabel="Cleanup tags"
+        cancelLabel="Cancel"
+        variant="danger"
+        onConfirm={() => {
+          void confirmCleanup();
+        }}
+        onCancel={() => setIsCleanupConfirmOpen(false)}
+      />
     </div>
   );
 }
