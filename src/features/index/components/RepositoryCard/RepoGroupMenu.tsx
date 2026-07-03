@@ -119,7 +119,7 @@ export function RepoGroupMenu({
             onClick={() => {
               setIsDropdownOpen(false);
               (onOpenManagement ?? onOpenManagementModal)?.();
-              window.dispatchEvent(new Event('open-management-modal'));
+              window.dispatchEvent(new CustomEvent('open-management-modal', { detail: { initialTab: 'groups' } }));
             }}
           >
             Manage Tags and Groups

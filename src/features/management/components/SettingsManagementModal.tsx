@@ -6,6 +6,7 @@ import type { GroupSummary, TagFilterSummary } from '../../../types/git';
 
 type SettingsManagementModalProps = {
   isOpen: boolean;
+  initialTab?: 'tags' | 'groups';
   groups: GroupSummary[];
   tags: TagFilterSummary[];
   danglingTagNames: string[];
@@ -31,6 +32,7 @@ function defaultGroupColor() {
 
 export function SettingsManagementModal({
   isOpen,
+  initialTab = 'tags',
   groups,
   tags,
   danglingTagNames,
@@ -44,7 +46,7 @@ export function SettingsManagementModal({
   onCleanupDanglingTags,
 }: SettingsManagementModalProps) {
   const { addToast } = useNotifications();
-  const [tab, setTab] = useState<Tab>('tags');
+  const [tab, setTab] = useState<Tab>(initialTab);
   const [tagDrafts, setTagDrafts] = useState<Record<string, { name: string; color: string }>>({});
   const [groupDrafts, setGroupDrafts] = useState<Record<string, { name: string; color: string }>>({});
   const [tagCreateDraft, setTagCreateDraft] = useState({ name: '', color: defaultTagColor() });
@@ -57,6 +59,8 @@ export function SettingsManagementModal({
 
   useEffect(() => {
     if (!isOpen) return;
+
+    setTab(initialTab);
 
     const nextTagDrafts: Record<string, { name: string; color: string }> = {};
     tags.forEach((tag) => {
@@ -74,7 +78,7 @@ export function SettingsManagementModal({
     setGroupCreateDraft({ name: '', color: defaultGroupColor() });
     setIsCreatingTag(false);
     setIsCreatingGroup(false);
-  }, [isOpen, groups, tags]);
+  }, [isOpen, initialTab, groups, tags]);
 
   const danglingLabel = useMemo(() => danglingTagNames.join(', '), [danglingTagNames]);
 
