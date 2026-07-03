@@ -17,7 +17,7 @@ import { useWorkspaceStore } from "../../../stores/workspace-store";
 import { RepoCardHeader } from "./RepositoryCard/RepoCardHeader";
 import { RepoGroupMenu } from "./RepositoryCard/RepoGroupMenu";
 import { RepoCardTags } from "./RepositoryCard/RepoCardTags";
-import { TagSelectionModal } from "../../../components/Modal/TagSelectionModal";
+import { TagSelectionModal } from "./RepositoryCard/RepoTagSelectionMenu";
 import { useNotifications } from "../../../components/notifications/NotificationProvider";
 
 interface RepositoryCardProps {
@@ -37,6 +37,8 @@ export function RepositoryCard({ repo, onRefresh, onOpenManagement, onOpenManage
   const refreshRepositoryGitStatus = useWorkspaceStore((state) => state.refreshRepositoryGitStatus);
   const addTag = useWorkspaceStore((state) => state.addTag);
   const removeTag = useWorkspaceStore((state) => state.removeTag);
+  const createGlobalTag = useWorkspaceStore((state) => state.createGlobalTag);
+  const deleteGlobalTag = useWorkspaceStore((state) => state.deleteGlobalTag);
   const getCustomGroups = useWorkspaceStore((state) => state.getCustomGroups);
   const createCustomGroup = useWorkspaceStore((state) => state.createCustomGroup);
   const tagDirectory = useWorkspaceStore((state) => state.tagDirectory);
@@ -295,9 +297,11 @@ export function RepositoryCard({ repo, onRefresh, onOpenManagement, onOpenManage
         availableTags={tagDirectory}
         assignedTagNames={(repo.tags ?? []).map((tag) => tag.tag_name)}
         onClose={() => setIsTagModalOpen(false)}
+        onCreateTag={createGlobalTag}
+        onDeleteTag={deleteGlobalTag}
         onOpenManagement={onOpenManagement}
         onOpenManagementModal={onOpenManagementModal}
-        onApply={async (nextTagNames) => {
+        onApply={async (nextTagNames: string[]) => {
           const current = new Set((repo.tags ?? []).map((tag) => tag.tag_name));
           const next = new Set(nextTagNames);
 
