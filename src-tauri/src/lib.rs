@@ -1,4 +1,4 @@
-use sqlx::sqlite::SqlitePool;
+use sqlx::sqlite::{SqliteConnectOptions, SqlitePool};
 use tauri::Manager;
 use tauri_plugin_autostart::ManagerExt;
 use tauri_plugin_window_state::{AppHandleExt, WindowExt};
@@ -7,6 +7,27 @@ mod auth;
 mod daemon;
 mod db;
 mod git;
+
+fn ensure_sqlite_db_file(path: &std::path::Path) -> Result<(), String> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|error| format!("Failed to create DB directory: {error}"))?;
+    }
+
+    std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+        .map_err(|error| format!("Failed to create/open DB file: {error}"))?;
+
+    Ok(())
+}
+
+fn sqlite_connect_options(path: &std::path::Path) -> Result<SqliteConnectOptions, String> {
+    Ok(SqliteConnectOptions::new()
+        .filename(path)
+        .create_if_missing(true))
+}
 
 // Shared Tauri State container for our background SQLx Pool
 pub struct DbState(pub SqlitePool);
@@ -338,20 +359,23 @@ pub fn run() {
         .join("com.justi.branch-schematic");
     let _ = std::fs::create_dir_all(&app_dir);
     let target_db_path = app_dir.join(db::DB_NAME);
+    let _ = ensure_sqlite_db_file(&target_db_path);
     let target_db_url = format!("sqlite:{}", target_db_path.to_string_lossy());
+    let migration_db_url = target_db_url.clone();
 
     tauri::Builder::default()
-        .setup(|app| {
+        .setup(move |app| {
             let handle = app.handle().clone();
+            let db_path = target_db_path.clone();
 
-            let app_dir = app.path().app_data_dir().expect("Failed to resolve App Data directory");
-            let _ = std::fs::create_dir_all(&app_dir);
-            let db_path = app_dir.join(db::DB_NAME);
-            let target_db_url = format!("sqlite:{}", db_path.to_string_lossy());
+            ensure_sqlite_db_file(&db_path).expect("Failed to prepare SQLite database file");
+            let connect_options = sqlite_connect_options(&db_path).expect("Failed to build SQLite connection options");
 
             let app_handle_for_db = handle.clone();
             tauri::async_runtime::block_on(async move {
-                let pool = SqlitePool::connect(&target_db_url).await.expect("Failed to connect to SQLite database");
+                let pool = SqlitePool::connect_with(connect_options)
+                    .await
+                    .expect("Failed to connect to SQLite database");
                 app_handle_for_db.manage(DbState(pool));
             });
 
@@ -409,7 +433,7 @@ pub fn run() {
         ))
         .plugin(
             tauri_plugin_sql::Builder::default()
-                .add_migrations(&target_db_url, db::get_migrations())
+                .add_migrations(&migration_db_url, db::get_migrations())
                 .build(),
         )
         .plugin(tauri_plugin_dialog::init())
