@@ -19,6 +19,11 @@ This is a desktop application providing a visual representation of Git repositor
 - **SQL Best Practices:** - Never concatenate or interpolate strings to build SQL queries (prevents SQL injection). Always use parameterized queries: `db.execute("SELECT * FROM repos WHERE id = $1", [id])`.
   - Prefer putting heavy SQL heavy-lifting or complex Git operations in Rust commands (`src-tauri/src/`) and invoking them via `invoke()`, using the SQLite plugin primarily for local client state, history cache, or basic configuration storage.
 - **Async Safety:** All Tauri Core and SQL plugin calls are asynchronous. Ensure proper `try/catch` blocks and loading/error states are handled gracefully in React hooks.
+- **Startup DB Resilience (Required):** App startup must never panic if the SQLite file is missing. Treat missing DB files as recoverable and regenerate automatically.
+  - Before opening SQLite, always ensure the AppData DB parent directory exists and pre-create the DB file if missing.
+  - For SQLx runtime connections, use path-based connect options (`SqliteConnectOptions::new().filename(path).create_if_missing(true)`) rather than URL string parsing for Windows absolute paths.
+  - Keep migration target URL and runtime SQLx pool target synchronized to the exact same DB path.
+  - Any PR touching DB initialization must include a manual reset test: delete DB file, launch app, verify blank DB is recreated and migrations apply without panic.
 
 ## Miscellaneous Guidelines
 -  Use @phosphor-icons/react for all icons. Avoid using other icon libraries to maintain consistency.
@@ -26,3 +31,4 @@ This is a desktop application providing a visual representation of Git repositor
 
 # Alpha Dev Guidelines
 - If Database changes are required. Continue to improve database migration 2. If any changes are required to the database inform the user to reset the database and re-import their repositories. This is only while in alpha
+- If startup DB initialization logic is changed, require explicit verification that deleting the DB file still allows clean startup and automatic regeneration.
