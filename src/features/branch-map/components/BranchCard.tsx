@@ -85,8 +85,8 @@ export function BranchCard({ data }: NodeProps<BranchCardNode>) {
 
   // Compute exact 3-Tier LoD classification flags matching requirements
   let lodTier: 'CLOSE' | 'MID' | 'BIRD' = 'CLOSE';
-  if (zoom < 0.5) lodTier = 'BIRD';
-  else if (zoom >= 0.5 && zoom < 1.0) lodTier = 'MID';
+  if (zoom < 0.25) lodTier = 'BIRD';
+  else if (zoom >= 0.25 && zoom < 0.65) lodTier = 'MID';
 
   const accentColor = useResolveCardColor(data.themeColorHex, data.groupThemeColorHex, '#4F46E5');
   const isCompact = data.viewMode === 'COMPACT';
@@ -105,7 +105,9 @@ export function BranchCard({ data }: NodeProps<BranchCardNode>) {
     transition: 'border-color 0.2s ease, box-shadow 0.2s ease',
     opacity: data.isDimmedByTagFilter ? 0.35 : 1,
     filter: data.isDimmedByTagFilter ? 'grayscale(0.8)' : 'none',
-    overflow: isCompact ? 'visible' : 'hidden',
+    minHeight: 'auto',
+    height: 'auto',
+    overflow: 'visible',
     boxSizing: 'border-box',
   };
 
@@ -248,7 +250,7 @@ export function BranchCard({ data }: NodeProps<BranchCardNode>) {
 
       {/* Internal Timeline Render Area */}
       {!isCompact && (
-        <div style={{ marginTop: '10px', borderTop: `1px solid ${isDark ? '#262626' : '#e5e7eb'}`, paddingTop: '8px', minHeight: isScrollableTimeline ? '400px' : 'auto', maxHeight: isScrollableTimeline ? '400px' : 'none', height: isScrollableTimeline ? '400px' : 'auto', display: 'flex', flexDirection: 'column', gap: '8px', boxSizing: 'border-box', overflow: 'hidden' }}>
+        <div style={{ marginTop: '10px', borderTop: `1px solid ${isDark ? '#262626' : '#e5e7eb'}`, paddingTop: '8px', display: 'flex', flexDirection: 'column', gap: '8px', boxSizing: 'border-box', overflow: 'visible' }}>
           <div style={{ display: 'flex', gap: '12px', fontSize: '11px', color: isDark ? '#a1a1aa' : '#4b5563', opacity: lodTier === 'BIRD' ? 0.35 : 1, flexShrink: 0 }}>
             <div>▲ <strong>{data.aheadCount ?? 0}</strong> ahead</div>
             <div>▼ <strong>{data.behindCount ?? 0}</strong> behind</div>
@@ -259,7 +261,7 @@ export function BranchCard({ data }: NodeProps<BranchCardNode>) {
             lodTier={lodTier} 
             isDark={isDark} 
             accentColor={accentColor} 
-            maxHeight={isScrollableTimeline ? '100%' : undefined} 
+            maxHeight={isScrollableTimeline ? '400px' : undefined} 
             isScrollable={isScrollableTimeline} 
           />
         </div>

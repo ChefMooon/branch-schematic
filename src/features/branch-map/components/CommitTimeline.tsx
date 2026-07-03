@@ -25,8 +25,15 @@ export function CommitTimeline({ branchId, densityLimit, lodTier, isDark, accent
   const [loading, setLoading] = useState(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const isBird = lodTier === 'BIRD';
-  const shellHeight = maxHeight ?? 'auto';
   const placeholderCount = Math.max(3, Math.min(6, Math.ceil((densityLimit === -1 ? 100 : densityLimit) / 6)));
+  const displayedRows = Math.max(1, commits.length || (densityLimit > 0 ? densityLimit : 1));
+  const closeRowHeight = 88;
+  const rowGap = 8;
+  const nonScrollableHeightPx = Math.max(
+    140,
+    displayedRows * closeRowHeight + Math.max(0, displayedRows - 1) * rowGap,
+  );
+  const shellHeight = isScrollable ? (maxHeight ?? '400px') : `${nonScrollableHeightPx}px`;
 
   useEffect(() => {
     async function loadCommits() {
@@ -46,12 +53,12 @@ export function CommitTimeline({ branchId, densityLimit, lodTier, isDark, accent
   }, [branchId, densityLimit]);
 
   const shellStyle: React.CSSProperties = {
-    minHeight: isScrollable ? shellHeight : 0,
-    maxHeight: isScrollable ? shellHeight : 'none',
-    height: isScrollable ? shellHeight : 'auto',
-    overflowY: isBird || !isScrollable ? 'visible' : 'auto',
+    minHeight: shellHeight,
+    maxHeight: shellHeight,
+    height: shellHeight,
+    overflowY: isScrollable ? 'auto' : 'hidden',
     overflowX: 'hidden',
-    overflow: isScrollable ? 'auto' : 'visible',
+    overflow: isScrollable ? 'auto' : 'hidden',
     paddingRight: '4px',
     display: 'flex',
     flexDirection: 'column',
@@ -87,8 +94,14 @@ export function CommitTimeline({ branchId, densityLimit, lodTier, isDark, accent
 
   // Mid-Range LOD Tier: Render structural high-density abstract rows (dots/lines)
   if (lodTier === 'MID') {
+    const midLayoutStyle: React.CSSProperties = {
+      ...shellStyle,
+      justifyContent: commits.length > 1 ? 'space-evenly' : 'center',
+      gap: 0,
+    };
+
     return (
-      <div style={shellStyle}>
+      <div style={midLayoutStyle}>
         {commits.map((c) => (
           <div key={c.commit_hash} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <div style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: accentColor }} />
@@ -119,6 +132,8 @@ export function CommitTimeline({ branchId, densityLimit, lodTier, isDark, accent
           <div 
             key={commit.commit_hash}
             style={{
+              height: `${closeRowHeight}px`,
+              flexShrink: 0,
               padding: '6px 8px',
               borderRadius: '4px',
               backgroundColor: isDark ? '#171717' : '#f9fafb',
@@ -126,7 +141,9 @@ export function CommitTimeline({ branchId, densityLimit, lodTier, isDark, accent
               fontSize: '11px',
               display: 'flex',
               flexDirection: 'column',
-              gap: '2px'
+              gap: '2px',
+              boxSizing: 'border-box',
+              overflow: 'hidden',
             }}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', color: '#71717a' }}>
