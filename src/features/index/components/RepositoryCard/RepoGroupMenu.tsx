@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
+import { X } from '@phosphor-icons/react';
+import { TextInputModal } from '../../../../components/Modal/TextInputModal';
 import type { GroupSummary, TrackedPath } from '../../../../types/git';
 
 type RepoGroupMenuProps = {
   repo: TrackedPath;
   availableGroups: GroupSummary[];
   onGroupChange: (groupId: string | null) => void;
-  onCreateGroup: () => void;
+  onCreateGroup: (groupName: string) => void | Promise<void>;
   onOpenManagement?: () => void;
   onOpenManagementModal?: () => void;
 };
@@ -20,6 +22,8 @@ export function RepoGroupMenu({
 }: RepoGroupMenuProps) {
   const groupLabel = repo.custom_group ?? 'No Group';
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [isSubmittingGroup, setIsSubmittingGroup] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -43,6 +47,17 @@ export function RepoGroupMenu({
     setIsDropdownOpen(false);
   };
 
+  const handleCreateGroupConfirm = async (groupName: string) => {
+    setIsSubmittingGroup(true);
+    try {
+      await onCreateGroup(groupName);
+      setIsCreateModalOpen(false);
+      setIsDropdownOpen(false);
+    } finally {
+      setIsSubmittingGroup(false);
+    }
+  };
+
   return (
     <div className="repo-group-menu" ref={dropdownRef}>
       <div className="repo-group-badge-row">
@@ -53,21 +68,30 @@ export function RepoGroupMenu({
           onClick={() => setIsDropdownOpen((prev) => !prev)}
           aria-expanded={isDropdownOpen}
         >
-          {groupLabel}
+          <span className="repo-group-badge-label">{groupLabel}</span>
+          {repo.group_id ? (
+            <span
+              className="repo-group-clear"
+              role="button"
+              tabIndex={0}
+              onClick={(event) => {
+                event.stopPropagation();
+                handleGroupSelect(null);
+              }}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  handleGroupSelect(null);
+                }
+              }}
+              title="Remove group"
+              aria-label="Remove group"
+            >
+              <X size={10} weight="bold" />
+            </span>
+          ) : null}
         </button>
-        {repo.group_id ? (
-          <button
-            type="button"
-            className="repo-group-clear"
-            onClick={(event) => {
-              event.stopPropagation();
-              handleGroupSelect(null);
-            }}
-            title="Remove group"
-          >
-            ×
-          </button>
-        ) : null}
       </div>
       {isDropdownOpen ? (
         <div className="repo-group-menu-panel" role="menu">
@@ -86,7 +110,7 @@ export function RepoGroupMenu({
               {group.group_name}
             </button>
           ))}
-          <button type="button" className="repo-group-menu-item" onClick={() => { setIsDropdownOpen(false); onCreateGroup(); }}>
+          <button type="button" className="repo-group-menu-item" onClick={() => { setIsDropdownOpen(false); setIsCreateModalOpen(true); }}>
             + Create Group
           </button>
           <button
@@ -102,6 +126,17 @@ export function RepoGroupMenu({
           </button>
         </div>
       ) : null}
+      <TextInputModal
+        isOpen={isCreateModalOpen}
+        title="Create Group"
+        description="Give this group a name so it can be reused across repositories."
+        inputLabel="Group name"
+        placeholder="e.g. Backend"
+        confirmLabel="Create"
+        isBusy={isSubmittingGroup}
+        onConfirm={handleCreateGroupConfirm}
+        onCancel={() => setIsCreateModalOpen(false)}
+      />
     </div>
   );
 }

@@ -204,12 +204,12 @@ export function RepositoryCard({ repo, onRefresh, onOpenManagement, onOpenManage
     await updateRepositoryTheme(repo.id, nextColor, nextIcon);
   };
 
-  const handleCreateGroup = async () => {
-    const name = window.prompt("Enter a new group name:");
-    if (!name || !name.trim()) return;
+  const handleCreateGroup = async (groupName: string) => {
+    const name = groupName.trim();
+    if (!name) return;
 
     try {
-      const createdId = await createCustomGroup(name.trim());
+      const createdId = await createCustomGroup(name);
       if (createdId) {
         await setRepositoryGroup(repo.id, createdId);
       }
@@ -273,8 +273,8 @@ export function RepositoryCard({ repo, onRefresh, onOpenManagement, onOpenManage
           onGroupChange={(group) => {
             void handleGroupChange(group);
           }}
-          onCreateGroup={() => {
-            void handleCreateGroup();
+          onCreateGroup={(groupName) => {
+            void handleCreateGroup(groupName);
           }}
           onOpenManagement={onOpenManagement}
           onOpenManagementModal={onOpenManagementModal}
