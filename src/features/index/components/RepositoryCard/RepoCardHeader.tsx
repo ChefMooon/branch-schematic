@@ -21,6 +21,7 @@ type RepoCardHeaderProps = {
   onPush: () => void | Promise<void>;
   onToggleFavorite: () => void | Promise<void>;
   onUntrack: (event: React.MouseEvent<HTMLButtonElement>) => void;
+  onThemeChange: (colorHex: string | null, iconName: string | null) => void | Promise<void>;
 };
 
 export function RepoCardHeader({
@@ -42,6 +43,7 @@ export function RepoCardHeader({
   onPush,
   onToggleFavorite,
   onUntrack,
+  onThemeChange,
 }: RepoCardHeaderProps) {
   const isFavorite = (repo.is_favorite ?? 0) === 1;
   const primaryTitle = repo.alias_name || repo.display_name;
@@ -89,6 +91,9 @@ export function RepoCardHeader({
             onRenameAlias={onStartEditing}
             onToggleFavorite={onToggleFavorite}
             onUntrack={onUntrack}
+            currentThemeColor={repo.theme_color_hex ?? null}
+            currentIconName={repo.icon_name ?? null}
+            onThemeChange={onThemeChange}
           />
         </div>
       </div>

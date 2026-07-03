@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import {
   ArrowClockwise,
   ArrowDown,
@@ -9,6 +9,7 @@ import {
   Trash,
 } from "@phosphor-icons/react";
 import { ConfirmationModal } from "../../../../components/Modal/ConfirmationModal";
+import { RepoThemeModal } from "./RepoThemeModal.tsx";
 
 type RepoCardOverflowMenuProps = {
   isFavorite: boolean;
@@ -21,6 +22,9 @@ type RepoCardOverflowMenuProps = {
   onRenameAlias: () => void;
   onToggleFavorite: () => void | Promise<void>;
   onUntrack: (event: React.MouseEvent<HTMLButtonElement>) => void;
+  currentThemeColor: string | null;
+  currentIconName: string | null;
+  onThemeChange: (colorHex: string | null, iconName: string | null) => void | Promise<void>;
 };
 
 export function RepoCardOverflowMenu({
@@ -34,14 +38,18 @@ export function RepoCardOverflowMenu({
   onRenameAlias,
   onToggleFavorite,
   onUntrack,
+  currentThemeColor,
+  currentIconName,
+  onThemeChange,
 }: RepoCardOverflowMenuProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [menuPosition, setMenuPosition] = useState<{ top: number; left: number } | null>(null);
   const [showUntrackConfirmation, setShowUntrackConfirmation] = useState(false);
+  const [isThemeModalOpen, setIsThemeModalOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!isOpen) {
       setMenuPosition(null);
       return;
@@ -52,17 +60,19 @@ export function RepoCardOverflowMenu({
 
       const triggerRect = triggerRef.current.getBoundingClientRect();
       const menuWidth = 220;
-      const menuHeight = Math.min(360, window.innerHeight - 24);
+      const viewportPadding = 8;
+      const menuHeight = menuRef.current?.offsetHeight ?? Math.min(360, window.innerHeight - (viewportPadding * 2));
       const left = Math.min(triggerRect.right - menuWidth, window.innerWidth - menuWidth - 8);
-      const top = Math.min(triggerRect.bottom + 6, window.innerHeight - menuHeight - 8);
+      const preferredTop = triggerRect.bottom + 6;
+      const top = Math.min(preferredTop, window.innerHeight - menuHeight - viewportPadding);
 
       setMenuPosition({
-        top: Math.max(8, top),
-        left: Math.max(8, left),
+        top: Math.max(viewportPadding, top),
+        left: Math.max(viewportPadding, left),
       });
     };
 
-    updateMenuPosition();
+    const frame = window.requestAnimationFrame(updateMenuPosition);
 
     const handlePointerDown = (event: MouseEvent) => {
       const target = event.target as Node;
@@ -86,6 +96,7 @@ export function RepoCardOverflowMenu({
     document.addEventListener("scroll", handleScroll, true);
 
     return () => {
+      window.cancelAnimationFrame(frame);
       document.removeEventListener("pointerdown", handlePointerDown);
       window.removeEventListener("resize", handleResize);
       document.removeEventListener("scroll", handleScroll, true);
@@ -100,6 +111,11 @@ export function RepoCardOverflowMenu({
   const handleUntrackClick = (event: React.MouseEvent<HTMLButtonElement>) => {
     event.preventDefault();
     setShowUntrackConfirmation(true);
+  };
+
+  const handleThemeModalOpen = () => {
+    setIsOpen(false);
+    setIsThemeModalOpen(true);
   };
 
   const confirmUntrack = (event?: React.MouseEvent<HTMLButtonElement>) => {
@@ -135,7 +151,7 @@ export function RepoCardOverflowMenu({
           ref={menuRef}
           role="menu"
           aria-label="Repository actions"
-          style={{ top: menuPosition.top, left: menuPosition.left, overflow: "hidden" }}
+          style={{ top: menuPosition.top, left: menuPosition.left }}
         >
           <div className="overflow-section">
             <div className="overflow-section-title">Git Operations</div>
@@ -207,6 +223,19 @@ export function RepoCardOverflowMenu({
 
           <div className="overflow-divider" />
 
+          <div className="overflow-section">
+            <button
+              type="button"
+              className="overflow-menu-item"
+              onClick={handleThemeModalOpen}
+            >
+              <PencilSimple size={16} />
+              <span>Edit theme</span>
+            </button>
+          </div>
+
+          <div className="overflow-divider" />
+
           <div className="overflow-section overflow-section-danger">
             <button
               type="button"
@@ -235,6 +264,15 @@ export function RepoCardOverflowMenu({
         isBusy={isBusy}
         onConfirm={() => confirmUntrack()}
         onCancel={() => setShowUntrackConfirmation(false)}
+      />
+
+      <RepoThemeModal
+        isOpen={isThemeModalOpen}
+        isBusy={isBusy}
+        currentThemeColor={currentThemeColor}
+        currentIconName={currentIconName}
+        onClose={() => setIsThemeModalOpen(false)}
+        onThemeChange={onThemeChange}
       />
     </div>
   );

@@ -39,6 +39,8 @@ pub struct WorkspaceDetails {
     pub last_accessed_at: Option<String>,
     pub tags_json: String,
     pub default_branch_name: Option<String>,
+    pub theme_color_hex: Option<String>,
+    pub icon_name: Option<String>,
     pub ahead_count: i64,
     pub behind_count: i64,
     pub has_upstream: bool,
@@ -503,6 +505,8 @@ pub async fn get_tracked_workspaces(
             custom_groups.group_name AS custom_group,
             tracked_paths.last_accessed_at,
             tracked_paths.default_branch_name,
+            tracked_paths.theme_color_hex,
+            tracked_paths.icon_name,
             cached_git_branches.ahead_count AS cached_ahead_count,
             cached_git_branches.behind_count AS cached_behind_count,
             cached_git_branches.has_upstream AS cached_has_upstream,
@@ -550,6 +554,8 @@ pub async fn get_tracked_workspaces(
         let last_accessed_at: Option<String> = row.get("last_accessed_at");
         let tags_json: String = row.get("tags_json");
         let default_branch_name: Option<String> = row.get("default_branch_name");
+        let theme_color_hex: Option<String> = row.get("theme_color_hex");
+        let icon_name: Option<String> = row.get("icon_name");
         let ahead_count: Option<i64> = row.get("cached_ahead_count");
         let behind_count: Option<i64> = row.get("cached_behind_count");
         let has_upstream_raw: Option<i64> = row.get("cached_has_upstream");
@@ -600,6 +606,8 @@ pub async fn get_tracked_workspaces(
             last_accessed_at,
             tags_json,
             default_branch_name,
+            theme_color_hex,
+            icon_name,
             ahead_count: ahead_count.unwrap_or(0),
             behind_count: behind_count.unwrap_or(0),
             has_upstream: has_upstream_raw.unwrap_or(0) != 0,

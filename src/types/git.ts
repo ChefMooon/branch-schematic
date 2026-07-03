@@ -85,6 +85,10 @@ export interface TrackedPath {
   last_accessed_at?: string | null;
   /** Relational tags resolved through global_tags + tracked_path_tags */
   tags?: RepoTag[];
+  /** Optional repository accent color override */
+  theme_color_hex?: string | null;
+  /** Optional repository icon override */
+  icon_name?: string | null;
 }
 
 /**

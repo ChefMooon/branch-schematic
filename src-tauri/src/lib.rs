@@ -288,6 +288,29 @@ async fn soft_archive_repository(
 }
 
 #[tauri::command]
+async fn set_repository_theme(
+    state: tauri::State<'_, DbState>,
+    path_id: String,
+    color_hex: Option<String>,
+    icon_name: Option<String>,
+) -> Result<(), String> {
+    let normalized_color = color_hex.and_then(|value| {
+        let trimmed = value.trim();
+        if trimmed.is_empty() { None } else { Some(trimmed.to_string()) }
+    });
+    let normalized_icon = icon_name.and_then(|value| {
+        let trimmed = value.trim();
+        if trimmed.is_empty() { None } else { Some(trimmed.to_string()) }
+    });
+
+    db::update_repository_theme(&state.0, &path_id, normalized_color.as_deref(), normalized_icon.as_deref())
+        .await
+        .map_err(|error| format!("Failed to persist repository theme: {error}"))?;
+
+    Ok(())
+}
+
+#[tauri::command]
 async fn get_branch_commits(
     state: tauri::State<'_, DbState>,
     branch_id: String,
@@ -482,6 +505,7 @@ pub fn run() {
             git::set_repository_favorite,
             git::set_repository_origin_type,
             git::set_repository_group,
+            set_repository_theme,
             git::create_custom_group,
             git::update_custom_group,
             git::delete_custom_group,

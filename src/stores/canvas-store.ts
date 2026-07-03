@@ -44,6 +44,7 @@ export interface WorkspaceNodeRecord {
   view_mode: 'COMPACT' | 'EXPANDED';
   commit_density: number;
   theme_color_hex: string;
+  group_theme_color_hex?: string | null;
   tags_json?: string | null;
 }
 
@@ -612,6 +613,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
             viewMode: record.view_mode as 'COMPACT' | 'EXPANDED',
             commitDensity: record.commit_density,
             themeColorHex: record.theme_color_hex || '#4f46e5',
+            groupThemeColorHex: record.group_theme_color_hex || null,
             tags: parseNodeTags(record.tags_json),
             isDimmedByTagFilter:
               activeTagFilters.length > 0 &&

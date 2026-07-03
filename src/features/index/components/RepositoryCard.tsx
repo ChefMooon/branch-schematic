@@ -1,17 +1,17 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import {
   GitBranch,
   ArrowDown,
   ArrowUp,
   Desktop,
-  GitFork,
   Cloud,
   House,
   CircleNotch,
   WarningCircle,
   UsersThree,
 } from "@phosphor-icons/react";
+import { repositoryIconRegistry } from "../../icon/utils/iconRegistry";
 import type { TrackedPath } from "../../../types/git";
 import { useWorkspaceStore } from "../../../stores/workspace-store";
 import { RepoCardHeader } from "./RepositoryCard/RepoCardHeader";
@@ -33,12 +33,14 @@ export function RepositoryCard({ repo, onRefresh, onOpenManagement, onOpenManage
   const originType = repo.repo_origin_type ?? "LOCAL_ONLY";
   const setRepositoryFavorite = useWorkspaceStore((state) => state.setRepositoryFavorite);
   const setRepositoryGroup = useWorkspaceStore((state) => state.setRepositoryGroup);
+  const updateRepositoryTheme = useWorkspaceStore((state) => state.updateRepositoryTheme);
   const refreshRepositoryGitStatus = useWorkspaceStore((state) => state.refreshRepositoryGitStatus);
   const addTag = useWorkspaceStore((state) => state.addTag);
   const removeTag = useWorkspaceStore((state) => state.removeTag);
   const getCustomGroups = useWorkspaceStore((state) => state.getCustomGroups);
   const createCustomGroup = useWorkspaceStore((state) => state.createCustomGroup);
   const tagDirectory = useWorkspaceStore((state) => state.tagDirectory);
+  const groupDirectory = useWorkspaceStore((state) => state.groupDirectory);
   const { addToast } = useNotifications();
   
   // ALIAS LAYOUT STATE TRACKERS
@@ -46,16 +48,6 @@ export function RepositoryCard({ repo, onRefresh, onOpenManagement, onOpenManage
   const [isTagModalOpen, setIsTagModalOpen] = useState(false);
   const [aliasInput, setAliasInput] = useState("");
   const [loadingAction, setLoadingAction] = useState<"fetch" | "pull" | "push" | "checkout" | "alias" | "refresh" | null>(null);
-
-  // Helper template assignment for classification visual elements
-  const getOriginIcon = () => {
-    switch (originType) {
-      case "FORK": return <GitFork size={20} />;
-      case "OWNED": return <Cloud size={20} />;
-      case "CONTRIBUTOR": return <UsersThree size={20} />;
-      default: return <Desktop size={20} />;
-    }
-  };
 
   // PREPOPULATE ON START EDITING
   const handleStartEditing = () => {
@@ -189,12 +181,25 @@ export function RepositoryCard({ repo, onRefresh, onOpenManagement, onOpenManage
   const isAnyLoading = loadingAction !== null;
   const availableGroups = getCustomGroups();
 
+  const resolvedGroupColor = useMemo(() => {
+    return groupDirectory.find((group) => group.id === repo.group_id)?.color_hex ?? null;
+  }, [groupDirectory, repo.group_id]);
+
+  const resolvedThemeColor = repo.theme_color_hex ?? resolvedGroupColor ?? '#4F46E5';
+  const ResolvedIcon = (repo.icon_name ? repositoryIconRegistry[repo.icon_name as keyof typeof repositoryIconRegistry] : undefined) ?? (
+    originType === 'FORK' ? GitBranch : originType === 'OWNED' ? Cloud : originType === 'CONTRIBUTOR' ? UsersThree : Desktop
+  );
+
   const handleFavoriteToggle = async () => {
     await setRepositoryFavorite(repo.id, (repo.is_favorite ?? 0) !== 1);
   };
 
   const handleGroupChange = async (groupId: string | null) => {
     await setRepositoryGroup(repo.id, groupId);
+  };
+
+  const handleThemeChange = async (nextColor: string | null, nextIcon: string | null) => {
+    await updateRepositoryTheme(repo.id, nextColor, nextIcon);
   };
 
   const handleCreateGroup = async () => {
@@ -218,11 +223,12 @@ export function RepositoryCard({ repo, onRefresh, onOpenManagement, onOpenManage
   return (
     <div
       className={`repo-card origin-${originType.toLowerCase()} ${(repo.is_favorite ?? 0) === 1 ? 'is-favorited' : ''} ${isSelected ? 'is-selected' : ''}`}
+      style={{ borderColor: `${resolvedThemeColor}55` }}
     >
       {/* Top Header Information Stack */}
       <div className="repo-card-top">
-        <div className="repo-icon-wrapper">
-          {getOriginIcon()}
+        <div className="repo-icon-wrapper" style={{ color: resolvedThemeColor, borderColor: `${resolvedThemeColor}55` }} onClick={(event) => event.stopPropagation()}>
+          <ResolvedIcon size={20} weight={repo.icon_name ? 'fill' : 'regular'} />
         </div>
         <RepoCardHeader
           repo={repo}
@@ -253,6 +259,7 @@ export function RepositoryCard({ repo, onRefresh, onOpenManagement, onOpenManage
             void handleFavoriteToggle();
           }}
           onUntrack={handleUntrackProject}
+          onThemeChange={handleThemeChange}
         />
       </div>
 

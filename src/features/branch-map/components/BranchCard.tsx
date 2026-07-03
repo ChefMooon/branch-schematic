@@ -17,9 +17,14 @@ export type BranchCardNode = Node<{
   viewMode: 'COMPACT' | 'EXPANDED';
   commitDensity: number;
   themeColorHex: string;
+  groupThemeColorHex?: string | null;
   tags?: RepoTag[];
   isDimmedByTagFilter?: boolean;
 }>;
+
+function useResolveCardColor(themeColorHex?: string | null, groupThemeColorHex?: string | null, fallback = '#4F46E5') {
+  return themeColorHex || groupThemeColorHex || fallback;
+}
 
 function useAppThemeMode() {
   const [themeMode, setThemeMode] = useState<'light' | 'dark'>(() => {
@@ -83,7 +88,7 @@ export function BranchCard({ data }: NodeProps<BranchCardNode>) {
   if (zoom < 0.5) lodTier = 'BIRD';
   else if (zoom >= 0.5 && zoom < 1.0) lodTier = 'MID';
 
-  const accentColor = data.themeColorHex ?? '#4F46E5';
+  const accentColor = useResolveCardColor(data.themeColorHex, data.groupThemeColorHex, '#4F46E5');
   const isCompact = data.viewMode === 'COMPACT';
   const isScrollableTimeline = data.commitDensity === -1;
   const repositoryLabel = data.repositoryName?.trim() || data.repoPathId;

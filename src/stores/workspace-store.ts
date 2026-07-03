@@ -47,6 +47,7 @@ interface WorkspaceState {
   removeRepo: (repoId: string) => void;
   setRepositoryFavorite: (repoId: string, favorite: boolean) => Promise<void>;
   setRepositoryGroup: (repoId: string, groupId: string | null) => Promise<void>;
+  updateRepositoryTheme: (id: string, colorHex: string | null, iconName: string | null) => Promise<void>;
   refreshRepositoryGitStatus: (repoId: string, absolutePath: string) => Promise<void>;
   addTag: (repoId: string, tagName: string, colorHex?: string) => Promise<void>;
   removeTag: (repoId: string, tagName: string) => Promise<void>;
@@ -103,6 +104,8 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         custom_group: repo.custom_group ?? null,
         last_accessed_at: repo.last_accessed_at ?? null,
         tags: parseRepoTags(repo.tags_json),
+        theme_color_hex: repo.theme_color_hex ?? null,
+        icon_name: repo.icon_name ?? null,
       }));
 
       const currentActiveRepo = get().activeRepoId
@@ -200,6 +203,15 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       await get().hydrateManagementDirectory();
     } catch (error) {
       console.error('Failed to set custom group:', error);
+    }
+  },
+
+  updateRepositoryTheme: async (id, colorHex, iconName) => {
+    try {
+      await invoke('set_repository_theme', { pathId: id, colorHex, iconName });
+      await get().hydrateFromBackend();
+    } catch (error) {
+      console.error('Failed to update repository theme:', error);
     }
   },
 

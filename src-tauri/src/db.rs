@@ -12,6 +12,8 @@ pub struct TrackedPathRow {
     pub absolute_path: String,
     pub remote_url: Option<String>,
     pub is_active: i64,
+    pub theme_color_hex: Option<String>,
+    pub icon_name: Option<String>,
 }
 
 #[derive(Debug, Serialize, Clone, FromRow)]
@@ -55,6 +57,7 @@ pub struct WorkspaceNodeRow {
     pub view_mode: String,
     pub commit_density: i64,
     pub theme_color_hex: String,
+    pub group_theme_color_hex: Option<String>,
     pub tags_json: Option<String>,
 }
 
@@ -178,6 +181,9 @@ pub fn get_migrations() -> Vec<Migration> {
                 is_favorite INTEGER NOT NULL DEFAULT 0,
                 last_accessed_at TEXT DEFAULT NULL,
                 default_branch_name TEXT DEFAULT NULL,
+
+                theme_color_hex TEXT DEFAULT NULL,
+                icon_name TEXT DEFAULT NULL,
                 
                 is_active INTEGER NOT NULL DEFAULT 1,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -417,11 +423,40 @@ pub async fn fetch_active_tracked_paths(
     pool: &SqlitePool,
 ) -> Result<Vec<TrackedPathRow>, sqlx::Error> {
     let rows = sqlx::query_as::<_, TrackedPathRow>(
-        "SELECT id, display_name, absolute_path, remote_url, is_active FROM tracked_paths WHERE is_active = 1 ORDER BY display_name ASC"
+        "SELECT id, display_name, absolute_path, remote_url, is_active, theme_color_hex, icon_name FROM tracked_paths WHERE is_active = 1 ORDER BY display_name ASC"
     )
     .fetch_all(pool)
     .await?;
     Ok(rows)
+}
+
+pub async fn ensure_tracked_paths_theme_columns(pool: &SqlitePool) -> Result<(), sqlx::Error> {
+    let columns = sqlx::query("PRAGMA table_info(tracked_paths);")
+        .fetch_all(pool)
+        .await?;
+
+    let has_theme_color_hex = columns.iter().any(|row| {
+        row.get::<String, _>("name")
+            .eq_ignore_ascii_case("theme_color_hex")
+    });
+    let has_icon_name = columns.iter().any(|row| {
+        row.get::<String, _>("name")
+            .eq_ignore_ascii_case("icon_name")
+    });
+
+    if !has_theme_color_hex {
+        sqlx::query("ALTER TABLE tracked_paths ADD COLUMN theme_color_hex TEXT DEFAULT NULL;")
+            .execute(pool)
+            .await?;
+    }
+
+    if !has_icon_name {
+        sqlx::query("ALTER TABLE tracked_paths ADD COLUMN icon_name TEXT DEFAULT NULL;")
+            .execute(pool)
+            .await?;
+    }
+
+    Ok(())
 }
 
 pub async fn ensure_canvas_view_exists(pool: &SqlitePool, view_id: &str, view_name: &str) -> Result<(), sqlx::Error> {
@@ -720,13 +755,16 @@ pub async fn fetch_workspace_nodes(
             END AS pos_y,
             COALESCE(card_layout.view_mode, 'EXPANDED') AS view_mode,
             COALESCE(card_layout.commit_density, 5) AS commit_density,
-            COALESCE(card_layout.theme_color_hex, '#4F46E5') AS theme_color_hex,
+            COALESCE(card_layout.theme_color_hex, tracked_paths.theme_color_hex, custom_groups.color_hex, '#4F46E5') AS theme_color_hex,
+            custom_groups.color_hex AS group_theme_color_hex,
             COALESCE(repo_tags.tags_json, '[]') AS tags_json
         FROM selected_branches
         LEFT JOIN tracked_paths
             ON tracked_paths.id = selected_branches.path_id
         LEFT JOIN card_layout
             ON card_layout.repo_path_id = selected_branches.path_id
+        LEFT JOIN custom_groups
+            ON custom_groups.id = tracked_paths.group_id
         LEFT JOIN branch_layout
             ON branch_layout.branch_id = selected_branches.branch_id
         LEFT JOIN cached_git_commits AS commits
@@ -1083,6 +1121,21 @@ pub async fn update_repository_group(
 ) -> Result<(), sqlx::Error> {
     sqlx::query("UPDATE tracked_paths SET group_id = ? WHERE id = ?;")
         .bind(group_id)
+        .bind(path_id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+pub async fn update_repository_theme(
+    pool: &SqlitePool,
+    path_id: &str,
+    color_hex: Option<&str>,
+    icon_name: Option<&str>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE tracked_paths SET theme_color_hex = ?, icon_name = ? WHERE id = ?;")
+        .bind(color_hex)
+        .bind(icon_name)
         .bind(path_id)
         .execute(pool)
         .await?;
