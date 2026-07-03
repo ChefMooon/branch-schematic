@@ -526,6 +526,25 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  position: relative;
+  overflow: visible;
+  cursor: pointer;
+}
+
+.repo-icon-favorite-badge {
+  position: absolute;
+  right: -4px;
+  bottom: -4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #fbbf24, #f59e0b);
+  color: white;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
+  pointer-events: none;
 }
 
 .repo-card.origin-owned .repo-icon-wrapper { color: #3b82f6; background-color: #eff6ff; }

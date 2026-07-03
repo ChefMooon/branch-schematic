@@ -10,6 +10,7 @@ import {
   CircleNotch,
   WarningCircle,
   UsersThree,
+  Star,
 } from "@phosphor-icons/react";
 import { repositoryIconRegistry } from "../../icon/utils/iconRegistry";
 import type { TrackedPath } from "../../../types/git";
@@ -18,6 +19,7 @@ import { RepoCardHeader } from "./RepositoryCard/RepoCardHeader";
 import { RepoGroupMenu } from "./RepositoryCard/RepoGroupMenu";
 import { RepoCardTags } from "./RepositoryCard/RepoCardTags";
 import { TagSelectionModal } from "./RepositoryCard/RepoTagSelectionMenu";
+import { RepoThemeModal } from "./RepositoryCard/RepoThemeModal";
 import { useNotifications } from "../../../components/notifications/NotificationProvider";
 
 interface RepositoryCardProps {
@@ -48,6 +50,7 @@ export function RepositoryCard({ repo, onRefresh, onOpenManagement, onOpenManage
   // ALIAS LAYOUT STATE TRACKERS
   const [isEditingAlias, setIsEditingAlias] = useState(false);
   const [isTagModalOpen, setIsTagModalOpen] = useState(false);
+  const [isThemeModalOpen, setIsThemeModalOpen] = useState(false);
   const [aliasInput, setAliasInput] = useState("");
   const [loadingAction, setLoadingAction] = useState<"fetch" | "pull" | "push" | "checkout" | "alias" | "refresh" | null>(null);
 
@@ -188,6 +191,7 @@ export function RepositoryCard({ repo, onRefresh, onOpenManagement, onOpenManage
   }, [groupDirectory, repo.group_id]);
 
   const resolvedThemeColor = repo.theme_color_hex ?? resolvedGroupColor ?? '#4F46E5';
+  const isFavorite = (repo.is_favorite ?? 0) === 1;
   const ResolvedIcon = (repo.icon_name ? repositoryIconRegistry[repo.icon_name as keyof typeof repositoryIconRegistry] : undefined) ?? (
     originType === 'FORK' ? GitBranch : originType === 'OWNED' ? Cloud : originType === 'CONTRIBUTOR' ? UsersThree : Desktop
   );
@@ -222,6 +226,16 @@ export function RepositoryCard({ repo, onRefresh, onOpenManagement, onOpenManage
     }
   };
 
+  const handleIconClick = (event: React.MouseEvent<HTMLDivElement>) => {
+    event.stopPropagation();
+  };
+
+  const handleIconDoubleClick = (event: React.MouseEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setIsThemeModalOpen(true);
+  };
+
   return (
     <div
       className={`repo-card origin-${originType.toLowerCase()} ${(repo.is_favorite ?? 0) === 1 ? 'is-favorited' : ''} ${isSelected ? 'is-selected' : ''}`}
@@ -229,8 +243,19 @@ export function RepositoryCard({ repo, onRefresh, onOpenManagement, onOpenManage
     >
       {/* Top Header Information Stack */}
       <div className="repo-card-top">
-        <div className="repo-icon-wrapper" style={{ color: resolvedThemeColor, borderColor: `${resolvedThemeColor}55` }} onClick={(event) => event.stopPropagation()}>
+        <div
+          className="repo-icon-wrapper"
+          style={{ color: resolvedThemeColor, borderColor: `${resolvedThemeColor}55` }}
+          onClick={handleIconClick}
+          onDoubleClick={handleIconDoubleClick}
+          title="Double-click to edit theme"
+        >
           <ResolvedIcon size={20} weight={repo.icon_name ? 'fill' : 'regular'} />
+          {isFavorite && (
+            <span className="repo-icon-favorite-badge" aria-hidden="true">
+              <Star size={10} weight="fill" />
+            </span>
+          )}
         </div>
         <RepoCardHeader
           repo={repo}
@@ -320,6 +345,15 @@ export function RepositoryCard({ repo, onRefresh, onOpenManagement, onOpenManage
           setIsTagModalOpen(false);
           await onRefresh();
         }}
+      />
+
+      <RepoThemeModal
+        isOpen={isThemeModalOpen}
+        isBusy={isAnyLoading}
+        currentThemeColor={repo.theme_color_hex ?? resolvedGroupColor ?? null}
+        currentIconName={repo.icon_name ?? null}
+        onClose={() => setIsThemeModalOpen(false)}
+        onThemeChange={handleThemeChange}
       />
 
       {/* Dynamic Embedded Branch Selector Dropper */}
