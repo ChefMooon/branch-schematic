@@ -1,6 +1,6 @@
 # Database Schema Specification
 
-*Auto-generated on 2026-07-02 from `db.rs` migrations.*
+*Auto-generated on 2026-07-03 from `db.rs` migrations.*
 
 ## Entity Relationship Diagram
 
@@ -28,6 +28,8 @@ erDiagram
         INTEGER is_favorite
         TEXT last_accessed_at
         TEXT default_branch_name
+        TEXT theme_color_hex
+        TEXT icon_name
         INTEGER is_active
         DATETIME created_at
         DATETIME archived_at

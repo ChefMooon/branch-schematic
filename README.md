@@ -22,7 +22,7 @@ This template should help get you started developing with Tauri, React and Types
 
 **Generate `docs/BASE_MAP.md`**
 ```
-node scripts/generate-codebase-map.js
+npm run docs:code
 ```
 
 **Generate 'docs/Database.md`**

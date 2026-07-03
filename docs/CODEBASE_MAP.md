@@ -1,7 +1,7 @@
 # Codebase Context Snapshot
 
 =========================================
-📅 **Snapshot Updated:** Jun 29, 2026, 9:54 PM
+📅 **Snapshot Updated:** Jul 3, 2026, 11:42 AM
 📦 **Key Dependencies:**
   - `react`: ^19.1.0
   - `react-dom`: ^19.1.0
@@ -13,6 +13,7 @@
 ## 📂 Project Structure
 ```text
 branch-schematic/
+├── .env
 ├── .gitignore
 ├── index.html
 ├── package-lock.json
@@ -23,18 +24,39 @@ branch-schematic/
 │   ├── assets
 │   │   └── react.svg
 │   ├── components
+│   │   ├── app-logo
+│   │   │   └── AppLogo.tsx
+│   │   ├── color-picker
+│   │   │   └── ColorPicker.tsx
 │   │   ├── layout
 │   │   │   ├── AppLayout.tsx
 │   │   │   ├── AppSidebar.css
 │   │   │   └── AppSidebar.tsx
 │   │   ├── Modal
+│   │   │   ├── ConfirmationModal.tsx
 │   │   │   └── TagSelectionModal.tsx
 │   │   ├── notifications
+│   │   │   ├── NotificationDropdown.tsx
 │   │   │   ├── NotificationProvider.tsx
-│   │   │   └── Toast.tsx
+│   │   │   └── toast.tsx
 │   │   └── titlebar
 │   │       └── WindowControls.tsx
 │   ├── features
+│   │   ├── auth-profile
+│   │   │   ├── components
+│   │   │   │   ├── OAuthConnectButton.tsx
+│   │   │   │   ├── ProfileDropdown.tsx
+│   │   │   │   ├── ProfileIndicator.tsx
+│   │   │   │   └── ProfileManagementModal.tsx
+│   │   │   ├── hooks
+│   │   │   │   ├── useOAuthFlow.ts
+│   │   │   │   └── useProfileContext.ts
+│   │   │   ├── stores
+│   │   │   │   └── profileStore.ts
+│   │   │   ├── types
+│   │   │   │   └── index.ts
+│   │   │   └── utils
+│   │   │       └── profileAvatar.ts
 │   │   ├── branch-map
 │   │   │   ├── branch-map.tsx
 │   │   │   └── components
@@ -53,19 +75,37 @@ branch-schematic/
 │   │   │       ├── ViewDetailsConfigurator.tsx
 │   │   │       ├── ViewManagerModal.tsx
 │   │   │       └── ViewManagerSidebar.tsx
+│   │   ├── icon
+│   │   │   ├── components
+│   │   │   │   └── IconSelector.tsx
+│   │   │   └── utils
+│   │   │       └── iconRegistry.ts
 │   │   ├── index
 │   │   │   └── components
+│   │   │       ├── BulkActionToolbar.tsx
 │   │   │       ├── Dashboard.css
 │   │   │       ├── DashboardMain.tsx
 │   │   │       ├── RepositoryCard
 │   │   │       │   ├── AliasEditPopover.tsx
+│   │   │       │   ├── RepoCardActionMenu.tsx
 │   │   │       │   ├── RepoCardHeader.tsx
-│   │   │       │   └── RepoCardTags.tsx
+│   │   │       │   ├── RepoCardTags.tsx
+│   │   │       │   ├── RepoGroupMenu.tsx
+│   │   │       │   └── RepoThemeModal.tsx
 │   │   │       ├── RepositoryCard.tsx
 │   │   │       └── WorkspaceQuickFilters.tsx
-│   │   └── management
-│   │       └── components
-│   │           └── SettingsManagementModal.tsx
+│   │   ├── management
+│   │   │   └── components
+│   │   │       └── SettingsManagementModal.tsx
+│   │   └── repository
+│   │       ├── components
+│   │       │   ├── AddLocalRepositoryModal.tsx
+│   │       │   ├── BulkImportLocalRepositryModal.tsx
+│   │       │   ├── CreateRepositoryModal.tsx
+│   │       │   ├── RepositoryDropdown.tsx
+│   │       │   └── RepositoryModalShell.tsx
+│   │       └── types
+│   │           └── index.ts
 │   ├── hooks
 │   │   ├── useNotificationListener.ts
 │   │   └── useOS.ts
@@ -96,6 +136,7 @@ branch-schematic/
 │   │   └── desktop.json
 │   ├── Cargo.lock
 │   ├── Cargo.toml
+│   ├── examples
 │   ├── gen
 │   │   └── schemas
 │   │       ├── acl-manifests.json
@@ -103,6 +144,7 @@ branch-schematic/
 │   │       ├── desktop-schema.json
 │   │       └── windows-schema.json
 │   ├── src
+│   │   ├── auth.rs
 │   │   ├── daemon.rs
 │   │   ├── db.rs
 │   │   ├── git.rs
