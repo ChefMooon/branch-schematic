@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { ConfirmationModal } from '../../../components/Modal/ConfirmationModal';
 import type { CanvasViewRecord } from '../../../stores/canvas-store';
 import { useCanvasStore } from '../../../stores/canvas-store';
 
@@ -29,6 +30,7 @@ export function ViewActionsDropdown({
   const [isRenameOpen, setIsRenameOpen] = useState(false);
   const [renameValue, setRenameValue] = useState('');
   const [menuPosition, setMenuPosition] = useState<{ top: number; left: number } | null>(null);
+  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const isOpen = isOpenProp ?? internalOpen;
 
@@ -176,12 +178,14 @@ export function ViewActionsDropdown({
   const handleDelete = async () => {
     if (!activeView || !canDelete) return;
 
-    const confirmed = window.confirm(
-      `Delete view "${activeView.name}"? The next view in order will become active.`,
-    );
-    if (!confirmed) return;
+    setIsDeleteConfirmOpen(true);
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!activeView || !canDelete) return;
 
     await deleteView(activeView.id);
+    setIsDeleteConfirmOpen(false);
     setIsOpen(false);
   };
 
@@ -345,7 +349,7 @@ export function ViewActionsDropdown({
 
           <button
             onClick={handleDelete}
-            style={menuButtonStyle(isDark, !canDelete)}
+            style={menuButtonStyle(isDark, true)}
             disabled={!activeView || !canDelete}
             title={canDelete ? 'Delete active view' : 'At least one view must remain'}
           >
@@ -387,6 +391,22 @@ export function ViewActionsDropdown({
           </button>
         </div>
       )}
+
+      <ConfirmationModal
+        isOpen={isDeleteConfirmOpen}
+        title="Delete view"
+        message={
+          <>
+            Delete view <strong>{activeView?.name ?? 'this view'}</strong>? The next view in order
+            will become active. This action cannot be undone.
+          </>
+        }
+        confirmLabel="Delete view"
+        cancelLabel="Cancel"
+        variant="danger"
+        onConfirm={handleDeleteConfirm}
+        onCancel={() => setIsDeleteConfirmOpen(false)}
+      />
     </div>
   );
 }
