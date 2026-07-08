@@ -1,5 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { BranchMap } from '../features/branch-map/branch-map';
+import { BranchMap } from '../features/branch-map/BranchMap';
 
 export const Route = createFileRoute('/branch-map')({
   component: RouteComponent,
