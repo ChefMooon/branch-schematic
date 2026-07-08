@@ -74,8 +74,16 @@ vi.mock('../../features/repository/components/BulkImportLocalRepositryModal', ()
 vi.mock('../../features/repository/components/CreateRepositoryModal', () => ({ CreateRepositoryModal: () => null }));
 vi.mock('../../features/canvas-views/components/CreateViewModal', () => ({ CreateViewModal: () => null }));
 vi.mock('../../features/management/components/SettingsManagementModal', () => ({ SettingsManagementModal: () => null }));
-vi.mock('../../features/auth-profile/components/ProfileIndicator', () => ({ ProfileIndicator: () => null }));
-vi.mock('../../features/auth-profile/components/ProfileDropdown', () => ({ ProfileDropdown: () => null }));
+vi.mock('../../features/auth-profile/components/ProfileIndicator', () => ({
+  ProfileIndicator: ({ isOpen, onToggle }: { isOpen: boolean; onToggle: () => void }) => (
+    <button type="button" title="Profile" onClick={onToggle}>
+      {isOpen ? 'profile-open' : 'profile-closed'}
+    </button>
+  ),
+}));
+vi.mock('../../features/auth-profile/components/ProfileDropdown', () => ({
+  ProfileDropdown: ({ isOpen }: { isOpen: boolean }) => (isOpen ? <div data-testid="profile-dropdown">Profile menu</div> : null),
+}));
 vi.mock('../../features/auth-profile/components/ProfileManagementModal', () => ({ ProfileManagementModal: () => null }));
 
 vi.mock('../notifications/NotificationDropdown', () => ({
@@ -126,5 +134,47 @@ describe('AppLayout', () => {
     await user.click(repositoryButton);
     expect(screen.queryByTestId('notification-panel')).not.toBeInTheDocument();
     expect(screen.getByTestId('repository-dropdown')).toBeInTheDocument();
+  });
+
+  it('closes the other dropdowns when the profile dropdown is opened', async () => {
+    const user = userEvent.setup();
+
+    render(
+      <AppLayout>
+        <div>content</div>
+      </AppLayout>
+    );
+
+    const bellButton = screen.getByTitle(/notifications/i);
+    const repositoryButton = screen.getByTitle(/new/i);
+    const profileButton = screen.getByRole('button', { name: /profile/i });
+
+    await user.click(bellButton);
+    await user.click(repositoryButton);
+    expect(screen.getByTestId('repository-dropdown')).toBeInTheDocument();
+    expect(screen.queryByTestId('notification-panel')).not.toBeInTheDocument();
+
+    await user.click(profileButton);
+    expect(screen.getByTestId('profile-dropdown')).toBeInTheDocument();
+    expect(screen.queryByTestId('repository-dropdown')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('notification-panel')).not.toBeInTheDocument();
+  });
+
+  it('closes the profile dropdown when its trigger is clicked again', async () => {
+    const user = userEvent.setup();
+
+    render(
+      <AppLayout>
+        <div>content</div>
+      </AppLayout>
+    );
+
+    const profileButton = screen.getByRole('button', { name: /profile/i });
+
+    await user.click(profileButton);
+    expect(screen.getByTestId('profile-dropdown')).toBeInTheDocument();
+
+    await user.click(profileButton);
+    expect(screen.queryByTestId('profile-dropdown')).not.toBeInTheDocument();
   });
 });

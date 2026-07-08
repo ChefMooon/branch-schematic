@@ -131,6 +131,7 @@ export function AppLayout({ children }: AppLayoutProps) {
 
     setIsNotificationDropdownOpen(true);
     setIsRepositoryDropdownOpen(false);
+    setIsProfileDropdownOpen(false);
   };
 
   const handleToggleRepositoryDropdown = () => {
@@ -141,6 +142,18 @@ export function AppLayout({ children }: AppLayoutProps) {
 
     setIsRepositoryDropdownOpen(true);
     setIsNotificationDropdownOpen(false);
+    setIsProfileDropdownOpen(false);
+  };
+
+  const handleToggleProfileDropdown = () => {
+    if (isProfileDropdownOpen) {
+      setIsProfileDropdownOpen(false);
+      return;
+    }
+
+    setIsProfileDropdownOpen(true);
+    setIsNotificationDropdownOpen(false);
+    setIsRepositoryDropdownOpen(false);
   };
 
   useEffect(() => {
@@ -351,7 +364,7 @@ export function AppLayout({ children }: AppLayoutProps) {
               profile={activeProfile}
               status={activeProfile ? tokenHealthMap[activeProfile.id] ?? 'none' : 'none'}
               isOpen={isProfileDropdownOpen}
-              onToggle={() => setIsProfileDropdownOpen((value) => !value)}
+              onToggle={handleToggleProfileDropdown}
               onAnchorRef={setProfileDropdownAnchor}
             />
             <ProfileDropdown

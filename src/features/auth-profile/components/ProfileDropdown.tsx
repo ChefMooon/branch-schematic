@@ -88,6 +88,23 @@ export function ProfileDropdown({
     };
   }, [anchorElement, isOpen]);
 
+  useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+
+    const handlePointerDown = (event: MouseEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target?.closest('[data-profile-dropdown-root]')) {
+        return;
+      }
+      onClose();
+    };
+
+    document.addEventListener('mousedown', handlePointerDown);
+    return () => document.removeEventListener('mousedown', handlePointerDown);
+  }, [isOpen, onClose]);
+
   if (!isOpen || !anchorElement) {
     return null;
   }
@@ -108,8 +125,14 @@ export function ProfileDropdown({
   };
 
   return (
-    <div style={styles.overlay} onClick={onClose}>
-      <div style={{ ...styles.dropdown, top: position.top, left: position.left }} onClick={(event) => event.stopPropagation()}>
+    <div data-testid="profile-dropdown-overlay" style={{ ...styles.overlay, pointerEvents: 'none' }} onClick={onClose}>
+      <div
+        data-testid="profile-dropdown-backdrop"
+        data-profile-dropdown-root
+        style={{ ...styles.dropdown, top: position.top, left: position.left, pointerEvents: 'auto' }}
+        onMouseDown={(event) => event.stopPropagation()}
+        onClick={(event) => event.stopPropagation()}
+      >
         <div style={styles.list}>
           {profiles.map((profile) => {
             const isActive = profile.id === activeProfile?.id;

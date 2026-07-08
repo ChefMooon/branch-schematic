@@ -27,6 +27,7 @@ export function ProfileIndicator({ profile, status, isOpen, onToggle, onAnchorRe
       <button
         ref={onAnchorRef}
         type="button"
+        onMouseDown={(event) => event.stopPropagation()}
         onClick={onToggle}
         title={profile ? `Active profile: ${profile.display_name}` : 'Select profile'}
         style={{
