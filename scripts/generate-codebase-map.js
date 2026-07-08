@@ -4,12 +4,10 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 
 // Folders to completely ignore during the file scan
-// (Note: we removed 'docs' from this list so it can see files inside it if needed, 
-// but we explicitly skip reading the output map to prevent an infinite loop)
 const IGNORE_DIRS = new Set([
   'node_modules', 'dist', 'target', '.git', 
   '.tanstack', '.vscode', '.github', 'public',
-  'docs', `scripts`, `icons`
+  'docs', 'scripts', 'icons'
 ]);
 
 // Safely determine project root relative to this script (/scripts/..)
@@ -77,10 +75,15 @@ function renderTree(dir, prefix = '') {
 const metadata = getMetadata();
 const treeStructure = renderTree(PROJECT_ROOT);
 
-// Construct complete Markdown Document
+// Construct complete Markdown Document with auto-injected refresh command
 const markdownOutput = `# Codebase Context Snapshot
 
 ${metadata}
+
+> 🔄 **To Regenerate This File:** If files or folders have changed, run:
+> \`\`\`bash
+> npm run docs:code
+> \`\`\`
 
 ## 📂 Project Structure
 \`\`\`text

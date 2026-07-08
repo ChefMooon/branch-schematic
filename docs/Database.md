@@ -1,6 +1,11 @@
 # Database Schema Specification
 
-*Auto-generated on 2026-07-03 from `db.rs` migrations.*
+*Auto-generated on 2026-07-08 from `db.rs` migrations.*
+
+> 🔄 **To Regenerate This File:** If you have modified your SQLite migrations or tables, run:
+> ```bash
+> npm run docs:db
+> ```
 
 ## Entity Relationship Diagram
 

@@ -23,6 +23,56 @@
                 "showReuseMessage": false,
                 "clear": true
             }
+        },
+        {
+            "label": "Generate Codebase Map",
+            "type": "shell",
+            "command": "npm",
+            "args": [
+                "run",
+                "docs:code"
+            ],
+            "problemMatcher": [],
+            "presentation": {
+                "echo": true,
+                "reveal": "silent",
+                "focus": false,
+                "panel": "shared",
+                "showReuseMessage": false
+            }
+        },
+        {
+            "label": "Generate Database Docs",
+            "type": "shell",
+            "command": "npm",
+            "args": [
+                "run",
+                "docs:db"
+            ],
+            "problemMatcher": [],
+            "presentation": {
+                "echo": true,
+                "reveal": "silent",
+                "focus": false,
+                "panel": "shared",
+                "showReuseMessage": false
+            }
+        },
+        {
+            "label": "Generate All Documentation",
+            "dependsOrder": "sequence",
+            "dependsOn": [
+                "Generate Codebase Map",
+                "Generate Database Docs"
+            ],
+            "problemMatcher": [],
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared",
+                "showReuseMessage": true
+            }
         }
     ]
 }

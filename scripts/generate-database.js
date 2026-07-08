@@ -7,7 +7,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // Target paths relative to the script folder
-const RUST_FILE = path.join(__dirname, '../src-tauri/src/db.rs'); // Make sure this matches your db.rs location
+const RUST_FILE = path.join(__dirname, '../src-tauri/src/db.rs'); 
 const OUTPUT_FILE = path.join(__dirname, '../docs/Database.md');
 
 function parseMigrations() {
@@ -19,7 +19,6 @@ function parseMigrations() {
     const content = fs.readFileSync(RUST_FILE, 'utf8');
 
     // 1. Extract the raw SQL strings inside the migration blocks
-    // This matches everything inside the sql: "..." or sql: " -- Multi-directory ... " raw string literals
     const sqlRegex = /sql:\s*"([^"]+)"/g;
     let match;
     let combinedSql = '';
@@ -86,10 +85,15 @@ function parseMigrations() {
         mermaidTables += `    }\n\n`;
     }
 
-    // 3. Construct Markdown Content
+    // 3. Construct Markdown Content with auto-injected refresh instruction
     const markdownContent = `# Database Schema Specification
 
 *Auto-generated on ${new Date().toISOString().split('T')[0]} from \`db.rs\` migrations.*
+
+> 🔄 **To Regenerate This File:** If you have modified your SQLite migrations or tables, run:
+> \`\`\`bash
+> npm run docs:db
+> \`\`\`
 
 ## Entity Relationship Diagram
 

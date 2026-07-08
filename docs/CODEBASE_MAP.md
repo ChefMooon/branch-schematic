@@ -1,7 +1,7 @@
 # Codebase Context Snapshot
 
 =========================================
-📅 **Snapshot Updated:** Jul 3, 2026, 11:42 AM
+📅 **Snapshot Updated:** Jul 8, 2026, 10:49 AM
 📦 **Key Dependencies:**
   - `react`: ^19.1.0
   - `react-dom`: ^19.1.0
@@ -9,6 +9,11 @@
   - `@tauri-apps/plugin-sql`: ^2.4.0
 =========================================
 
+
+> 🔄 **To Regenerate This File:** If files or folders have changed, run:
+> ```bash
+> npm run docs:code
+> ```
 
 ## 📂 Project Structure
 ```text
@@ -34,7 +39,7 @@ branch-schematic/
 │   │   │   └── AppSidebar.tsx
 │   │   ├── Modal
 │   │   │   ├── ConfirmationModal.tsx
-│   │   │   └── TagSelectionModal.tsx
+│   │   │   └── TextInputModal.tsx
 │   │   ├── notifications
 │   │   │   ├── NotificationDropdown.tsx
 │   │   │   ├── NotificationProvider.tsx
@@ -91,6 +96,7 @@ branch-schematic/
 │   │   │       │   ├── RepoCardHeader.tsx
 │   │   │       │   ├── RepoCardTags.tsx
 │   │   │       │   ├── RepoGroupMenu.tsx
+│   │   │       │   ├── RepoTagSelectionMenu.tsx
 │   │   │       │   └── RepoThemeModal.tsx
 │   │   │       ├── RepositoryCard.tsx
 │   │   │       └── WorkspaceQuickFilters.tsx
