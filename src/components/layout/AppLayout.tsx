@@ -518,6 +518,7 @@ const styles: Record<string, AppStyle> = {
     width: '100vw',
     height: 'calc(100vh - var(--header-h))',
     overflowY: 'auto',
+    scrollbarGutter: 'stable both-edges',
     backgroundColor: 'var(--app-bg)',
     boxSizing: 'border-box',
   },
