@@ -123,6 +123,26 @@ export function AppLayout({ children }: AppLayoutProps) {
     setIsManagementModalOpen(true);
   };
 
+  const handleToggleNotificationDropdown = () => {
+    if (isNotificationDropdownOpen) {
+      setIsNotificationDropdownOpen(false);
+      return;
+    }
+
+    setIsNotificationDropdownOpen(true);
+    setIsRepositoryDropdownOpen(false);
+  };
+
+  const handleToggleRepositoryDropdown = () => {
+    if (isRepositoryDropdownOpen) {
+      setIsRepositoryDropdownOpen(false);
+      return;
+    }
+
+    setIsRepositoryDropdownOpen(true);
+    setIsNotificationDropdownOpen(false);
+  };
+
   useEffect(() => {
     const handleOpenManagementModal = (event: Event) => {
       const initialTab = (event as CustomEvent<{ initialTab?: 'tags' | 'groups' }>).detail?.initialTab ?? 'tags';
@@ -257,7 +277,8 @@ export function AppLayout({ children }: AppLayoutProps) {
             <button
               style={styles.iconBtn}
               title="Notifications"
-              onClick={() => setIsNotificationDropdownOpen((value) => !value)}
+              onMouseDown={(event) => event.stopPropagation()}
+              onClick={handleToggleNotificationDropdown}
             >
               <BellIcon size={18} color="var(--app-text)" style={{ display: 'block' }} />
               {unreadCount > 0 && (
@@ -291,7 +312,8 @@ export function AppLayout({ children }: AppLayoutProps) {
               data-repository-dropdown-trigger
               style={styles.iconBtn}
               title="New"
-              onClick={() => setIsRepositoryDropdownOpen((value) => !value)}
+              onMouseDown={(event) => event.stopPropagation()}
+              onClick={handleToggleRepositoryDropdown}
             >
               <PlusIcon size={18} color="var(--app-text)" style={{ display: 'block' }} />
             </button>
@@ -301,6 +323,7 @@ export function AppLayout({ children }: AppLayoutProps) {
               anchorElement={repositoryDropdownAnchor}
               onSelect={(action) => {
                 setIsRepositoryDropdownOpen(false);
+                setIsNotificationDropdownOpen(false);
                 if (action === 'create-view') {
                   setActiveRepositoryModal('create-view');
                   return;
