@@ -632,18 +632,113 @@
   background: var(--bg-nested);
   padding: 0.4rem 0.75rem;
   border-radius: 6px;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--badge-border);
+  width: 100%;
+  box-sizing: border-box;
+  min-width: 0;
 }
 
-.inline-branch-dropdown {
-  border: none;
-  background: transparent;
-  font-size: 0.85rem;
-  font-weight: 500;
+.branch-dropdown-root {
+  width: 100%;
+  min-width: 0;
+}
+
+.branch-dropdown-trigger {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.32rem 0.6rem;
+  border: 1px solid var(--badge-border);
+  border-radius: 8px;
+  background: var(--bg-nested);
   color: var(--text-main);
   cursor: pointer;
-  flex-grow: 1;
-  outline: none;
+  box-sizing: border-box;
+  min-width: 0;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.26);
+  transition: background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.branch-dropdown-trigger:hover:not(:disabled) {
+  background: var(--item-hover);
+  border-color: var(--card-border-hover);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3);
+}
+
+.branch-dropdown-trigger:disabled {
+  cursor: not-allowed;
+  opacity: 0.72;
+}
+
+.branch-dropdown-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.85rem;
+  font-weight: 500;
+  text-align: left;
+}
+
+.branch-dropdown-caret {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.branch-dropdown-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 0.35rem;
+  border: 1px solid var(--badge-border);
+  border-radius: 10px;
+  background: var(--bg-nested);
+  box-shadow: 0 12px 28px -18px rgba(15, 23, 42, 0.45);
+  z-index: 60;
+  overflow-y: auto;
+  box-sizing: border-box;
+  transform: translateZ(0);
+  backface-visibility: hidden;
+}
+
+.branch-dropdown-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.35rem;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-main);
+  border-radius: 8px;
+  padding: 0.35rem 0.45rem;
+  cursor: pointer;
+  text-align: left;
+  font-size: 0.8rem;
+  font-weight: 500;
+  transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.branch-dropdown-item:hover,
+.branch-dropdown-item.active {
+  background: var(--app-surface-muted);
+  border-color: var(--badge-border);
+  color: var(--text-main);
+}
+
+.branch-dropdown-item-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.branch-dropdown-inline-badge {
+  padding: 0.14rem 0.42rem;
+  font-size: 0.64rem;
+  flex-shrink: 0;
 }
 
 .inline-branch-dropdown,

@@ -6,7 +6,6 @@ import {
   ArrowUp,
   Desktop,
   Cloud,
-  House,
   CircleNotch,
   WarningCircle,
   UsersThree,
@@ -20,6 +19,7 @@ import { RepoGroupMenu } from "./RepositoryCard/RepoGroupMenu";
 import { RepoCardTags } from "./RepositoryCard/RepoCardTags";
 import { TagSelectionModal } from "./RepositoryCard/RepoTagSelectionMenu";
 import { RepoThemeModal } from "./RepositoryCard/RepoThemeModal";
+import { RepoBranchDropdown } from "./RepositoryCard/RepoBranchDropdown";
 import { useNotifications } from "../../../components/notifications/NotificationProvider";
 
 interface RepositoryCardProps {
@@ -60,14 +60,13 @@ export function RepositoryCard({ repo, onRefresh, onOpenManagement, onOpenManage
     setIsEditingAlias(true);
   };
 
-  const handleBranchChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const targetBranch = e.target.value;
+  const handleBranchChange = async (targetBranch: string) => {
     setLoadingAction("checkout");
     try {
       // Matches the Rust implementation signature: execute_git_checkout(absolute_path, branch_name)
-      await invoke("execute_git_checkout", { 
-        absolutePath: repo.absolute_path, 
-        branchName: targetBranch 
+      await invoke("execute_git_checkout", {
+        absolutePath: repo.absolute_path,
+        branchName: targetBranch,
       });
     } catch (err) {
       console.error("Branch transition anomaly:", err);
@@ -357,37 +356,14 @@ export function RepositoryCard({ repo, onRefresh, onOpenManagement, onOpenManage
       />
 
       {/* Dynamic Embedded Branch Selector Dropper */}
-      <div className="repo-branch-section">
-        {loadingAction === "checkout" ? (
-          <CircleNotch size={16} className="animate-spin-svg" />
-        ) : (
-          <GitBranch size={16} weight="bold" />
-        )}
-        <select 
-          className="inline-branch-dropdown"
-          value={repo.current_branch ?? "main"}
-          onChange={handleBranchChange}
-          disabled={isAnyLoading}
-        >
-          {(repo.available_branches && repo.available_branches.length > 0 
-            ? repo.available_branches 
-            : [repo.current_branch ?? "main"]
-          ).map((br) => (
-            <option key={br} value={br}>
-              {br}{br === repo.default_branch_name ? " — default" : ""}
-            </option>
-          ))}
-        </select>
-        {repo.default_branch_name && (
-          <span
-            className={`default-branch-badge ${repo.current_branch === repo.default_branch_name ? "is-active" : ""}`}
-            title={`Default branch: ${repo.default_branch_name}`}
-          >
-            <House size={12} weight="bold" />
-            <span>{repo.default_branch_name}</span>
-          </span>
-        )}
-      </div>
+      <RepoBranchDropdown
+        branches={repo.available_branches && repo.available_branches.length > 0 ? repo.available_branches : [repo.current_branch ?? "main"]}
+        currentBranch={repo.current_branch ?? "main"}
+        defaultBranch={repo.default_branch_name}
+        isLoading={loadingAction === "checkout"}
+        disabled={isAnyLoading}
+        onSelect={handleBranchChange}
+      />
 
       {/* Sync Status Aggregator Metrics */}
       <div className="repo-sync-actions-row">
