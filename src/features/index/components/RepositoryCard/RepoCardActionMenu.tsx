@@ -10,6 +10,7 @@ import {
 } from "@phosphor-icons/react";
 import { ConfirmationModal } from "../../../../components/Modal/ConfirmationModal";
 import { RepoThemeModal } from "./RepoThemeModal.tsx";
+import { getViewportSafeMenuPosition } from "./menuPosition";
 
 type RepoCardOverflowMenuProps = {
   isFavorite: boolean;
@@ -43,7 +44,7 @@ export function RepoCardOverflowMenu({
   onThemeChange,
 }: RepoCardOverflowMenuProps) {
   const [isOpen, setIsOpen] = useState(false);
-  const [menuPosition, setMenuPosition] = useState<{ top: number; left: number } | null>(null);
+  const [menuPosition, setMenuPosition] = useState<{ top: number; left: number; maxHeight: number } | null>(null);
   const [showUntrackConfirmation, setShowUntrackConfirmation] = useState(false);
   const [isThemeModalOpen, setIsThemeModalOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -61,15 +62,23 @@ export function RepoCardOverflowMenu({
       const triggerRect = triggerRef.current.getBoundingClientRect();
       const menuWidth = 220;
       const viewportPadding = 8;
-      const menuHeight = menuRef.current?.offsetHeight ?? Math.min(360, window.innerHeight - (viewportPadding * 2));
-      const left = Math.min(triggerRect.right - menuWidth, window.innerWidth - menuWidth - 8);
-      const preferredTop = triggerRect.bottom + 6;
-      const top = Math.min(preferredTop, window.innerHeight - menuHeight - viewportPadding);
-
-      setMenuPosition({
-        top: Math.max(viewportPadding, top),
-        left: Math.max(viewportPadding, left),
+      const measuredHeight = menuRef.current?.offsetHeight ?? Math.min(360, window.innerHeight - (viewportPadding * 2));
+      const menuHeight = Math.min(measuredHeight, window.innerHeight - (viewportPadding * 2));
+      const nextPosition = getViewportSafeMenuPosition({
+        triggerRect: {
+          top: triggerRect.top,
+          bottom: triggerRect.bottom,
+          left: triggerRect.left,
+          right: triggerRect.right,
+        },
+        menuHeight,
+        menuWidth,
+        viewportWidth: window.innerWidth,
+        viewportHeight: window.innerHeight,
+        viewportPadding,
       });
+
+      setMenuPosition(nextPosition);
     };
 
     const frame = window.requestAnimationFrame(updateMenuPosition);
@@ -151,7 +160,7 @@ export function RepoCardOverflowMenu({
           ref={menuRef}
           role="menu"
           aria-label="Repository actions"
-          style={{ top: menuPosition.top, left: menuPosition.left }}
+          style={{ top: menuPosition.top, left: menuPosition.left, maxHeight: menuPosition.maxHeight }}
         >
           <div className="overflow-section">
             <div className="overflow-section-title">Git Operations</div>

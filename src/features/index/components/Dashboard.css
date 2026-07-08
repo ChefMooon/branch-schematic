@@ -1615,7 +1615,7 @@
   flex-direction: column;
   gap: 0.35rem;
   overflow-x: hidden;
-  overflow-y: visible;
+  overflow-y: auto;
   box-sizing: border-box;
 }
 
