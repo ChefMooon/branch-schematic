@@ -1,7 +1,7 @@
 # Codebase Context Snapshot
 
 =========================================
-📅 **Snapshot Updated:** Jul 8, 2026, 10:49 AM
+📅 **Snapshot Updated:** Jul 8, 2026, 11:13 AM
 📦 **Key Dependencies:**
   - `react`: ^19.1.0
   - `react-dom`: ^19.1.0
@@ -63,7 +63,7 @@ branch-schematic/
 │   │   │   └── utils
 │   │   │       └── profileAvatar.ts
 │   │   ├── branch-map
-│   │   │   ├── branch-map.tsx
+│   │   │   ├── BranchMap.tsx
 │   │   │   └── components
 │   │   │       ├── BranchCard.tsx
 │   │   │       ├── CommitTimeline.tsx
