@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { MagnifyingGlass } from "@phosphor-icons/react";
+import { MagnifyingGlass, X } from "@phosphor-icons/react";
 import { RepositoryCard } from "./RepositoryCard";
 import { WorkspaceQuickFilters } from "./WorkspaceQuickFilters";
 import { BulkActionToolbar } from "./BulkActionToolbar";
@@ -42,6 +42,17 @@ export function DashboardMain({ onOpenManagementModal, onCleanupDanglingTags }: 
     setSelectedTagIds((prev) =>
       prev.includes(tagId) ? prev.filter((id) => id !== tagId) : [...prev, tagId]
     );
+  };
+
+  const handleSearchClear = () => {
+    setSearchQuery("");
+  };
+
+  const handleSearchKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      setSearchQuery("");
+    }
   };
 
   const toggleRepoSelection = (repoId: string) => {
@@ -131,12 +142,25 @@ export function DashboardMain({ onOpenManagementModal, onCleanupDanglingTags }: 
         <div className="filter-controls-group">
           <div className="search-input-wrapper dashboard-control-shell">
             <MagnifyingGlass size={16} className="search-icon-inside" />
-            <input 
-              type="text" 
-              placeholder="Search workspaces..." 
+            <input
+              type="text"
+              placeholder="Search workspaces..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={handleSearchKeyDown}
+              aria-label="Search workspaces"
             />
+            {searchQuery.trim().length > 0 ? (
+              <button
+                type="button"
+                className="search-clear-button"
+                onClick={handleSearchClear}
+                aria-label="Clear search"
+                title="Clear search"
+              >
+                <X size={14} weight="bold" />
+              </button>
+            ) : null}
           </div>
 
           <FilterDropdown

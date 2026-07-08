@@ -191,13 +191,38 @@
   left: 0.8rem;
   color: var(--text-muted);
   z-index: 1;
+  pointer-events: none;
+}
+
+.search-clear-button {
+  position: absolute;
+  right: 0.55rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+.search-clear-button:hover,
+.search-clear-button:focus-visible {
+  background: var(--item-hover);
+  color: var(--text-main);
+  outline: none;
 }
 
 .search-input-wrapper input {
   width: 100%;
   height: 100%;
   box-sizing: border-box;
-  padding: 0 0.95rem 0 2.35rem;
+  padding: 0 2.45rem 0 2.35rem;
   border: none;
   border-radius: inherit;
   font-size: 0.9rem;
