@@ -1,0 +1,107 @@
+.dropdownShell {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  min-width: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.dropdownLabel {
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text-muted, #64748b);
+  text-transform: uppercase;
+}
+
+.dropdownControlShell {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+}
+
+.dropdownButton {
+  width: 100%;
+  max-width: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  text-align: left;
+  min-height: 2.5rem;
+  height: 100%;
+  box-sizing: border-box;
+  padding: 0.55rem 0.85rem;
+  border: 1px solid var(--badge-border, #cbd5e1);
+  border-radius: 6px;
+  background: var(--bg-nested, #f8fafc);
+  color: var(--text-main, #0f172a);
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 500;
+  line-height: 1.2;
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.dropdownButton:hover {
+  background: var(--item-hover, rgba(14, 165, 233, 0.12));
+  border-color: var(--card-border-hover, #cbd5e1);
+}
+
+.dropdownButton:focus-visible {
+  outline: 2px solid var(--app-accent, #22d3ee);
+  outline-offset: 2px;
+}
+
+.dropdownButtonText {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dropdownIcon {
+  color: var(--text-muted, #64748b);
+  flex-shrink: 0;
+}
+
+.dropdownPanel {
+  position: absolute;
+  top: calc(100% + 0.35rem);
+  left: 0;
+  right: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 0.35rem;
+  border: 1px solid var(--dropdown-border, rgba(148, 163, 184, 0.24));
+  border-radius: 8px;
+  background: var(--dropdown-bg, rgba(255, 255, 255, 0.82));
+  box-shadow: var(--dropdown-shadow, 0 18px 40px -24px rgba(15, 23, 42, 0.32));
+  backdrop-filter: blur(12px);
+}
+
+.dropdownOption {
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-main, #0f172a);
+  padding: 0.55rem 0.7rem;
+  text-align: left;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.dropdownOption:hover,
+.dropdownOptionActive {
+  background: var(--item-hover, rgba(14, 165, 233, 0.12));
+}
+
+.dropdownOptionActive {
+  font-weight: 600;
+}

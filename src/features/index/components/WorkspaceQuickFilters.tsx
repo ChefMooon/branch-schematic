@@ -1,9 +1,9 @@
-import { useRef, useState } from 'react';
-import type { PointerEvent as ReactPointerEvent } from 'react';
-import { CaretDown } from '@phosphor-icons/react';
+import { useMemo, useState } from 'react';
 import { ConfirmationModal } from '../../../components/Modal/ConfirmationModal';
 import { useNotifications } from '../../../components/notifications/NotificationProvider';
 import type { QuickFilterMetadata } from '../../../types/git';
+import { FilterDropdown } from './common/FilterDropdown';
+import { useGroupOptions } from './common/useGroupOptions';
 
 type WorkspaceQuickFiltersProps = {
   metadata: QuickFilterMetadata | null;
@@ -31,37 +31,27 @@ export function WorkspaceQuickFilters({
   const { addToast } = useNotifications();
   const [isCleanupConfirmOpen, setIsCleanupConfirmOpen] = useState(false);
   const [isCleaningUp, setIsCleaningUp] = useState(false);
-  const groupSelectRef = useRef<HTMLSelectElement>(null);
+  const { options: fetchedGroupOptions } = useGroupOptions();
   const availableGroupOptions = (metadata?.groups?.length ? metadata.groups : groupOptions) ?? [];
   const hasTags = (metadata?.tags?.length ?? 0) > 0;
   const favoritesCount = metadata?.favorites_count ?? 0;
   const danglingTags = metadata?.dangling_tags ?? [];
   const tagOptions = metadata?.tags ?? [];
 
-  const handleGroupFilterPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    event.stopPropagation();
+  const groupDropdownOptions = useMemo(() => {
+    const fromHook = fetchedGroupOptions.map((option) => ({ label: option.label, value: option.value }));
+    const fromMetadata = availableGroupOptions.map((group) => ({ label: group, value: group }));
+    const merged = [...fromHook, ...fromMetadata];
+    const seen = new Set<string>();
 
-    const select = groupSelectRef.current;
-    if (!select) return;
-
-    if (document.activeElement === select) {
-      select.blur();
-      return;
-    }
-
-    select.focus();
-
-    try {
-      if (typeof select.showPicker === 'function') {
-        void select.showPicker();
-      } else {
-        select.click();
+    return merged.filter((option) => {
+      if (!option.value || seen.has(option.value)) {
+        return false;
       }
-    } catch {
-      select.click();
-    }
-  };
+      seen.add(option.value);
+      return true;
+    });
+  }, [availableGroupOptions, fetchedGroupOptions]);
 
   const handleCleanupConfirm = async () => {
     setIsCleanupConfirmOpen(false);
@@ -105,25 +95,14 @@ export function WorkspaceQuickFilters({
           Favorites ({favoritesCount})
         </button>
 
-        <div
-          className="dashboard-select-wrapper quick-filter-group-select-wrapper"
-          onPointerDown={handleGroupFilterPointerDown}
-        >
-          <select
-            ref={groupSelectRef}
-            className="dashboard-select quick-filter-group-select"
-            value={selectedGroup ?? ''}
-            onChange={(event) => onGroupChange(event.target.value || null)}
-          >
-            <option value="">All Groups</option>
-            {availableGroupOptions.map((group) => (
-              <option key={group} value={group}>
-                {group}
-              </option>
-            ))}
-          </select>
-          <CaretDown size={14} className="dashboard-select-icon" />
-        </div>
+        <FilterDropdown
+          value={selectedGroup ?? null}
+          options={groupDropdownOptions}
+          onChange={(value) => onGroupChange(typeof value === 'string' ? value : null)}
+          placeholder="All groups"
+          aria-label="Filter by group"
+          className="filter-dropdown-fixed"
+        />
 
         {danglingTags.length > 0 && (
           <div className="quick-filter-dangling">

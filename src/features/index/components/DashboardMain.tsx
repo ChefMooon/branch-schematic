@@ -1,9 +1,10 @@
-import { useState, useEffect, useRef } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { MagnifyingGlass, CaretDown } from "@phosphor-icons/react";
+import { MagnifyingGlass } from "@phosphor-icons/react";
 import { RepositoryCard } from "./RepositoryCard";
 import { WorkspaceQuickFilters } from "./WorkspaceQuickFilters";
 import { BulkActionToolbar } from "./BulkActionToolbar";
+import { FilterDropdown } from "./common/FilterDropdown";
 import { useWorkspaceStore } from "../../../stores/workspace-store";
 import "./Dashboard.css";
 
@@ -12,16 +13,16 @@ type DashboardMainProps = {
   onCleanupDanglingTags?: () => Promise<number>;
 };
 
+type SortOption = "LAST_VIEWED" | "ALPHABETICAL" | "PENDING_CHANGES";
+
 export function DashboardMain({ onOpenManagementModal, onCleanupDanglingTags }: DashboardMainProps) {
   const [searchQuery, setSearchQuery] = useState("");
-  const [filterType, setFilterType] = useState<"ALL" | "OWNED" | "FORK" | "LOCAL_ONLY" | "CONTRIBUTOR">("ALL");
-  const [sortBy, setSortBy] = useState<"LAST_VIEWED" | "ALPHABETICAL" | "PENDING_CHANGES">("LAST_VIEWED");
+  const [selectedRepoTypeIds, setSelectedRepoTypeIds] = useState<string[]>([]);
+  const [sortBy, setSortBy] = useState<SortOption>("LAST_VIEWED");
   const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
   const [selectedGroup, setSelectedGroup] = useState<string | null>(null);
   const [favoritesOnly, setFavoritesOnly] = useState(false);
   const [selectedRepoIds, setSelectedRepoIds] = useState<Set<string>>(new Set());
-  const provenanceSelectRef = useRef<HTMLSelectElement>(null);
-  const sortSelectRef = useRef<HTMLSelectElement>(null);
   const {
     repos: allRepos,
     hydrateFromBackend: fetchRepositoriesData,
@@ -36,29 +37,6 @@ export function DashboardMain({ onOpenManagementModal, onCleanupDanglingTags }: 
     void fetchRepositoriesData();
     void hydrateQuickFilterMetadata();
   }, []);
-
-  const handleSelectShellPointerDown = (
-    event: React.PointerEvent<HTMLDivElement>,
-    selectRef: React.RefObject<HTMLSelectElement | null>
-  ) => {
-    event.preventDefault();
-    event.stopPropagation();
-
-    const select = selectRef.current;
-    if (!select) return;
-
-    select.focus();
-
-    try {
-      if (typeof select.showPicker === "function") {
-        void select.showPicker();
-      } else {
-        select.click();
-      }
-    } catch {
-      select.click();
-    }
-  };
 
   const toggleTagFilter = (tagId: string) => {
     setSelectedTagIds((prev) =>
@@ -104,13 +82,34 @@ export function DashboardMain({ onOpenManagementModal, onCleanupDanglingTags }: 
     setSelectedRepoIds(new Set());
   };
 
+  const repoTypeOptions = useMemo(
+    () => [
+      { label: "Owned / Created", value: "OWNED" },
+      { label: "Forks Ecosystem", value: "FORK" },
+      { label: "Local-Only Frameworks", value: "LOCAL_ONLY" },
+      { label: "Contributors", value: "CONTRIBUTOR" },
+    ],
+    []
+  );
+
+  const sortOptions = useMemo(
+    () => [
+      { label: "Last Accessed", value: "LAST_VIEWED" },
+      { label: "Alphabetical", value: "ALPHABETICAL" },
+      { label: "Pending Changes", value: "PENDING_CHANGES" },
+    ],
+    []
+  );
+
   const processedRepositories = allRepos
     .filter(repo => {
       const matchesSearch = repo.display_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
                             repo.absolute_path.toLowerCase().includes(searchQuery.toLowerCase());
-      const matchesType = filterType === "ALL" || repo.repo_origin_type === filterType;
+      const matchesType =
+        selectedRepoTypeIds.length === 0 || selectedRepoTypeIds.includes(repo.repo_origin_type ?? "LOCAL_ONLY");
       const matchesFavorites = !favoritesOnly || (repo.is_favorite ?? 0) === 1;
-      const matchesGroup = !selectedGroup || repo.custom_group === selectedGroup;
+      const matchesGroup =
+        !selectedGroup || repo.custom_group === selectedGroup || repo.group_id === selectedGroup;
       const tagIds = (repo.tags ?? []).map((tag) => tag.id);
       const matchesTags =
         selectedTagIds.length === 0 || selectedTagIds.some((tagId) => tagIds.includes(tagId));
@@ -119,12 +118,9 @@ export function DashboardMain({ onOpenManagementModal, onCleanupDanglingTags }: 
     .sort((a, b) => {
       if (sortBy === "ALPHABETICAL") return a.display_name.localeCompare(b.display_name);
       if (sortBy === "PENDING_CHANGES") return (b.uncommitted_changes_count ?? 0) - (a.uncommitted_changes_count ?? 0);
-      if (sortBy === "LAST_VIEWED") {
-        const aTime = a.last_accessed_at ? new Date(a.last_accessed_at).getTime() : 0;
-        const bTime = b.last_accessed_at ? new Date(b.last_accessed_at).getTime() : 0;
-        return bTime - aTime;
-      }
-      return 0;
+      const aTime = a.last_accessed_at ? new Date(a.last_accessed_at).getTime() : 0;
+      const bTime = b.last_accessed_at ? new Date(b.last_accessed_at).getTime() : 0;
+      return bTime - aTime;
     });
 
   return (
@@ -143,25 +139,25 @@ export function DashboardMain({ onOpenManagementModal, onCleanupDanglingTags }: 
             />
           </div>
 
-          <div className="dashboard-select-wrapper dashboard-control-shell" onPointerDown={(event) => handleSelectShellPointerDown(event, provenanceSelectRef)}>
-            <select ref={provenanceSelectRef} className="dashboard-select" value={filterType} onChange={(e) => setFilterType(e.target.value as any)}>
-              <option value="ALL">All</option>
-              <option value="OWNED">Owned / Created</option>
-              <option value="FORK">Forks Ecosystem</option>
-              <option value="LOCAL_ONLY">Local-Only Frameworks</option>
-              <option value="CONTRIBUTOR">Contributors</option>
-            </select>
-            <CaretDown size={16} className="dashboard-select-icon" />
-          </div>
+          <FilterDropdown
+            value={selectedRepoTypeIds}
+            options={repoTypeOptions}
+            onChange={(value) => setSelectedRepoTypeIds(Array.isArray(value) ? value : [])}
+            multi
+            placeholder="All repo types"
+            aria-label="Filter by repository type"
+            className="filter-dropdown-fixed"
+          />
 
-          <div className="dashboard-select-wrapper dashboard-control-shell" onPointerDown={(event) => handleSelectShellPointerDown(event, sortSelectRef)}>
-            <select ref={sortSelectRef} className="dashboard-select" value={sortBy} onChange={(e) => setSortBy(e.target.value as any)}>
-              <option value="LAST_VIEWED">Last Accessed</option>
-              <option value="ALPHABETICAL">Alphabetical</option>
-              <option value="PENDING_CHANGES">Pending Changes</option>
-            </select>
-            <CaretDown size={16} className="dashboard-select-icon" />
-          </div>
+          <FilterDropdown
+            value={sortBy}
+            options={sortOptions}
+            onChange={(value) => setSortBy(typeof value === "string" ? (value as SortOption) : "LAST_VIEWED")}
+            placeholder="Sort by"
+            hidePlaceholderOption
+            aria-label="Sort repositories"
+            className="filter-dropdown-fixed"
+          />
         </div>
       </header>
 
