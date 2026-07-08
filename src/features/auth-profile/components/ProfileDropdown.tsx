@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { CheckCircle, GearSix, Star, UserCircle } from '@phosphor-icons/react';
+import { GearSix, Star, UserCircle } from '@phosphor-icons/react';
 import type { TokenHealthStatus, UserProfile } from '../types';
 import { getProfileAvatarUrl } from '../utils/profileAvatar';
 
@@ -15,11 +15,37 @@ interface ProfileDropdownProps {
   onOpenManagement: () => void;
 }
 
-const statusLabel: Record<TokenHealthStatus, string> = {
-  healthy: 'Healthy',
-  expired: 'Expired',
-  unreachable: 'Unreachable',
-  none: 'No token',
+const getStatusInfo = (status: TokenHealthStatus) => {
+  switch (status) {
+    case 'healthy':
+      return {
+        label: 'Healthy',
+        textColor: 'rgba(34, 197, 84, 0.96)',
+        badgeBackground: 'rgba(34, 197, 84, 0.12)',
+        borderColor: 'rgba(34, 197, 84, 0.24)',
+      };
+    case 'expired':
+      return {
+        label: 'Expired',
+        textColor: 'rgba(245, 158, 11, 0.96)',
+        badgeBackground: 'rgba(245, 158, 11, 0.12)',
+        borderColor: 'rgba(245, 158, 11, 0.24)',
+      };
+    case 'unreachable':
+      return {
+        label: 'Unreachable',
+        textColor: 'rgba(239, 68, 68, 0.96)',
+        badgeBackground: 'rgba(239, 68, 68, 0.12)',
+        borderColor: 'rgba(239, 68, 68, 0.24)',
+      };
+    default:
+      return {
+        label: 'No token',
+        textColor: 'var(--app-text-muted, #64748b)',
+        badgeBackground: 'rgba(148, 163, 184, 0.12)',
+        borderColor: 'rgba(148, 163, 184, 0.22)',
+      };
+  }
 };
 
 export function ProfileDropdown({
@@ -34,6 +60,8 @@ export function ProfileDropdown({
   onOpenManagement,
 }: ProfileDropdownProps) {
   const [position, setPosition] = useState({ top: 0, left: 0 });
+  const [hoveredProfileId, setHoveredProfileId] = useState<string | null>(null);
+  const [hoveredFavoriteId, setHoveredFavoriteId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isOpen || !anchorElement) {
@@ -82,39 +110,57 @@ export function ProfileDropdown({
   return (
     <div style={styles.overlay} onClick={onClose}>
       <div style={{ ...styles.dropdown, top: position.top, left: position.left }} onClick={(event) => event.stopPropagation()}>
-        <div style={styles.header}>
-          <div style={styles.headerTitle}>Active profile</div>
-          <div style={styles.activeCard}>
-            <div style={styles.avatarBadge}>
-              {renderAvatar(activeProfile, 18)}
-            </div>
-            <div>
-              <div style={styles.activeName}>{activeProfile?.display_name ?? 'No profile selected'}</div>
-              <div style={styles.activeMeta}>{activeProfile?.auth_level?.replace('_', ' ') ?? 'basic'}</div>
-            </div>
-          </div>
-        </div>
-
         <div style={styles.list}>
           {profiles.map((profile) => {
             const isActive = profile.id === activeProfile?.id;
             const isFavorite = Number(profile.is_favorite ?? 0) === 1;
             const status = tokenHealthMap[profile.id] ?? 'none';
+            const statusInfo = getStatusInfo(status);
+            const isRowHovered = hoveredProfileId === profile.id;
+            const isFavoriteHovered = hoveredFavoriteId === profile.id;
+
             return (
-              <div key={profile.id} style={{ ...styles.row, borderColor: isActive ? 'var(--accent, #3b82f6)' : 'transparent' }}>
+              <div
+                key={profile.id}
+                style={{
+                  ...styles.row,
+                  borderColor: isActive ? 'var(--accent, #3b82f6)' : (isRowHovered ? 'var(--app-border-strong, rgba(255,255,255,0.16))' : 'var(--app-border)'),
+                  backgroundColor: isActive ? 'rgba(59, 130, 246, 0.12)' : (isRowHovered ? 'rgba(255,255,255,0.04)' : 'transparent'),
+                }}
+              >
                 <button
                   type="button"
                   onClick={() => handleSelectProfile(profile.id)}
-                  style={styles.rowButton}
+                  onMouseEnter={() => setHoveredProfileId(profile.id)}
+                  onMouseLeave={() => setHoveredProfileId(null)}
+                  style={{
+                    ...styles.rowButton,
+                    backgroundColor: isRowHovered ? 'rgba(255,255,255,0.03)' : 'transparent',
+                  }}
+                  aria-label={`Select profile ${profile.display_name}`}
                 >
                   <div style={styles.rowAvatarWrap}>
                     {renderAvatar(profile, 16)}
                   </div>
                   <div style={styles.rowText}>
-                    <div style={styles.rowTitle}>{profile.display_name}</div>
-                    <div style={styles.rowMeta}>{profile.auth_level.replace('_', ' ')} • {statusLabel[status]}</div>
+                    <div style={styles.rowTitleRow}>
+                      <div style={styles.rowTitle}>{profile.display_name}</div>
+                    </div>
+                    <div style={styles.rowMeta}>
+                      <span style={styles.metaLabel}>{profile.auth_level.replace('_', ' ')}</span>
+                      <span style={styles.metaSeparator}>•</span>
+                      <span
+                        style={{
+                          ...styles.statusText,
+                          color: statusInfo.textColor,
+                          backgroundColor: statusInfo.badgeBackground,
+                          borderColor: statusInfo.borderColor,
+                        }}
+                      >
+                        {statusInfo.label}
+                      </span>
+                    </div>
                   </div>
-                  {isActive ? <CheckCircle size={16} color="var(--accent, #3b82f6)" /> : null}
                 </button>
                 <button
                   type="button"
@@ -122,8 +168,16 @@ export function ProfileDropdown({
                     event.stopPropagation();
                     void onToggleFavorite(profile.id, !isFavorite);
                   }}
-                  style={{ ...styles.iconButton, color: isFavorite ? '#f59e0b' : 'inherit' }}
-                  title={isFavorite ? 'Unfavorite profile' : 'Favorite profile'}
+                  onMouseEnter={() => setHoveredFavoriteId(profile.id)}
+                  onMouseLeave={() => setHoveredFavoriteId(null)}
+                  style={{
+                    ...styles.iconButton,
+                    color: isFavorite ? '#f59e0b' : (isFavoriteHovered ? 'var(--app-text)' : 'var(--app-text-muted, #64748b)'),
+                    backgroundColor: isFavoriteHovered ? 'rgba(245, 158, 11, 0.12)' : 'transparent',
+                    borderColor: isFavoriteHovered ? 'rgba(245, 158, 11, 0.28)' : 'var(--app-border)',
+                  }}
+                  title={isFavorite ? `Unfavorite profile ${profile.display_name}` : `Favorite profile ${profile.display_name}`}
+                  aria-label={isFavorite ? `Unfavorite profile ${profile.display_name}` : `Favorite profile ${profile.display_name}`}
                 >
                   <Star size={14} weight={isFavorite ? 'fill' : 'regular'} />
                 </button>
@@ -159,54 +213,17 @@ const styles: Record<string, React.CSSProperties> = {
     width: '260px',
     backgroundColor: 'var(--app-surface)',
     border: '1px solid var(--app-border)',
-    borderRadius: '12px',
+    borderRadius: '10px',
     boxShadow: '0 16px 40px rgba(15, 23, 42, 0.24)',
     padding: '10px',
     display: 'flex',
     flexDirection: 'column',
     gap: '8px',
   },
-  header: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '8px',
-  },
-  headerTitle: {
-    fontSize: '11px',
-    textTransform: 'uppercase',
-    letterSpacing: '0.08em',
-    color: 'var(--app-text-muted, #64748b)',
-  },
-  activeCard: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '10px',
-    padding: '8px',
-    borderRadius: '10px',
-    backgroundColor: 'var(--app-surface-2, rgba(255,255,255,0.04))',
-  },
-  avatarBadge: {
-    width: '32px',
-    height: '32px',
-    borderRadius: '999px',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(59, 130, 246, 0.12)',
-    overflow: 'hidden',
-  },
   avatarImage: {
     width: '100%',
     height: '100%',
     objectFit: 'cover',
-  },
-  activeName: {
-    fontWeight: 600,
-    fontSize: '13px',
-  },
-  activeMeta: {
-    fontSize: '11px',
-    color: 'var(--app-text-muted, #64748b)',
   },
   list: {
     display: 'flex',
@@ -220,28 +237,34 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: '8px',
-    border: '1px solid transparent',
-    borderRadius: '10px',
+    border: '1px solid var(--app-border)',
+    borderRadius: '8px',
     padding: '8px',
     backgroundColor: 'transparent',
     color: 'inherit',
+    minWidth: 0,
+    transition: 'border-color 120ms ease, background-color 120ms ease',
   },
   rowButton: {
     display: 'flex',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    justifyContent: 'flex-start',
     flex: 1,
+    minWidth: 0,
     gap: '8px',
     border: 'none',
-    padding: 0,
+    borderRadius: '6px',
+    padding: '2px 0',
     backgroundColor: 'transparent',
     color: 'inherit',
     cursor: 'pointer',
     textAlign: 'left',
+    overflow: 'hidden',
   },
   rowAvatarWrap: {
     width: '24px',
     height: '24px',
+    marginLeft: '2px',
     borderRadius: '999px',
     display: 'flex',
     alignItems: 'center',
@@ -259,14 +282,76 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     flexDirection: 'column',
     gap: '2px',
+    minWidth: 0,
+    flex: 1,
+    overflow: 'hidden',
+  },
+  rowTitleRow: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    gap: '6px',
+    minWidth: 0,
+    width: '100%',
+    overflow: 'hidden',
   },
   rowTitle: {
     fontSize: '13px',
     fontWeight: 600,
+    minWidth: 0,
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+    flex: 1,
+  },
+  activePill: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: '18px',
+    padding: '1px 6px',
+    borderRadius: '999px',
+    fontSize: '10px',
+    fontWeight: 700,
+    lineHeight: 1,
+    textTransform: 'uppercase',
+    letterSpacing: '0.06em',
+    color: 'var(--accent, #3b82f6)',
+    backgroundColor: 'rgba(59, 130, 246, 0.14)',
+    flexShrink: 0,
+    alignSelf: 'center',
   },
   rowMeta: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+    minWidth: 0,
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
     fontSize: '11px',
     color: 'var(--app-text-muted, #64748b)',
+  },
+  metaLabel: {
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+  },
+  metaSeparator: {
+    flexShrink: 0,
+  },
+  statusText: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: '2px 6px',
+    borderRadius: '999px',
+    border: '1px solid',
+    minWidth: 0,
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+    fontWeight: 600,
   },
   iconButton: {
     border: '1px solid var(--app-border)',
@@ -280,10 +365,12 @@ const styles: Record<string, React.CSSProperties> = {
     color: 'inherit',
     cursor: 'pointer',
     padding: 0,
+    flexShrink: 0,
+    transition: 'background-color 120ms ease, border-color 120ms ease, color 120ms ease',
   },
   manageButton: {
     border: 'none',
-    borderRadius: '10px',
+    borderRadius: '8px',
     padding: '8px 10px',
     display: 'flex',
     alignItems: 'center',

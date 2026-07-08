@@ -5,13 +5,13 @@ import {
   CheckCircle, 
   Heartbeat, 
   PlusCircle, 
-  Star, 
   Trash, 
   WarningCircle, 
   XCircle,
   IconContext
 } from '@phosphor-icons/react';
 import { OAuthConnectButton } from './OAuthConnectButton.tsx';
+import { ProfileListItem } from './ProfileListItem';
 import type { AuthLevel, TokenHealthStatus, UserProfile } from '../types';
 
 interface ProfileManagementModalProps {
@@ -265,39 +265,18 @@ export function ProfileManagementModal({
                     const isFavorite = Number(entry.is_favorite ?? 0) === 1;
                     const status = tokenHealthMap[entry.id] ?? 'none';
                     return (
-                      <div key={entry.id} style={{ ...styles.profileListItem, borderColor: isSelected ? 'var(--accent, #3b82f6)' : 'var(--app-border)' }}>
-                        <div style={styles.profileListText}>
-                          <div style={styles.profileListName}>{entry.display_name}</div>
-                          <div style={styles.profileListMeta}>{entry.auth_level.replace('_', ' ')} • {status}</div>
-                        </div>
-                        <div style={styles.profileListActions}>
-                          <button
-                            type="button"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              void onSaveProfile(entry.id, { is_favorite: !isFavorite });
-                            }}
-                            style={{ ...styles.iconButton, color: isFavorite ? '#f59e0b' : 'inherit' }}
-                            title={isFavorite ? 'Unfavorite profile' : 'Favorite profile'}
-                          >
-                            <Star size={14} weight={isFavorite ? 'fill' : 'regular'} />
-                          </button>
-                          <button type="button" onClick={() => onSelectProfile(entry.id)} style={styles.inlineButton}>
-                            {isSelected ? 'Editing' : 'Edit'}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              void onDeleteProfile(entry.id);
-                            }}
-                            style={{ ...styles.iconButton, color: '#ef4444' }}
-                            title="Delete profile"
-                          >
-                            <Trash size={14} />
-                          </button>
-                        </div>
-                      </div>
+                      <ProfileListItem
+                        key={entry.id}
+                        profile={entry}
+                        isSelected={isSelected}
+                        isFavorite={isFavorite}
+                        status={status}
+                        onSelectProfile={onSelectProfile}
+                        onToggleFavorite={(profileId, favorite) => {
+                          void onSaveProfile(profileId, { is_favorite: favorite });
+                        }}
+                        onDeleteProfile={onDeleteProfile}
+                      />
                     );
                   })}
                 </div>
