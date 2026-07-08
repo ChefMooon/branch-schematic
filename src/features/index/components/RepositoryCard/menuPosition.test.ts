@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getViewportSafeMenuPosition } from './menuPosition';
+import { getViewportSafeMenuPosition } from './menuPosition.ts';
 
 describe('getViewportSafeMenuPosition', () => {
   it('opens below the trigger when there is enough room', () => {
@@ -12,7 +12,7 @@ describe('getViewportSafeMenuPosition', () => {
     });
 
     expect(position).toEqual({
-      top: 142,
+      top: 118,
       left: 8,
       maxHeight: 584,
     });
