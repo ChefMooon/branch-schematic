@@ -2,6 +2,7 @@ import type { CSSProperties } from 'react';
 import { GithubLogo, UserCircle } from '@phosphor-icons/react';
 import type { TokenHealthStatus, UserProfile } from '../types';
 import { getProfileAvatarUrl } from '../utils/profileAvatar';
+import '../../../components/layout/titlebar.css';
 
 interface ProfileIndicatorProps {
   profile: UserProfile | null;
@@ -9,6 +10,7 @@ interface ProfileIndicatorProps {
   isOpen: boolean;
   onToggle: () => void;
   onAnchorRef: (node: HTMLButtonElement | null) => void;
+  className?: string;
 }
 
 const statusColor: Record<TokenHealthStatus, string> = {
@@ -18,7 +20,7 @@ const statusColor: Record<TokenHealthStatus, string> = {
   none: '#64748b',
 };
 
-export function ProfileIndicator({ profile, status, isOpen, onToggle, onAnchorRef }: ProfileIndicatorProps) {
+export function ProfileIndicator({ profile, status, isOpen, onToggle, onAnchorRef, className }: ProfileIndicatorProps) {
   const avatarUrl = getProfileAvatarUrl(profile);
   const isFullOauth = profile?.auth_level === 'full_oauth';
 
@@ -27,6 +29,7 @@ export function ProfileIndicator({ profile, status, isOpen, onToggle, onAnchorRe
       <button
         ref={onAnchorRef}
         type="button"
+        className={className}
         onMouseDown={(event) => event.stopPropagation()}
         onClick={onToggle}
         title={profile ? `Active profile: ${profile.display_name}` : 'Select profile'}

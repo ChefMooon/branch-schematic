@@ -75,8 +75,16 @@ vi.mock('../../features/repository/components/CreateRepositoryModal', () => ({ C
 vi.mock('../../features/canvas-views/components/CreateViewModal', () => ({ CreateViewModal: () => null }));
 vi.mock('../../features/management/components/SettingsManagementModal', () => ({ SettingsManagementModal: () => null }));
 vi.mock('../../features/auth-profile/components/ProfileIndicator', () => ({
-  ProfileIndicator: ({ isOpen, onToggle }: { isOpen: boolean; onToggle: () => void }) => (
-    <button type="button" title="Profile" onClick={onToggle}>
+  ProfileIndicator: ({
+    isOpen,
+    onToggle,
+    className,
+  }: {
+    isOpen: boolean;
+    onToggle: () => void;
+    className?: string;
+  }) => (
+    <button type="button" title="Profile" className={className} onClick={onToggle}>
       {isOpen ? 'profile-open' : 'profile-closed'}
     </button>
   ),
@@ -176,5 +184,26 @@ describe('AppLayout', () => {
 
     await user.click(profileButton);
     expect(screen.queryByTestId('profile-dropdown')).not.toBeInTheDocument();
+  });
+
+  it('applies shared title bar button classes and active state styling to the header actions', async () => {
+    const user = userEvent.setup();
+
+    render(
+      <AppLayout>
+        <div>content</div>
+      </AppLayout>
+    );
+
+    const bellButton = screen.getByTitle(/notifications/i);
+    const repositoryButton = screen.getByTitle(/new/i);
+    const profileButton = screen.getByRole('button', { name: /profile/i });
+
+    expect(bellButton).toHaveClass('titlebar-action-button');
+    expect(repositoryButton).toHaveClass('titlebar-action-button');
+    expect(profileButton).toHaveClass('titlebar-profile-button');
+
+    await user.click(profileButton);
+    expect(profileButton).toHaveClass('is-active');
   });
 });

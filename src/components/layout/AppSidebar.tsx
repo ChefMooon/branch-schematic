@@ -7,7 +7,7 @@ import {
   WrenchIcon,
 } from '@phosphor-icons/react';
 import { AppLogo } from '../app-logo/AppLogo';
-import './AppSidebar.css';
+import './layout.css';
 
 interface NavItem {
   label: string;

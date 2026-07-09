@@ -1,6 +1,7 @@
 import { MinusIcon, SquareIcon, XIcon } from '@phosphor-icons/react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { useOS } from '../../hooks/useOS';
+import './titlebar.css';
 
 const appWindow = getCurrentWindow();
 
@@ -13,6 +14,7 @@ export function WindowControls() {
     <div style={styles.container}>
       <button
         type="button"
+        className="titlebar-action-button"
         style={styles.button}
         title="Minimize"
         onClick={async () => {
@@ -28,6 +30,7 @@ export function WindowControls() {
 
       <button
         type="button"
+        className="titlebar-action-button"
         style={styles.button}
         title="Maximize or restore"
         onClick={async () => {
@@ -43,6 +46,7 @@ export function WindowControls() {
 
       <button
         type="button"
+        className="titlebar-action-button titlebar-close-button"
         style={{ ...styles.button, ...styles.closeButton }}
         title="Close"
         onClick={async () => {
@@ -72,9 +76,6 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: '6px',
-    border: '1px solid var(--app-border)',
-    backgroundColor: 'transparent',
     cursor: 'pointer',
     padding: 0,
   },

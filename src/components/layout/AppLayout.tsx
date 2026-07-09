@@ -9,7 +9,8 @@ import {
 } from '@phosphor-icons/react';
 import { useWorkspaceStore } from '../../stores/workspace-store';
 import { useOS } from '../../hooks/useOS';
-import { WindowControls } from '../titlebar/WindowControls';
+import { WindowControls } from './WindowControls';
+import './titlebar.css';
 import { AppSidebar } from './AppSidebar';
 import { RepositoryDropdown } from '../../features/repository/components/RepositoryDropdown';
 import { AddLocalRepositoryModal } from '../../features/repository/components/AddLocalRepositoryModal';
@@ -268,6 +269,7 @@ export function AppLayout({ children }: AppLayoutProps) {
         {/* Hamburger/Close Button */}
         <button
           onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+          className={`titlebar-action-button ${isSidebarOpen ? 'is-active' : ''}`}
           style={styles.menuBtn}
           title={isSidebarOpen ? "Close navigation" : "Open navigation"}
         >
@@ -288,6 +290,7 @@ export function AppLayout({ children }: AppLayoutProps) {
         <div style={styles.headerRight}>
           <div style={{ position: 'relative' }}>
             <button
+              className={`titlebar-action-button ${isNotificationDropdownOpen ? 'is-active' : ''}`}
               style={styles.iconBtn}
               title="Notifications"
               onMouseDown={(event) => event.stopPropagation()}
@@ -323,6 +326,7 @@ export function AppLayout({ children }: AppLayoutProps) {
             <button
               ref={(node) => setRepositoryDropdownAnchor(node)}
               data-repository-dropdown-trigger
+              className={`titlebar-action-button ${isRepositoryDropdownOpen ? 'is-active' : ''}`}
               style={styles.iconBtn}
               title="New"
               onMouseDown={(event) => event.stopPropagation()}
@@ -347,6 +351,7 @@ export function AppLayout({ children }: AppLayoutProps) {
           </div>
 
           <button
+            className="titlebar-action-button"
             style={styles.iconBtn}
             title={`Switch theme (current: ${themeMode})`}
             onClick={() => {
@@ -366,6 +371,7 @@ export function AppLayout({ children }: AppLayoutProps) {
               isOpen={isProfileDropdownOpen}
               onToggle={handleToggleProfileDropdown}
               onAnchorRef={setProfileDropdownAnchor}
+              className={`titlebar-profile-button ${isProfileDropdownOpen ? 'is-active' : ''}`}
             />
             <ProfileDropdown
               isOpen={isProfileDropdownOpen}
@@ -487,9 +493,6 @@ const styles: Record<string, AppStyle> = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: '6px',
-    border: '1px solid var(--app-border)',
-    backgroundColor: 'transparent',
     padding: 0,
     cursor: 'pointer',
     flexShrink: 0,
@@ -521,9 +524,6 @@ const styles: Record<string, AppStyle> = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: '6px',
-    border: '1px solid var(--app-border)',
-    backgroundColor: 'transparent',
     padding: 0,
     cursor: 'pointer',
     flexShrink: 0,
