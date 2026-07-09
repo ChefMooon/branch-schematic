@@ -1,4 +1,11 @@
 .sidebar-nav-item {
+  --sidebar-item-bg: transparent;
+  --sidebar-item-hover-bg: var(--app-surface-muted);
+  --sidebar-item-active-bg: var(--app-surface-muted);
+  --sidebar-item-text-color: var(--app-muted);
+  --sidebar-item-active-text-color: var(--app-text);
+  --sidebar-item-indicator-color: var(--app-accent);
+
   position: relative;
   display: flex;
   align-items: center;
@@ -10,19 +17,19 @@
   cursor: pointer;
   text-align: left;
   font-family: inherit;
-  color: var(--app-muted);
-  background-color: transparent;
+  color: var(--sidebar-item-text-color);
+  background-color: var(--sidebar-item-bg);
   box-sizing: border-box;
-  transition: background 0.12s ease, color 0.12s ease;
+  transition: background-color 0.12s ease, color 0.12s ease;
 }
 
-.sidebar-nav-item:hover,
-.sidebar-nav-item.is-active {
-  background-color: var(--app-surface-muted);
+.sidebar-nav-item:hover {
+  background-color: var(--sidebar-item-hover-bg);
 }
 
 .sidebar-nav-item.is-active {
-  color: var(--app-text);
+  color: var(--sidebar-item-active-text-color);
+  background-color: var(--sidebar-item-active-bg);
 }
 
 .sidebar-nav-item.is-active::before {
@@ -32,6 +39,6 @@
   top: 6px;
   bottom: 6px;
   width: 4px;
-  background-color: var(--app-accent);
+  background-color: var(--sidebar-item-indicator-color);
   border-radius: 2px;
 }

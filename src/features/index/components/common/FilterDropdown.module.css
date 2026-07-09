@@ -11,7 +11,7 @@
   font-size: 0.75rem;
   font-weight: 600;
   letter-spacing: 0.02em;
-  color: var(--text-muted, #64748b);
+  color: var(--app-muted, #777);
   text-transform: uppercase;
 }
 
@@ -34,10 +34,10 @@
   height: 100%;
   box-sizing: border-box;
   padding: 0.55rem 0.85rem;
-  border: 1px solid var(--badge-border, #cbd5e1);
+  border: 1px solid var(--app-border, #e8e8e8);
   border-radius: 6px;
-  background: var(--bg-nested, #f8fafc);
-  color: var(--text-main, #0f172a);
+  background: var(--app-surface-muted, #f5f5f5);
+  color: var(--app-text, #0f0f0f);
   cursor: pointer;
   font-size: 0.9rem;
   font-weight: 500;
@@ -46,12 +46,12 @@
 }
 
 .dropdownButton:hover {
-  background: var(--item-hover, rgba(14, 165, 233, 0.12));
-  border-color: var(--card-border-hover, #cbd5e1);
+  background: color-mix(in srgb, var(--app-accent) 12%, transparent);
+  border-color: var(--app-control-strong, #e8e8e8);
 }
 
 .dropdownButton:focus-visible {
-  outline: 2px solid var(--app-accent, #22d3ee);
+  outline: 2px solid var(--app-accent, #396cd8);
   outline-offset: 2px;
 }
 
@@ -65,7 +65,7 @@
 }
 
 .dropdownIcon {
-  color: var(--text-muted, #64748b);
+  color: var(--app-muted, #777);
   flex-shrink: 0;
 }
 
@@ -79,10 +79,10 @@
   flex-direction: column;
   gap: 0.2rem;
   padding: 0.35rem;
-  border: 1px solid var(--dropdown-border, rgba(148, 163, 184, 0.24));
+  border: 1px solid var(--app-border, #e8e8e8);
   border-radius: 8px;
-  background: var(--dropdown-bg, rgba(255, 255, 255, 0.82));
-  box-shadow: var(--dropdown-shadow, 0 18px 40px -24px rgba(15, 23, 42, 0.32));
+  background: var(--app-surface, #ffffff);
+  box-shadow: 0 18px 40px -24px var(--app-shadow, rgba(0, 0, 0, 0.2));
   backdrop-filter: blur(12px);
 }
 
@@ -90,7 +90,7 @@
   border: none;
   border-radius: 6px;
   background: transparent;
-  color: var(--text-main, #0f172a);
+  color: var(--app-text, #0f0f0f);
   padding: 0.55rem 0.7rem;
   text-align: left;
   font-size: 0.9rem;
@@ -99,7 +99,7 @@
 
 .dropdownOption:hover,
 .dropdownOptionActive {
-  background: var(--item-hover, rgba(14, 165, 233, 0.12));
+  background: color-mix(in srgb, var(--app-accent) 12%, transparent);
 }
 
 .dropdownOptionActive {
