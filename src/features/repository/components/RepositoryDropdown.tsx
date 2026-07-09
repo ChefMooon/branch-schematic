@@ -7,6 +7,7 @@ interface RepositoryDropdownProps {
   onClose: () => void;
   onSelect: (action: RepositoryModalAction) => void;
   anchorElement?: HTMLElement | null;
+  canCloneRemote: boolean;
 }
 
 export function RepositoryDropdown({
@@ -14,6 +15,7 @@ export function RepositoryDropdown({
   onClose,
   onSelect,
   anchorElement,
+  canCloneRemote,
 }: RepositoryDropdownProps) {
   const [menuPosition, setMenuPosition] = useState<{ top: number; left: number } | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
@@ -126,11 +128,16 @@ export function RepositoryDropdown({
 
       <button
         type="button"
-        disabled
-        style={{ ...menuItemStyle, opacity: 0.6, cursor: 'not-allowed' }}
+        disabled={!canCloneRemote}
+        onClick={() => {
+          if (!canCloneRemote) return;
+          onSelect('clone');
+          onClose();
+        }}
+        style={{ ...menuItemStyle, opacity: canCloneRemote ? 1 : 0.6, cursor: canCloneRemote ? 'pointer' : 'not-allowed' }}
       >
         <GitBranch size={16} weight="bold" />
-        <span>Clone Repository (Coming Soon)</span>
+        <span>{canCloneRemote ? 'Clone Repository...' : 'Clone Repository (Sign in required)'}</span>
       </button>
     </div>
   );

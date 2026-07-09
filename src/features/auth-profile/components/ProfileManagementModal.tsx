@@ -13,6 +13,7 @@ import {
 import { ConfirmationModal } from '../../../components/Modal/ConfirmationModal';
 import { OAuthConnectButton } from './OAuthConnectButton.tsx';
 import { ProfileListItem } from './ProfileListItem';
+import { useProfileStore } from '../stores/profileStore';
 import type { AuthLevel, TokenHealthStatus, UserProfile } from '../types';
 
 interface ProfileManagementModalProps {
@@ -69,6 +70,7 @@ export function ProfileManagementModal({
   const [profileToDelete, setProfileToDelete] = useState<UserProfile | null>(null);
   const [isBackdropPressed, setIsBackdropPressed] = useState(false);
   const [selectedProfileId, setSelectedProfileId] = useState<string | null>(null);
+  const hydrateProfileStore = useProfileStore((state) => state.hydrateProfiles);
 
   useEffect(() => {
     if (!isOpen) {
@@ -127,10 +129,12 @@ export function ProfileManagementModal({
     try {
       if (mode === 'edit' && profile?.id) {
         await onSaveProfile(profile.id, draft);
+        await hydrateProfileStore();
         return;
       }
 
       const createdProfile = await onCreateProfile(draft);
+      await hydrateProfileStore();
       setMode('edit');
       setSelectedProfileId(createdProfile.id);
       setDraft({

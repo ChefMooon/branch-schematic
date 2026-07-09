@@ -7,6 +7,7 @@ interface RepositoryModalShellProps {
   description?: string;
   children: ReactNode;
   footer?: ReactNode;
+  size?: 'default' | 'wide';
 }
 
 export function RepositoryModalShell({
@@ -16,6 +17,7 @@ export function RepositoryModalShell({
   description,
   children,
   footer,
+  size = 'default',
 }: RepositoryModalShellProps) {
   if (!isOpen) return null;
 
@@ -30,17 +32,21 @@ export function RepositoryModalShell({
         justifyContent: 'center',
         padding: 16,
         background: 'rgba(15, 23, 42, 0.54)',
+        overflowY: 'auto',
       }}
       onClick={onClose}
     >
       <div
         style={{
-          width: 'min(460px, 92vw)',
+          width: size === 'wide' ? 'min(860px, 96vw)' : 'min(460px, 92vw)',
           maxHeight: 'min(90vh, 820px)',
+          maxWidth: '100%',
           display: 'flex',
           flexDirection: 'column',
+          flexShrink: 0,
           borderRadius: 14,
           overflow: 'hidden',
+          overscrollBehavior: 'contain',
           border: '1px solid var(--app-border)',
           background: 'var(--app-surface)',
           boxShadow: '0 30px 70px -30px rgba(15, 23, 42, 0.65)',

@@ -1,7 +1,8 @@
 use std::{fs, path::Path};
 use std::sync::{Arc, Mutex};
 use uuid::Uuid;
-use git2::{AutotagOption, Branch, BranchType, FetchOptions, Oid, PushOptions, RemoteCallbacks, Repository};
+use git2::{AutotagOption, Branch, BranchType, Cred, CredentialType, FetchOptions, Oid, PushOptions, RemoteCallbacks, Repository};
+use reqwest::header::{HeaderValue, ACCEPT, AUTHORIZATION, USER_AGENT};
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
 use crate::DbState;
@@ -71,6 +72,606 @@ pub struct GitTopologyRelation {
     pub target_branch: String,
     pub common_ancestor: String,
     pub distance_from_ancestor: usize,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct RemoteRepositoryOwner {
+    pub login: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct RemoteRepository {
+    pub id: String,
+    pub name: String,
+    pub full_name: String,
+    pub owner: RemoteRepositoryOwner,
+    pub description: Option<String>,
+    #[serde(rename = "private")]
+    pub is_private: bool,
+    pub default_branch: String,
+    pub updated_at: String,
+    pub clone_url: String,
+    pub ssh_url: String,
+    pub html_url: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct RemoteRepositoryPage {
+    pub items: Vec<RemoteRepository>,
+    pub page: u32,
+    pub per_page: u32,
+    pub has_more: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct RemoteBranchCommit {
+    pub sha: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct RemoteBranch {
+    pub name: String,
+    pub commit: RemoteBranchCommit,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct RemoteBranchPage {
+    pub items: Vec<RemoteBranch>,
+    pub page: u32,
+    pub per_page: u32,
+    pub has_more: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct CloneRemoteRepositoryResult {
+    pub path_id: String,
+    pub absolute_path: String,
+    pub message: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct GitHubRepoOwnerPayload {
+    login: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct GitHubRepoPayload {
+    id: i64,
+    name: String,
+    full_name: String,
+    owner: GitHubRepoOwnerPayload,
+    description: Option<String>,
+    #[serde(rename = "private")]
+    is_private: bool,
+    default_branch: Option<String>,
+    updated_at: Option<String>,
+    clone_url: Option<String>,
+    ssh_url: Option<String>,
+    html_url: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GitHubBranchCommitPayload {
+    sha: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct GitHubBranchPayload {
+    name: String,
+    commit: GitHubBranchCommitPayload,
+}
+
+fn normalize_api_base_url(profile: &auth::AuthProfileRow) -> String {
+    profile
+        .api_base_url
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("https://api.github.com")
+        .trim_end_matches('/')
+        .to_string()
+}
+
+fn ensure_remote_access(profile: &auth::AuthProfileRow) -> Result<String, String> {
+    if profile.auth_level != "full_oauth" {
+        return Err("Remote operations require a full OAuth profile.".to_string());
+    }
+
+    let token = profile
+        .token_value
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| "The selected profile does not have an OAuth token.".to_string())?
+        .to_string();
+
+    Ok(token)
+}
+
+fn normalize_pagination(page: Option<u32>, per_page: Option<u32>) -> (u32, u32) {
+    let normalized_page = page.unwrap_or(1).max(1);
+    let normalized_per_page = per_page.unwrap_or(30).clamp(1, 100);
+    (normalized_page, normalized_per_page)
+}
+
+fn build_bearer_auth_header(token: &str) -> Result<HeaderValue, String> {
+    let value = format!("Bearer {}", token.trim());
+    HeaderValue::from_str(&value).map_err(|_| {
+        "The stored OAuth token is malformed and cannot be used for GitHub requests. Reconnect the profile to refresh the token.".to_string()
+    })
+}
+
+fn parse_oauth_scopes_header(header_value: Option<&HeaderValue>) -> Option<Vec<String>> {
+    header_value
+        .and_then(|value| value.to_str().ok())
+        .map(|value| {
+            value
+                .split(',')
+                .map(|scope| scope.trim().to_string())
+                .filter(|scope| !scope.is_empty())
+                .collect::<Vec<String>>()
+        })
+}
+
+fn describe_remote_repository_listing_error(raw_error: &str) -> String {
+    let trimmed = raw_error.trim();
+    if trimmed.contains("OAuth token") {
+        return "We couldn't load repositories because the selected profile is not fully authorized. Reconnect the profile and try again.".to_string();
+    }
+
+    if trimmed.contains("full OAuth profile") {
+        return "We couldn't load repositories because the selected profile is not a full OAuth profile. Update the profile and try again.".to_string();
+    }
+
+    if trimmed.contains("No active profile") {
+        return "We couldn't load repositories because no active profile is available. Choose or reconnect a profile and try again.".to_string();
+    }
+
+    if trimmed.contains("Remote repository request failed (401)") {
+        return "GitHub rejected the OAuth token (401). Reconnect the profile and authorize again.".to_string();
+    }
+
+    if trimmed.contains("Remote repository request failed (403)") {
+        let lowered = trimmed.to_lowercase();
+        if lowered.contains("rate limit") {
+            return "GitHub API rate limit was exceeded (403). Wait a few minutes and try again.".to_string();
+        }
+
+        if lowered.contains("saml") || lowered.contains("sso") {
+            return "GitHub blocked repository access due to organization SSO requirements. Authorize this OAuth app for the organization, then try again.".to_string();
+        }
+
+        return "GitHub denied repository access (403). Ensure OAuth scopes include repository access and organization access where needed.".to_string();
+    }
+
+    if trimmed.contains("Remote repository request failed (404)") {
+        return "The configured GitHub API base URL returned 404 for /user/repos. Verify the profile API base URL.".to_string();
+    }
+
+    if let Some((_, detail)) = trimmed.split_once("Failed to request remote repositories:") {
+        let clean_detail = detail.trim();
+        if !clean_detail.is_empty() {
+            return format!(
+                "We couldn't reach GitHub to load repositories. Network detail: {}",
+                clean_detail
+            );
+        }
+
+        return "We couldn't load repositories from GitHub right now. Check your connection and try again.".to_string();
+    }
+
+    if trimmed.contains("Failed to request remote repositories") {
+        return "We couldn't load repositories from GitHub right now. Check your connection and try again.".to_string();
+    }
+
+    if trimmed.contains("Remote repository request failed") {
+        if let (Some(body_start), Some(body_end)) = (trimmed.find('{'), trimmed.rfind('}')) {
+            if body_end > body_start {
+                let json_slice = &trimmed[body_start..=body_end];
+                if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(json_slice) {
+                    if let Some(message) = parsed.get("message").and_then(serde_json::Value::as_str) {
+                        let clean_message = message.trim();
+                        if !clean_message.is_empty() {
+                            return format!("GitHub rejected repository listing: {clean_message}");
+                        }
+                    }
+                }
+            }
+        }
+
+        return "GitHub rejected repository listing. Verify the OAuth profile token and permissions, then try again.".to_string();
+    }
+
+    trimmed.to_string()
+}
+
+async fn fetch_remote_repositories_page(
+    profile: &auth::AuthProfileRow,
+    page: u32,
+    per_page: u32,
+) -> Result<RemoteRepositoryPage, String> {
+    let token = ensure_remote_access(profile)?;
+    let authorization_header = build_bearer_auth_header(&token)?;
+    let api_base_url = normalize_api_base_url(profile);
+    let endpoint = format!("{}/user/repos", api_base_url);
+    url::Url::parse(&endpoint)
+        .map_err(|_| format!("The profile API base URL is invalid: {}", api_base_url))?;
+
+	let query = vec![
+		("page", page.to_string()),
+		("per_page", per_page.to_string()),
+		("sort", "updated".to_string()),
+		("visibility", "all".to_string()),
+		("affiliation", "owner,collaborator,organization_member".to_string()),
+	];
+
+    let response = reqwest::Client::new()
+        .get(&endpoint)
+        .query(&query)
+        .header(USER_AGENT, "branch-schematic")
+        .header(ACCEPT, "application/vnd.github+json")
+        .header(AUTHORIZATION, authorization_header)
+        .send()
+        .await
+        .map_err(|error| format!("Failed to request remote repositories: {}", error))?;
+
+    if api_base_url.contains("api.github.com") {
+        if let Some(scopes) = parse_oauth_scopes_header(response.headers().get("x-oauth-scopes")) {
+            if !scopes.iter().any(|scope| scope == "repo") {
+                let scope_label = if scopes.is_empty() {
+                    "(none)".to_string()
+                } else {
+                    scopes.join(", ")
+                };
+                return Err(format!(
+                    "The connected OAuth token is missing the 'repo' scope required to list private repositories. Current scopes: {}. Reconnect the profile and grant repository access.",
+                    scope_label
+                ));
+            }
+        }
+    }
+
+    let has_more = response
+        .headers()
+        .get("link")
+        .and_then(|value| value.to_str().ok())
+        .map(|value| value.contains("rel=\"next\""))
+        .unwrap_or(false);
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        eprintln!("Remote repository request failed for profile {} ({}): {}", profile.id, status, body);
+        return Err(format!(
+            "Remote repository request failed ({}): {}",
+            status,
+            body
+        ));
+    }
+
+    let payloads: Vec<GitHubRepoPayload> = response
+        .json()
+        .await
+        .map_err(|error| format!("Failed to decode remote repositories response: {}", error))?;
+
+    let items = payloads
+        .into_iter()
+        .map(|repository| RemoteRepository {
+            id: repository.id.to_string(),
+            name: repository.name,
+            full_name: repository.full_name,
+            owner: RemoteRepositoryOwner {
+                login: repository.owner.login,
+            },
+            description: repository.description,
+            is_private: repository.is_private,
+            default_branch: repository.default_branch.unwrap_or_else(|| "main".to_string()),
+            updated_at: repository.updated_at.unwrap_or_default(),
+            clone_url: repository.clone_url.unwrap_or_default(),
+            ssh_url: repository.ssh_url.unwrap_or_default(),
+            html_url: repository.html_url.unwrap_or_default(),
+        })
+        .collect();
+
+    Ok(RemoteRepositoryPage {
+        items,
+        page,
+        per_page,
+        has_more,
+    })
+}
+
+async fn fetch_remote_branches_page(
+    profile: &auth::AuthProfileRow,
+    owner: &str,
+    repo_name: &str,
+    page: u32,
+    per_page: u32,
+) -> Result<RemoteBranchPage, String> {
+    let token = ensure_remote_access(profile)?;
+    let authorization_header = build_bearer_auth_header(&token)?;
+    let api_base_url = normalize_api_base_url(profile);
+    let endpoint = format!("{}/repos/{}/{}/branches", api_base_url, owner, repo_name);
+    url::Url::parse(&endpoint)
+        .map_err(|_| format!("The profile API base URL is invalid: {}", api_base_url))?;
+
+    let response = reqwest::Client::new()
+        .get(&endpoint)
+        .query(&[
+            ("page", page.to_string()),
+            ("per_page", per_page.to_string()),
+        ])
+        .header(USER_AGENT, "branch-schematic")
+        .header(ACCEPT, "application/vnd.github+json")
+        .header(AUTHORIZATION, authorization_header)
+        .send()
+        .await
+        .map_err(|error| format!("Failed to request remote branches: {}", error))?;
+
+    let has_more = response
+        .headers()
+        .get("link")
+        .and_then(|value| value.to_str().ok())
+        .map(|value| value.contains("rel=\"next\""))
+        .unwrap_or(false);
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        eprintln!("Remote branch request failed for profile {} ({}): {}", profile.id, status, body);
+        return Err(format!(
+            "Remote branch request failed ({}): {}",
+            status,
+            body
+        ));
+    }
+
+    let payloads: Vec<GitHubBranchPayload> = response
+        .json()
+        .await
+        .map_err(|error| format!("Failed to decode remote branches response: {}", error))?;
+
+    let items = payloads
+        .into_iter()
+        .map(|branch| RemoteBranch {
+            name: branch.name,
+            commit: RemoteBranchCommit {
+                sha: branch.commit.sha,
+            },
+        })
+        .collect();
+
+    Ok(RemoteBranchPage {
+        items,
+        page,
+        per_page,
+        has_more,
+    })
+}
+
+fn parse_repo_name_from_url(repo_url: &str) -> Option<String> {
+    let trimmed = repo_url.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    let without_git_suffix = trimmed.strip_suffix(".git").unwrap_or(trimmed);
+    let segment = without_git_suffix
+        .rsplit_once('/')
+        .map(|(_, tail)| tail)
+        .or_else(|| without_git_suffix.rsplit_once(':').map(|(_, tail)| tail))?;
+
+    let parsed = segment.trim();
+    if parsed.is_empty() {
+        return None;
+    }
+
+    Some(parsed.to_string())
+}
+
+fn derive_clone_base_from_api(api_base_url: &str) -> Result<String, String> {
+    let parsed = url::Url::parse(api_base_url.trim())
+        .map_err(|error| format!("Invalid API base URL '{}': {}", api_base_url, error))?;
+    let host = parsed
+        .host_str()
+        .ok_or_else(|| "The API base URL does not have a host.".to_string())?;
+    Ok(format!("{}://{}", parsed.scheme(), host))
+}
+
+fn resolve_clone_url(
+    profile: Option<&auth::AuthProfileRow>,
+    owner: Option<&str>,
+    repo_name: Option<&str>,
+    repo_url: Option<&str>,
+) -> Result<String, String> {
+    if let Some(raw_url) = repo_url.map(str::trim).filter(|value| !value.is_empty()) {
+        return Ok(raw_url.to_string());
+    }
+
+    let owner = owner
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| "An owner is required when repo_url is not provided.".to_string())?;
+    let repo_name = repo_name
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| "A repository name is required when repo_url is not provided.".to_string())?;
+
+    let clone_base = if let Some(active_profile) = profile {
+        let api_base_url = normalize_api_base_url(active_profile);
+        if api_base_url.contains("api.github.com") {
+            "https://github.com".to_string()
+        } else {
+            derive_clone_base_from_api(&api_base_url)?
+        }
+    } else {
+        "https://github.com".to_string()
+    };
+
+    Ok(format!("{}/{}/{}.git", clone_base.trim_end_matches('/'), owner, repo_name))
+}
+
+#[tauri::command]
+pub async fn list_remote_repositories(
+    state: tauri::State<'_, DbState>,
+    profile_id: Option<String>,
+    page: Option<u32>,
+    per_page: Option<u32>,
+) -> Result<RemoteRepositoryPage, String> {
+    let (page, per_page) = normalize_pagination(page, per_page);
+    let profile = auth::resolve_profile_for_remote(&state.0, profile_id.as_deref())
+        .await?
+        .ok_or_else(|| "No active profile is available for remote repository access.".to_string())?;
+
+    fetch_remote_repositories_page(&profile, page, per_page)
+        .await
+        .map_err(|error| describe_remote_repository_listing_error(&error))
+}
+
+#[tauri::command]
+pub async fn list_enterprise_repositories(
+    state: tauri::State<'_, DbState>,
+    profile_id: Option<String>,
+    page: Option<u32>,
+    per_page: Option<u32>,
+) -> Result<RemoteRepositoryPage, String> {
+    let profile = auth::resolve_profile_for_remote(&state.0, profile_id.as_deref())
+        .await?
+        .ok_or_else(|| "No active profile is available for enterprise repository access.".to_string())?;
+
+    if profile.api_base_url.as_deref().map(str::trim).unwrap_or("").is_empty() {
+        return Err("Enterprise profile configuration is missing an API base URL.".to_string());
+    }
+
+    let (page, per_page) = normalize_pagination(page, per_page);
+    fetch_remote_repositories_page(&profile, page, per_page)
+        .await
+        .map_err(|error| describe_remote_repository_listing_error(&error))
+}
+
+#[tauri::command]
+pub async fn list_remote_branches(
+    state: tauri::State<'_, DbState>,
+    profile_id: Option<String>,
+    owner: String,
+    repo_name: String,
+    page: Option<u32>,
+    per_page: Option<u32>,
+) -> Result<RemoteBranchPage, String> {
+    let owner = owner.trim().to_string();
+    let repo_name = repo_name.trim().to_string();
+    if owner.is_empty() || repo_name.is_empty() {
+        return Err("Owner and repository name are required to list branches.".to_string());
+    }
+
+    let profile = auth::resolve_profile_for_remote(&state.0, profile_id.as_deref())
+        .await?
+        .ok_or_else(|| "No active profile is available for remote branch access.".to_string())?;
+    let (page, per_page) = normalize_pagination(page, per_page);
+
+    fetch_remote_branches_page(&profile, &owner, &repo_name, page, per_page).await
+}
+
+#[tauri::command]
+pub async fn clone_remote_repository(
+    state: tauri::State<'_, DbState>,
+    profile_id: Option<String>,
+    owner: Option<String>,
+    repo_name: Option<String>,
+    repo_url: Option<String>,
+    branch: Option<String>,
+    destination_path: String,
+) -> Result<CloneRemoteRepositoryResult, String> {
+    let destination = Path::new(destination_path.trim());
+    if destination.as_os_str().is_empty() {
+        return Err("A destination path is required.".to_string());
+    }
+
+    if !destination.exists() || !destination.is_dir() {
+        return Err("The destination path must be an existing directory.".to_string());
+    }
+
+    let profile = auth::resolve_profile_for_remote(&state.0, profile_id.as_deref()).await?;
+    let clone_url = resolve_clone_url(
+        profile.as_ref(),
+        owner.as_deref(),
+        repo_name.as_deref(),
+        repo_url.as_deref(),
+    )?;
+
+    let inferred_repo_name = repo_name
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+        .or_else(|| parse_repo_name_from_url(&clone_url))
+        .ok_or_else(|| "Unable to determine a repository name for the clone destination.".to_string())?;
+
+    let target_path = destination.join(sanitize_repository_name(&inferred_repo_name));
+    if target_path.exists() {
+        return Err(format!(
+            "The destination '{}' already exists.",
+            target_path.display()
+        ));
+    }
+
+    let token = profile
+        .as_ref()
+        .and_then(|entry| entry.token_value.as_deref())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string);
+
+    {
+        let mut callbacks = RemoteCallbacks::new();
+        callbacks.credentials(move |_url, username_from_url, allowed_types| {
+            if let Some(access_token) = token.as_ref() {
+                if allowed_types.contains(CredentialType::USER_PASS_PLAINTEXT) {
+                    return Cred::userpass_plaintext("x-access-token", access_token);
+                }
+            }
+
+            if allowed_types.contains(CredentialType::SSH_KEY) {
+                if let Some(username) = username_from_url {
+                    return Cred::ssh_key_from_agent(username);
+                }
+            }
+
+            Cred::default()
+        });
+
+        let mut fetch_options = FetchOptions::new();
+        fetch_options.remote_callbacks(callbacks);
+        fetch_options.download_tags(AutotagOption::All);
+
+        let mut builder = git2::build::RepoBuilder::new();
+        builder.fetch_options(fetch_options);
+
+        if let Some(branch_name) = branch.as_deref().map(str::trim).filter(|value| !value.is_empty()) {
+            builder.branch(branch_name);
+        }
+
+        builder
+            .clone(&clone_url, &target_path)
+            .map_err(|error| format!("Failed to clone remote repository: {}", error))?;
+    }
+
+    let target_path_string = target_path
+        .to_str()
+        .ok_or_else(|| "Failed to resolve cloned repository path.".to_string())?
+        .to_string();
+
+    let track_result = track_repository_path(&state.0, &target_path_string).await?;
+    let path_id = db::fetch_tracked_path_id_by_absolute_path(&state.0, &target_path_string)
+        .await
+        .map_err(|error| format!("Failed to resolve tracked repository id: {}", error))?
+        .ok_or_else(|| "The cloned repository could not be tracked.".to_string())?;
+
+    Ok(CloneRemoteRepositoryResult {
+        path_id,
+        absolute_path: target_path_string,
+        message: track_result.message,
+    })
 }
 
 /// Opens a local directory path, scans it for Git branch metadata,
@@ -1441,6 +2042,14 @@ mod tests {
             &[],
         )
         .unwrap();
+    }
+
+    #[test]
+    fn explains_missing_oauth_token_when_repository_list_fails() {
+        assert_eq!(
+            describe_remote_repository_listing_error("The selected profile does not have an OAuth token."),
+            "We couldn't load repositories because the selected profile is not fully authorized. Reconnect the profile and try again."
+        );
     }
 
     #[test]

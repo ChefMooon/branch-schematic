@@ -194,6 +194,33 @@ fn determine_token_status(token_value: Option<&str>, token_expires_at: Option<&s
     "healthy".to_string()
 }
 
+fn select_access_token(keyring_token: Option<String>, database_token: Option<String>) -> Option<String> {
+    let keyring_token = keyring_token.and_then(|value| {
+        let trimmed = value.trim();
+        (!trimmed.is_empty()).then(|| trimmed.to_string())
+    });
+
+    keyring_token.or_else(|| {
+        database_token.and_then(|value| {
+            let trimmed = value.trim();
+            (!trimmed.is_empty()).then(|| trimmed.to_string())
+        })
+    })
+}
+
+fn select_access_token_with_keyring_fallback(
+    keyring_token: Result<Option<String>, String>,
+    database_token: Option<String>,
+) -> Option<String> {
+    match keyring_token {
+        Ok(token) => select_access_token(token, database_token),
+        Err(error) => {
+            eprintln!("Unable to read token from keyring, falling back to database token: {error}");
+            select_access_token(None, database_token)
+        }
+    }
+}
+
 fn resolve_oauth_token_url(provider_url: Option<&str>, api_base_url: Option<&str>) -> String {
     if let Some(provider_url) = provider_url.filter(|value| !value.trim().is_empty()) {
         return provider_url.trim().to_string();
@@ -385,7 +412,13 @@ async fn exchange_code_with_provider(payload: &OAuthExchangePayload) -> Result<S
         .map_err(|error| error.to_string())?;
 
     if !response.status().is_success() {
-        return Ok(normalized_code.to_string());
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        return Err(format!(
+            "OAuth token exchange failed ({}): {}",
+            status,
+            body
+        ));
     }
 
     let body = response.text().await.map_err(|error| error.to_string())?;
@@ -393,7 +426,7 @@ async fn exchange_code_with_provider(payload: &OAuthExchangePayload) -> Result<S
         return Ok(token);
     }
 
-    Ok(normalized_code.to_string())
+    Err("OAuth token exchange succeeded but access_token was missing from the response.".to_string())
 }
 
 async fn ensure_seed_profile(pool: &SqlitePool) -> Result<(), String> {
@@ -443,7 +476,9 @@ async fn fetch_profile_row(pool: &SqlitePool, profile_id: &str) -> Result<Option
 
     let scopes = load_repo_scopes(pool, profile_id).await?;
     let provider_name = resolve_provider_name(row.get::<Option<String>, _>("api_base_url").as_deref(), None);
-    let token_value = load_token_from_keyring(&profile_id, &provider_name).await?;
+    let keyring_token = load_token_from_keyring(&profile_id, &provider_name).await;
+    let database_token = row.get::<Option<String>, _>("oauth_token");
+    let token_value = select_access_token_with_keyring_fallback(keyring_token, database_token);
 
     Ok(Some(AuthProfileRow {
         id: row.get("id"),
@@ -526,7 +561,9 @@ pub async fn get_profiles(state: tauri::State<'_, crate::DbState>) -> Result<Vec
     for row in rows {
         let profile_id: String = row.get("id");
         let provider_name = resolve_provider_name(row.get::<Option<String>, _>("api_base_url").as_deref(), None);
-        let token_value = load_token_from_keyring(&profile_id, &provider_name).await?;
+        let keyring_token = load_token_from_keyring(&profile_id, &provider_name).await;
+        let database_token = row.get::<Option<String>, _>("oauth_token");
+        let token_value = select_access_token_with_keyring_fallback(keyring_token, database_token);
         let scopes = load_repo_scopes(pool, &profile_id).await?;
         profiles.push(AuthProfileRow {
             id: profile_id.clone(),
@@ -540,7 +577,7 @@ pub async fn get_profiles(state: tauri::State<'_, crate::DbState>) -> Result<Vec
             folder_scope: Some(Vec::new()),
             commit_name: row.get("commit_name"),
             commit_email: row.get("commit_email"),
-            token_value: token_value.or_else(|| row.get("oauth_token")),
+            token_value,
             token_expires_at: None,
             last_token_check_at: None,
             is_active: row.get("is_active"),
@@ -564,8 +601,9 @@ pub async fn add_profile(state: tauri::State<'_, crate::DbState>, profile: AuthP
         .fetch_one(pool)
         .await
         .map_err(|error| error.to_string())? == 0;
+    let persist_token = profile.token_value.as_deref().filter(|value| !value.trim().is_empty()).map(str::to_string);
 
-    if let Some(token_value) = profile.token_value.as_deref().filter(|value| !value.trim().is_empty()) {
+    if let Some(token_value) = persist_token.as_deref() {
         persist_token_in_keyring(&profile_id, &provider_name, token_value).await?;
     }
 
@@ -582,7 +620,7 @@ pub async fn add_profile(state: tauri::State<'_, crate::DbState>, profile: AuthP
     .bind(profile.username)
     .bind(profile.avatar_url)
     .bind(profile.api_base_url.unwrap_or_else(|| "https://api.github.com".to_string()))
-    .bind::<Option<String>>(None)
+    .bind(persist_token.clone())
     .execute(pool)
     .await
     .map_err(|error| error.to_string())?;
@@ -608,11 +646,12 @@ pub async fn update_profile(
 
     let should_activate = profile.is_active.unwrap_or(0) == 1;
     let provider_name = resolve_provider_name(profile.api_base_url.as_deref(), None);
+    let persist_token = profile.token_value.as_deref().filter(|value| !value.trim().is_empty()).map(str::to_string);
     if should_activate {
         set_active_profile(pool, &profile_id).await?;
     }
 
-    if let Some(token_value) = profile.token_value.as_deref().filter(|value| !value.trim().is_empty()) {
+    if let Some(token_value) = persist_token.as_deref() {
         persist_token_in_keyring(&profile_id, &provider_name, token_value).await?;
     }
 
@@ -626,7 +665,7 @@ pub async fn update_profile(
     .bind(profile.username)
     .bind(profile.avatar_url)
     .bind(profile.api_base_url.unwrap_or_else(|| "https://api.github.com".to_string()))
-    .bind::<Option<String>>(None)
+    .bind(persist_token.clone())
     .bind(profile.is_favorite.unwrap_or(0))
     .bind(&profile_id)
     .execute(pool)
@@ -806,7 +845,7 @@ pub async fn exchange_code_for_token(
         .bind(resolved_email.clone())
         .bind(resolved_username.clone())
         .bind(resolved_avatar_url.clone())
-        .bind::<Option<String>>(None)
+        .bind(Some(token.clone()))
         .bind(&payload.profile_id)
         .execute(pool)
         .await
@@ -864,9 +903,43 @@ pub async fn resolve_profile_for_repository(
     Ok(None)
 }
 
+pub async fn resolve_profile_for_remote(
+    pool: &SqlitePool,
+    profile_id: Option<&str>,
+) -> Result<Option<AuthProfileRow>, String> {
+    if let Some(explicit_profile_id) = profile_id.map(str::trim).filter(|value| !value.is_empty()) {
+        return fetch_profile_row(pool, explicit_profile_id).await;
+    }
+
+    let active_profile_id: Option<String> = sqlx::query_scalar::<_, String>(
+        "SELECT id FROM auth_profiles WHERE is_active = 1 ORDER BY profile_name ASC LIMIT 1"
+    )
+    .fetch_optional(pool)
+    .await
+    .map_err(|error| error.to_string())?;
+
+    if let Some(active_id) = active_profile_id {
+        return fetch_profile_row(pool, &active_id).await;
+    }
+
+    let fallback_profile_id: Option<String> = sqlx::query_scalar::<_, String>(
+        "SELECT id FROM auth_profiles WHERE id = $1 LIMIT 1"
+    )
+    .bind("local-basic-profile")
+    .fetch_optional(pool)
+    .await
+    .map_err(|error| error.to_string())?;
+
+    if let Some(fallback_id) = fallback_profile_id {
+        return fetch_profile_row(pool, &fallback_id).await;
+    }
+
+    Ok(None)
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{determine_token_status, generate_code_challenge, parse_access_token, parse_github_user_profile, resolve_oauth_redirect_uri, resolve_oauth_token_url};
+    use super::{determine_token_status, generate_code_challenge, parse_access_token, parse_github_user_profile, resolve_oauth_redirect_uri, resolve_oauth_token_url, select_access_token, select_access_token_with_keyring_fallback};
 
     #[test]
     fn reports_token_as_none_when_missing() {
@@ -882,6 +955,30 @@ mod tests {
     #[test]
     fn resolves_github_token_endpoint_from_api_base_url() {
         assert_eq!(resolve_oauth_token_url(None, Some("https://api.github.com")), "https://github.com/login/oauth/access_token");
+    }
+
+    #[test]
+    fn prefers_keyring_token_and_falls_back_to_database_token() {
+        assert_eq!(select_access_token(Some("from-keyring".to_string()), Some("from-db".to_string())), Some("from-keyring".to_string()));
+        assert_eq!(select_access_token(None, Some("from-db".to_string())), Some("from-db".to_string()));
+        assert_eq!(select_access_token(Some("   ".to_string()), Some("from-db".to_string())), Some("from-db".to_string()));
+        assert_eq!(select_access_token(None, None), None);
+    }
+
+    #[test]
+    fn falls_back_to_database_token_when_keyring_lookup_errors() {
+        assert_eq!(
+            select_access_token_with_keyring_fallback(Ok(Some("from-keyring".to_string())), Some("from-db".to_string())),
+            Some("from-keyring".to_string())
+        );
+        assert_eq!(
+            select_access_token_with_keyring_fallback(Err("boom".to_string()), Some("from-db".to_string())),
+            Some("from-db".to_string())
+        );
+        assert_eq!(
+            select_access_token_with_keyring_fallback(Err("boom".to_string()), None),
+            None
+        );
     }
 
     #[test]

@@ -16,6 +16,7 @@ import { RepositoryDropdown } from '../../features/repository/components/Reposit
 import { AddLocalRepositoryModal } from '../../features/repository/components/AddLocalRepositoryModal';
 import { BulkImportLocalRepositoryModal } from '../../features/repository/components/BulkImportLocalRepositryModal';
 import { CreateRepositoryModal } from '../../features/repository/components/CreateRepositoryModal';
+import { CloneRemoteRepositoryModal } from '../../features/repository/components/CloneRemoteRepositoryModal';
 import { CreateViewModal } from '../../features/canvas-views/components/CreateViewModal';
 import { SettingsManagementModal } from '../../features/management/components/SettingsManagementModal';
 import { useCanvasStore } from '../../stores/canvas-store';
@@ -117,6 +118,11 @@ export function AppLayout({ children }: AppLayoutProps) {
     updateProfile,
     deleteProfile,
   } = useProfileContext();
+
+  const canCloneRemote =
+    Boolean(activeProfile) &&
+    activeProfile?.auth_level === 'full_oauth' &&
+    (activeProfile ? tokenHealthMap[activeProfile.id] ?? 'none' : 'none') === 'healthy';
 
   const HEADER_H = 48;
   const openManagementModal = (initialTab: 'tags' | 'groups' = 'tags') => {
@@ -338,6 +344,7 @@ export function AppLayout({ children }: AppLayoutProps) {
               isOpen={isRepositoryDropdownOpen}
               onClose={() => setIsRepositoryDropdownOpen(false)}
               anchorElement={repositoryDropdownAnchor}
+              canCloneRemote={canCloneRemote}
               onSelect={(action) => {
                 setIsRepositoryDropdownOpen(false);
                 setIsNotificationDropdownOpen(false);
@@ -408,6 +415,12 @@ export function AppLayout({ children }: AppLayoutProps) {
       <CreateRepositoryModal
         isOpen={activeRepositoryModal === 'create'}
         onClose={() => setActiveRepositoryModal(null)}
+      />
+
+      <CloneRemoteRepositoryModal
+        isOpen={activeRepositoryModal === 'clone'}
+        onClose={() => setActiveRepositoryModal(null)}
+        onOpenProfileManagement={() => handleOpenProfileManagement(activeProfile?.id ?? null)}
       />
 
       <CreateViewModal

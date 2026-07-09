@@ -3,6 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { open as openWithShell } from '@tauri-apps/plugin-shell';
 import { openUrl } from '@tauri-apps/plugin-opener';
+import { useProfileStore } from '../stores/profileStore';
 import type { UserProfile } from '../types';
 
 interface UseOAuthFlowOptions {
@@ -81,6 +82,8 @@ export function useOAuthFlow({ profileId, providerUrl, redirectUri }: UseOAuthFl
   const [isWorking, setIsWorking] = useState(false);
   const [status, setStatus] = useState('');
   const [redirectUriValue, setRedirectUriValue] = useState('');
+  const hydrateProfiles = useProfileStore((state) => state.hydrateProfiles);
+  const refreshTokenHealth = useProfileStore((state) => state.refreshTokenHealth);
 
   const startFlow = useCallback(async (draft: Partial<UserProfile>): Promise<OAuthFlowResult | null> => {
     setIsWorking(true);
@@ -103,6 +106,7 @@ export function useOAuthFlow({ profileId, providerUrl, redirectUri }: UseOAuthFl
       setRedirectUriValue(finalRedirectUri);
       authorizationUrl.searchParams.set('redirect_uri', finalRedirectUri);
       authorizationUrl.searchParams.set('response_type', 'code');
+      authorizationUrl.searchParams.set('scope', 'repo read:org');
       authorizationUrl.searchParams.set('state', state || resolvedProfileId);
       authorizationUrl.searchParams.set('code_challenge', codeChallenge);
       authorizationUrl.searchParams.set('code_challenge_method', 'S256');
@@ -181,6 +185,8 @@ export function useOAuthFlow({ profileId, providerUrl, redirectUri }: UseOAuthFl
             });
             unlisten?.();
             setStatus('Authorization complete.');
+            await hydrateProfiles();
+            await refreshTokenHealth();
             if (!settled) {
               settled = true;
               resolve({
@@ -231,7 +237,7 @@ export function useOAuthFlow({ profileId, providerUrl, redirectUri }: UseOAuthFl
       setIsWorking(false);
       return null;
     }
-  }, [profileId, providerUrl, redirectUri]);
+  }, [hydrateProfiles, profileId, providerUrl, redirectUri, refreshTokenHealth]);
 
   return useMemo(() => ({ isWorking, status, redirectUriValue, startFlow }), [isWorking, status, redirectUriValue, startFlow]);
 }

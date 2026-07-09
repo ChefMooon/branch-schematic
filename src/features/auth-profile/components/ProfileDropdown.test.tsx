@@ -12,7 +12,7 @@ describe('ProfileDropdown', () => {
           {
             id: 'profile-1',
             display_name: 'Test Profile',
-            auth_level: 'user',
+            auth_level: 'basic',
             is_favorite: 0,
           },
         ]}

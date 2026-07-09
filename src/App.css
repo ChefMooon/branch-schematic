@@ -67,6 +67,15 @@ body {
   }
 }
 
+@keyframes spin-kf {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 #root {
   min-height: 100vh;
   background-color: var(--app-bg);
