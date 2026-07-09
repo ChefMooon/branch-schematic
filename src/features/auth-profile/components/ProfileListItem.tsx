@@ -10,7 +10,7 @@ interface ProfileListItemProps {
   status: TokenHealthStatus;
   onSelectProfile: (profileId: string) => void;
   onToggleFavorite: (profileId: string, favorite: boolean) => void | Promise<void>;
-  onDeleteProfile: (profileId: string) => void | Promise<void>;
+  onDeleteProfile: (profile: UserProfile) => void | Promise<void>;
 }
 
 const getStatusInfo = (status: TokenHealthStatus) => {
@@ -77,8 +77,8 @@ export function ProfileListItem({
     <div
       style={{
         ...styles.row,
-        borderColor: isSelected ? 'var(--accent, #3b82f6)' : (isMainHovered ? 'var(--app-border-strong, rgba(255,255,255,0.16))' : 'var(--app-border)'),
-        backgroundColor: isSelected ? 'rgba(59, 130, 246, 0.12)' : (isMainHovered ? 'rgba(255,255,255,0.04)' : 'var(--app-surface)'),
+        borderColor: isSelected ? 'var(--accent, #3b82f6)' : (isMainHovered ? 'var(--app-border-strong, #cbd5e1)' : 'var(--app-border)'),
+        backgroundColor: isSelected ? 'rgba(59, 130, 246, 0.14)' : (isMainHovered ? 'var(--app-surface-muted, #f5f5f5)' : 'var(--app-surface)'),
       }}
     >
       <button
@@ -88,7 +88,7 @@ export function ProfileListItem({
         onMouseLeave={() => setIsMainHovered(false)}
         style={{
           ...styles.mainButton,
-          backgroundColor: isMainHovered ? 'rgba(255,255,255,0.03)' : 'transparent',
+          backgroundColor: isSelected ? 'transparent' : (isMainHovered ? 'var(--app-surface-muted, #f5f5f5)' : 'transparent'),
         }}
         aria-label={`Select profile ${profile.display_name}`}
       >
@@ -126,7 +126,7 @@ export function ProfileListItem({
             ...styles.iconButton,
             color: isFavorite ? '#f59e0b' : (hoveredAction === 'favorite' ? 'var(--app-text)' : 'var(--app-text-muted, #64748b)'),
             backgroundColor: hoveredAction === 'favorite' ? 'rgba(245, 158, 11, 0.12)' : 'transparent',
-            borderColor: hoveredAction === 'favorite' ? 'rgba(245, 158, 11, 0.28)' : 'var(--app-border)',
+            borderColor: hoveredAction === 'favorite' ? 'rgba(245, 158, 11, 0.28)' : 'var(--app-border-strong, #cbd5e1)',
           }}
           title={isFavorite ? `Unfavorite profile ${profile.display_name}` : `Favorite profile ${profile.display_name}`}
           aria-label={isFavorite ? `Unfavorite profile ${profile.display_name}` : `Favorite profile ${profile.display_name}`}
@@ -137,7 +137,7 @@ export function ProfileListItem({
           type="button"
           onClick={(event) => {
             event.stopPropagation();
-            void onDeleteProfile(profile.id);
+            void onDeleteProfile(profile);
           }}
           onMouseEnter={() => setHoveredAction('delete')}
           onMouseLeave={() => setHoveredAction(null)}
@@ -145,7 +145,7 @@ export function ProfileListItem({
             ...styles.iconButton,
             color: hoveredAction === 'delete' ? '#f43f5e' : '#ef4444',
             backgroundColor: hoveredAction === 'delete' ? 'rgba(239, 68, 68, 0.12)' : 'transparent',
-            borderColor: hoveredAction === 'delete' ? 'rgba(239, 68, 68, 0.28)' : 'var(--app-border)',
+            borderColor: hoveredAction === 'delete' ? 'rgba(239, 68, 68, 0.28)' : 'var(--app-border-strong, #cbd5e1)',
           }}
           title={`Delete profile ${profile.display_name}`}
         >

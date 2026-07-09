@@ -10,6 +10,7 @@ import {
   XCircle,
   IconContext
 } from '@phosphor-icons/react';
+import { ConfirmationModal } from '../../../components/Modal/ConfirmationModal';
 import { OAuthConnectButton } from './OAuthConnectButton.tsx';
 import { ProfileListItem } from './ProfileListItem';
 import type { AuthLevel, TokenHealthStatus, UserProfile } from '../types';
@@ -65,17 +66,23 @@ export function ProfileManagementModal({
   const [isHealthPopoverOpen, setIsHealthPopoverOpen] = useState(false);
   const [isWorkspaceCollapsed, setIsWorkspaceCollapsed] = useState(false);
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
+  const [profileToDelete, setProfileToDelete] = useState<UserProfile | null>(null);
+  const [isBackdropPressed, setIsBackdropPressed] = useState(false);
+  const [selectedProfileId, setSelectedProfileId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isOpen) {
       setIsHealthPopoverOpen(false);
       setIsProfileMenuOpen(false);
       setIsWorkspaceCollapsed(false);
+      setProfileToDelete(null);
+      setSelectedProfileId(null);
       return;
     }
 
     if (profile) {
       setMode('edit');
+      setSelectedProfileId(profile.id);
       setDraft({
         ...profile,
         repository_scope: profile.repository_scope ?? [],
@@ -120,31 +127,76 @@ export function ProfileManagementModal({
     try {
       if (mode === 'edit' && profile?.id) {
         await onSaveProfile(profile.id, draft);
-      } else {
-        await onCreateProfile(draft);
+        return;
       }
-      onClose();
+
+      const createdProfile = await onCreateProfile(draft);
+      setMode('edit');
+      setSelectedProfileId(createdProfile.id);
+      setDraft({
+        ...createdProfile,
+        repository_scope: createdProfile.repository_scope ?? [],
+        folder_scope: createdProfile.folder_scope ?? [],
+      });
     } finally {
       setIsBusy(false);
     }
   };
 
   const remove = async () => {
-    if (!profile?.id) {
+    const targetProfileId = profileToDelete?.id ?? profile?.id;
+
+    if (!targetProfileId) {
       return;
     }
 
     setIsBusy(true);
     try {
-      await onDeleteProfile(profile.id);
-      onClose();
+      await onDeleteProfile(targetProfileId);
+      setProfileToDelete(null);
     } finally {
       setIsBusy(false);
     }
   };
 
+  const requestDeleteConfirmation = (targetProfile: UserProfile) => {
+    setProfileToDelete(targetProfile);
+  };
+
+  const cancelDeleteConfirmation = () => {
+    setProfileToDelete(null);
+  };
+
+  const handleOverlayMouseDown = (event: React.MouseEvent<HTMLDivElement>) => {
+    if (event.target === event.currentTarget) {
+      setIsBackdropPressed(true);
+    }
+  };
+
+  const handleOverlayMouseUp = (event: React.MouseEvent<HTMLDivElement>) => {
+    if (!isBackdropPressed) {
+      return;
+    }
+
+    setIsBackdropPressed(false);
+
+    if (event.target === event.currentTarget) {
+      onClose();
+    }
+  };
+
+  const handleOverlayMouseLeave = () => {
+    setIsBackdropPressed(false);
+  };
+
   return (
-    <div style={styles.overlay} onClick={onClose}>
+    <div
+      style={styles.overlay}
+      data-testid="profile-management-modal-overlay"
+      onMouseDown={handleOverlayMouseDown}
+      onMouseUp={handleOverlayMouseUp}
+      onMouseLeave={handleOverlayMouseLeave}
+    >
       <div style={styles.modal} role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
         <IconContext.Provider
           value={{
@@ -261,7 +313,7 @@ export function ProfileManagementModal({
               {!isWorkspaceCollapsed ? (
                 <div style={styles.profileList}>
                   {profiles.map((entry) => {
-                    const isSelected = entry.id === profile?.id;
+                    const isSelected = entry.id === (profile?.id ?? selectedProfileId);
                     const isFavorite = Number(entry.is_favorite ?? 0) === 1;
                     const status = tokenHealthMap[entry.id] ?? 'none';
                     return (
@@ -275,7 +327,7 @@ export function ProfileManagementModal({
                         onToggleFavorite={(profileId, favorite) => {
                           void onSaveProfile(profileId, { is_favorite: favorite });
                         }}
-                        onDeleteProfile={onDeleteProfile}
+                        onDeleteProfile={requestDeleteConfirmation}
                       />
                     );
                   })}
@@ -382,7 +434,7 @@ export function ProfileManagementModal({
 
           <div style={styles.footer}>
             {profile?.id ? (
-              <button type="button" onClick={remove} disabled={isBusy} style={{ ...styles.secondaryButton, color: '#ef4444' }}>
+              <button type="button" onClick={() => requestDeleteConfirmation(profile)} disabled={isBusy} style={{ ...styles.secondaryButton, color: '#ef4444' }}>
                 <Trash size={16} />
                 <span>Delete</span>
               </button>
@@ -400,6 +452,24 @@ export function ProfileManagementModal({
             </div>
           </div>
         </IconContext.Provider>
+
+        <ConfirmationModal
+          isOpen={Boolean(profileToDelete)}
+          title="Delete profile"
+          message={
+            <>
+              Delete profile <strong>{profileToDelete?.display_name ?? 'this profile'}</strong>? This action cannot be undone.
+            </>
+          }
+          confirmLabel="Delete profile"
+          cancelLabel="Cancel"
+          variant="danger"
+          isBusy={isBusy}
+          onConfirm={() => {
+            void remove();
+          }}
+          onCancel={cancelDeleteConfirmation}
+        />
       </div>
     </div>
   );
