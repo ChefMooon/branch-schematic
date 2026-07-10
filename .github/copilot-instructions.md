@@ -53,6 +53,7 @@ This is a desktop application providing a visual representation of Git repositor
 ## Miscellaneous Guidelines
 - Use `@phosphor-icons/react` for all icons. Avoid using other icon libraries to maintain consistency.
 - Destructive actions (like deleting a repository) must always be confirmed via a modal dialog. Use the `ConfirmationModal` component for this purpose. Also color them appropriately (e.g., red for delete, yellow for archive) to indicate the severity of the action.
+- For button and interactive-control styling, follow the shared guidance in `docs/UI-Rules.md`: consistent hover, focus-visible, active, and disabled states; prefer shared CSS variables and theme tokens over one-off styles.
 
 ---
 
