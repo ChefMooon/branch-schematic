@@ -813,6 +813,20 @@ export function CloneRemoteRepositoryModal({
 		}));
 	};
 
+	const handleRepositorySearchKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+		if (event.key !== 'Escape') {
+			return;
+		}
+
+		if (!activeRepositoryState.search.trim()) {
+			return;
+		}
+
+		event.preventDefault();
+		event.stopPropagation();
+		handleClearRepositorySearch();
+	};
+
 	const footer =
 		activeTab === 'url'
 			? (
@@ -1102,6 +1116,7 @@ export function CloneRemoteRepositoryModal({
 							}));
 						}}
 						onClear={handleClearRepositorySearch}
+						onKeyDown={handleRepositorySearchKeyDown}
 						placeholder="Search by name, owner, or description"
 						label="Search repositories"
 						ariaLabel="Search repositories"
