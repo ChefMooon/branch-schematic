@@ -129,6 +129,12 @@ pub struct CloneRemoteRepositoryResult {
     pub message: String,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ParsedRemoteRepositorySlug {
+    pub owner: String,
+    pub repo_name: String,
+}
+
 #[derive(Debug, Deserialize)]
 struct GitHubRepoOwnerPayload {
     login: String,
@@ -469,6 +475,59 @@ fn parse_repo_name_from_url(repo_url: &str) -> Option<String> {
     Some(parsed.to_string())
 }
 
+fn parse_owner_and_repo_from_url(repo_url: &str) -> Option<(String, String)> {
+    let trimmed = repo_url.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    // HTTPS-style remotes: https://host/owner/repo(.git)
+    if trimmed.starts_with("http://") || trimmed.starts_with("https://") {
+        let parsed_url = url::Url::parse(trimmed).ok()?;
+        let segments: Vec<&str> = parsed_url
+            .path_segments()?
+            .filter(|segment| !segment.trim().is_empty())
+            .collect();
+        if segments.len() < 2 {
+            return None;
+        }
+
+        let owner = segments[segments.len() - 2].trim();
+        let repo = segments[segments.len() - 1]
+            .trim()
+            .strip_suffix(".git")
+            .unwrap_or(segments[segments.len() - 1].trim());
+
+        if owner.is_empty() || repo.is_empty() {
+            return None;
+        }
+
+        return Some((owner.to_string(), repo.to_string()));
+    }
+
+    // SSH-style remotes: git@host:owner/repo(.git)
+    if trimmed.starts_with("git@") {
+        let (_, slug) = trimmed.rsplit_once(':')?;
+        let cleaned_slug = slug.trim().trim_start_matches('/').trim_end_matches('/');
+        if cleaned_slug.is_empty() {
+            return None;
+        }
+
+        let mut parts = cleaned_slug.split('/').filter(|segment| !segment.trim().is_empty());
+        let owner = parts.next()?.trim();
+        let repo_raw = parts.next()?.trim();
+        let repo = repo_raw.strip_suffix(".git").unwrap_or(repo_raw);
+
+        if owner.is_empty() || repo.is_empty() {
+            return None;
+        }
+
+        return Some((owner.to_string(), repo.to_string()));
+    }
+
+    None
+}
+
 fn derive_clone_base_from_api(api_base_url: &str) -> Result<String, String> {
     let parsed = url::Url::parse(api_base_url.trim())
         .map_err(|error| format!("Invalid API base URL '{}': {}", api_base_url, error))?;
@@ -672,6 +731,16 @@ pub async fn clone_remote_repository(
         absolute_path: target_path_string,
         message: track_result.message,
     })
+}
+
+#[tauri::command]
+pub fn parse_remote_repository_slug(repo_url: String) -> Result<ParsedRemoteRepositorySlug, String> {
+    let (owner, repo_name) = parse_owner_and_repo_from_url(&repo_url).ok_or_else(|| {
+        "Unable to parse owner and repository name from URL. Use a GitHub or GitHub Enterprise HTTPS/SSH URL."
+            .to_string()
+    })?;
+
+    Ok(ParsedRemoteRepositorySlug { owner, repo_name })
 }
 
 /// Opens a local directory path, scans it for Git branch metadata,

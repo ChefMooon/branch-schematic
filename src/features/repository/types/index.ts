@@ -62,4 +62,9 @@ export interface CloneRemoteRepositoryResult {
   message: string;
 }
 
+export interface ParsedRemoteRepositorySlug {
+  owner: string;
+  repo_name: string;
+}
+
 export type RepositoryModalAction = 'create' | 'add-local' | 'bulk-import' | 'clone' | 'create-view';

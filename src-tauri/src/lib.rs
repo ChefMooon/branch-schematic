@@ -504,6 +504,7 @@ pub fn run() {
             git::list_remote_repositories,
             git::list_enterprise_repositories,
             git::list_remote_branches,
+            git::parse_remote_repository_slug,
             git::clone_remote_repository,
             git::set_repository_alias,
             git::set_repository_favorite,
