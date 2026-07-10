@@ -478,6 +478,7 @@ export function CloneRemoteRepositoryModal({
 	);
 	const showListLoadingStatus = activeRepositoryState.isLoading;
 	const showEmptyRepositoryState = activeRepositoryEntries.length === 0 && !activeRepositoryState.isLoading;
+	const activeListContainerStyle = activeTab === 'basic' ? basicListContainerStyle : listContainerStyle;
 
 	const runCloneForRepositoryTab = useCallback(async () => {
 		if (!activeProfile?.id) {
@@ -1129,7 +1130,7 @@ export function CloneRemoteRepositoryModal({
 							</div>
 						) : null}
 
-						<div style={listContainerStyle}>
+						<div data-testid="repository-list-container" style={activeListContainerStyle}>
 							{showListLoadingStatus ? (
 								<p style={loadingStatusStyle} data-testid="repository-loading-status">
 									<ArrowsClockwise size={14} weight="bold" style={{ animation: 'spin-kf 1s linear infinite' }} />
@@ -1292,6 +1293,11 @@ const listContainerStyle: React.CSSProperties = {
 	border: '1px solid var(--app-border)',
 	borderRadius: 10,
 	padding: 8,
+};
+
+const basicListContainerStyle: React.CSSProperties = {
+	...listContainerStyle,
+	minHeight: 380,
 };
 
 const loadingStatusStyle: React.CSSProperties = {

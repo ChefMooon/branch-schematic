@@ -416,6 +416,93 @@ describe('CloneRemoteRepositoryModal', () => {
     expect(screen.queryByText('No repositories loaded yet.')).not.toBeInTheDocument();
   });
 
+  it('keeps the basic repository list at a consistent height when there are no results', async () => {
+    mockUseGithubRepositories.mockReturnValue({
+      installations: [],
+      selectedInstallationId: null,
+      selectedInstallation: null,
+      repositories: [],
+      lastUpdatedAt: null,
+      isUsingCache: false,
+      page: 0,
+      hasMore: false,
+      hasLoadedOnce: true,
+      isLoading: false,
+      isRefreshing: false,
+      isLoadingMore: false,
+      error: null,
+      reload: vi.fn(async () => undefined),
+      loadMore: vi.fn(async () => undefined),
+    });
+
+    mockUseProfileContext.mockReturnValue({
+      activeProfile: {
+        id: 'profile-1',
+        display_name: 'Test Profile',
+        auth_level: 'full_oauth',
+        api_base_url: 'https://api.github.com',
+      },
+      tokenHealthMap: { 'profile-1': 'healthy' },
+    });
+
+    render(
+      <CloneRemoteRepositoryModal
+        isOpen
+        onClose={() => undefined}
+        onOpenProfileManagement={() => undefined}
+      />
+    );
+
+    const listContainer = await screen.findByTestId('repository-list-container');
+    expect(listContainer).toHaveStyle({ minHeight: '380px' });
+    expect(screen.getByText('No repositories loaded yet.')).toBeInTheDocument();
+  });
+
+  it('applies fixed list height to basic tab only', async () => {
+    mockUseGithubRepositories.mockReturnValue({
+      installations: [],
+      selectedInstallationId: null,
+      selectedInstallation: null,
+      repositories: [],
+      lastUpdatedAt: null,
+      isUsingCache: false,
+      page: 0,
+      hasMore: false,
+      hasLoadedOnce: true,
+      isLoading: false,
+      isRefreshing: false,
+      isLoadingMore: false,
+      error: null,
+      reload: vi.fn(async () => undefined),
+      loadMore: vi.fn(async () => undefined),
+    });
+
+    mockUseProfileContext.mockReturnValue({
+      activeProfile: {
+        id: 'profile-1',
+        display_name: 'Test Profile',
+        auth_level: 'full_oauth',
+        api_base_url: 'https://ghe.example.com/api/v3',
+      },
+      tokenHealthMap: { 'profile-1': 'healthy' },
+    });
+
+    render(
+      <CloneRemoteRepositoryModal
+        isOpen
+        onClose={() => undefined}
+        onOpenProfileManagement={() => undefined}
+      />
+    );
+
+    expect(await screen.findByTestId('repository-list-container')).toHaveStyle({ minHeight: '380px' });
+
+    await userEvent.click(screen.getByRole('button', { name: 'Enterprise Clone' }));
+
+    const enterpriseListContainer = await screen.findByTestId('repository-list-container');
+    expect(enterpriseListContainer.style.minHeight).toBe('');
+  });
+
   it('shows a clear button for repository search and clears the input', async () => {
     mockUseProfileContext.mockReturnValue({
       activeProfile: {
