@@ -49,6 +49,12 @@ When you update a button, nav item, icon-only control, or similar interactive el
   - `--app-border` for disabled borders
   - reduced opacity rather than a new color treatment
 
+### 6. Search input clear affordance
+- Any search or filter input that accepts text should include a clear button when it contains a value.
+- The clear control should be inline, keyboard accessible, and use the same hover/focus/active treatment as other interactive controls.
+- Provide an accessible label and title (for example, `Clear search`) and ensure activating it clears the current input state and any related filters.
+- Keep the control hidden when the field is empty to avoid clutter.
+
 ## Styling Guidance
 
 - Favor shared CSS classes and variables over one-off inline styles.
