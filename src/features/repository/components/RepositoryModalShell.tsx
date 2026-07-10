@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import './RepositoryModalShell.css';
 
 interface RepositoryModalShellProps {
   isOpen: boolean;
@@ -73,10 +74,8 @@ export function RepositoryModalShell({
             type="button"
             onClick={onClose}
             aria-label="Close modal"
+            className="repository-modal-close-button"
             style={{
-              border: 'none',
-              background: 'transparent',
-              color: 'var(--app-text)',
               cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',

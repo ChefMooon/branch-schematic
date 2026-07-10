@@ -416,6 +416,37 @@ describe('CloneRemoteRepositoryModal', () => {
     expect(screen.queryByText('No repositories loaded yet.')).not.toBeInTheDocument();
   });
 
+  it('shows a clear button for repository search and clears the input', async () => {
+    mockUseProfileContext.mockReturnValue({
+      activeProfile: {
+        id: 'profile-1',
+        display_name: 'Test Profile',
+        auth_level: 'full_oauth',
+        api_base_url: 'https://api.github.com',
+      },
+      tokenHealthMap: { 'profile-1': 'healthy' },
+    });
+
+    render(
+      <CloneRemoteRepositoryModal
+        isOpen
+        onClose={() => undefined}
+        onOpenProfileManagement={() => undefined}
+      />
+    );
+
+    const searchInput = screen.getByRole('textbox', { name: /search repositories/i });
+    await userEvent.type(searchInput, 'alpha');
+
+    const clearButton = screen.getByRole('button', { name: /clear search/i });
+    expect(clearButton).toBeInTheDocument();
+
+    await userEvent.click(clearButton);
+
+    expect(searchInput).toHaveValue('');
+    expect(screen.queryByRole('button', { name: /clear search/i })).not.toBeInTheDocument();
+  });
+
   it('renders grouped repositories when not loading', async () => {
     mockUseGithubRepositories.mockReturnValue({
       installations: [],

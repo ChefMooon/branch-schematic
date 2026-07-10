@@ -3,6 +3,8 @@ import { invoke } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
 import { ArrowsClockwise, BookOpen, FolderOpen, Info, Lock } from '@phosphor-icons/react';
 import { RepositoryModalShell } from './RepositoryModalShell';
+import './CloneRemoteRepositoryModal.css';
+import { SearchBar } from '../../../components/search-bar/SearchBar';
 import { useGithubRepositories } from '../../github-auth/hooks/useGithubRepositories';
 import { useNotifications } from '../../../components/notifications/NotificationProvider';
 import { useWorkspaceStore } from '../../../stores/workspace-store';
@@ -803,15 +805,28 @@ export function CloneRemoteRepositoryModal({
 		void fetchRepositoryPage(activeTab, 'reset', { force: true });
 	};
 
+	const handleClearRepositorySearch = () => {
+		setActiveRepositoryState((current) => ({
+			...current,
+			search: '',
+		}));
+	};
+
 	const footer =
 		activeTab === 'url'
 			? (
 				<>
-					<button type="button" style={secondaryButtonStyle} onClick={onClose}>
+					<button
+						type="button"
+						className="clone-remote-btn clone-remote-btn--secondary"
+						style={secondaryButtonStyle}
+						onClick={onClose}
+					>
 						Cancel
 					</button>
 					<button
 						type="button"
+						className="clone-remote-btn clone-remote-btn--primary"
 						style={primaryButtonStyle}
 						onClick={() => void runCloneFromUrl()}
 						disabled={isCloning || !canUseRemoteClone}
@@ -822,7 +837,12 @@ export function CloneRemoteRepositoryModal({
 			)
 			: !isEnterpriseConfigured && activeTab === 'enterprise'
 				? (
-					<button type="button" style={secondaryButtonStyle} onClick={onClose}>
+					<button
+						type="button"
+						className="clone-remote-btn clone-remote-btn--secondary"
+						style={secondaryButtonStyle}
+						onClick={onClose}
+					>
 						Cancel
 					</button>
 				)
@@ -841,6 +861,7 @@ export function CloneRemoteRepositoryModal({
 									}));
 								}}
 								disabled={!selectedRepository || activeRepositoryState.isBranchLoading || isCloning}
+									className="clone-remote-input clone-remote-select"
 								style={inputStyle}
 							>
 								<option value="">{activeRepositoryState.isBranchLoading ? 'Loading branches…' : 'Select branch'}</option>
@@ -867,11 +888,13 @@ export function CloneRemoteRepositoryModal({
 										}));
 									}}
 									placeholder="C:/Users/you/projects"
+										className="clone-remote-input"
 									style={inputStyle}
 									disabled={isCloning}
 								/>
 								<button
 									type="button"
+										className="clone-remote-btn clone-remote-btn--icon"
 									style={iconButtonStyle}
 									onClick={() => void pickDestination(activeTab)}
 									disabled={isCloning}
@@ -882,11 +905,18 @@ export function CloneRemoteRepositoryModal({
 							</div>
 						</div>
 
-						<button type="button" style={secondaryButtonStyle} onClick={onClose} disabled={isCloning}>
+						<button
+							type="button"
+							className="clone-remote-btn clone-remote-btn--secondary"
+							style={secondaryButtonStyle}
+							onClick={onClose}
+							disabled={isCloning}
+						>
 							Cancel
 						</button>
 						<button
 							type="button"
+							className="clone-remote-btn clone-remote-btn--primary"
 							style={primaryButtonStyle}
 							onClick={() => void runCloneForRepositoryTab()}
 							disabled={
@@ -921,6 +951,7 @@ export function CloneRemoteRepositoryModal({
 					<div style={{ display: 'flex', gap: 6 }}>
 						<button
 							type="button"
+							className={`clone-remote-btn clone-remote-btn--tab ${activeTab === 'basic' ? 'is-active' : ''}`}
 							style={activeTab === 'basic' ? activeTabButtonStyle : tabButtonStyle}
 							onClick={() => setActiveTab('basic')}
 						>
@@ -928,6 +959,7 @@ export function CloneRemoteRepositoryModal({
 						</button>
 						<button
 							type="button"
+							className={`clone-remote-btn clone-remote-btn--tab ${activeTab === 'enterprise' ? 'is-active' : ''}`}
 							style={activeTab === 'enterprise' ? activeTabButtonStyle : tabButtonStyle}
 							onClick={() => setActiveTab('enterprise')}
 						>
@@ -935,6 +967,7 @@ export function CloneRemoteRepositoryModal({
 						</button>
 						<button
 							type="button"
+							className={`clone-remote-btn clone-remote-btn--tab ${activeTab === 'url' ? 'is-active' : ''}`}
 							style={activeTab === 'url' ? activeTabButtonStyle : tabButtonStyle}
 							onClick={() => setActiveTab('url')}
 						>
@@ -946,6 +979,7 @@ export function CloneRemoteRepositoryModal({
 						<button
 							type="button"
 							onClick={handleRefresh}
+							className="clone-remote-btn clone-remote-btn--icon"
 							style={iconButtonStyle}
 							disabled={!canUseRemoteClone}
 							aria-label="Refresh repositories"
@@ -992,6 +1026,7 @@ export function CloneRemoteRepositoryModal({
 									setUrlError(null);
 								}}
 								placeholder="https://github.com/owner/repo.git"
+								className="clone-remote-input"
 								style={inputStyle}
 								disabled={isCloning}
 							/>
@@ -1004,6 +1039,7 @@ export function CloneRemoteRepositoryModal({
 								value={urlBranchInput}
 								onChange={(event) => setUrlBranchInput(event.target.value)}
 								placeholder="main"
+								className="clone-remote-input"
 								style={inputStyle}
 								disabled={isCloning}
 							/>
@@ -1020,11 +1056,13 @@ export function CloneRemoteRepositoryModal({
 										setUrlCloneError(null);
 									}}
 									placeholder="C:/Users/you/projects"
+										className="clone-remote-input"
 									style={inputStyle}
 									disabled={isCloning}
 								/>
 								<button
 									type="button"
+									className="clone-remote-btn clone-remote-btn--icon"
 									style={iconButtonStyle}
 									onClick={() => void pickDestination('url')}
 									disabled={isCloning}
@@ -1045,6 +1083,7 @@ export function CloneRemoteRepositoryModal({
 						</p>
 						<button
 							type="button"
+							className="clone-remote-btn clone-remote-btn--secondary"
 							style={secondaryButtonStyle}
 							onClick={onOpenProfileManagement}
 						>
@@ -1053,28 +1092,30 @@ export function CloneRemoteRepositoryModal({
 					</div>
 				) : (
 					<div style={{ display: 'grid', gap: 10 }}>
-						<label style={fieldLabelStyle}>
-							<span>Search repositories</span>
-							<input
-								type="text"
-								value={activeRepositoryState.search}
-								onChange={(event) => {
-									const next = event.target.value;
-									setActiveRepositoryState((current) => ({
-										...current,
-										search: next,
-									}));
-								}}
-								placeholder="Search by name, owner, or description"
-								style={inputStyle}
-							/>
-						</label>
+						<SearchBar
+						value={activeRepositoryState.search}
+						onChange={(next) => {
+							setActiveRepositoryState((current) => ({
+								...current,
+								search: next,
+							}));
+						}}
+						onClear={handleClearRepositorySearch}
+						placeholder="Search by name, owner, or description"
+						label="Search repositories"
+						ariaLabel="Search repositories"
+						containerStyle={{ width: '100%' }}
+						inputStyle={{ background: 'var(--app-surface)', paddingLeft: 32, paddingRight: 32 }}
+						clearButtonClassName="clone-remote-search-clear"
+						helperText="Use the repository name, owner, or description to narrow the list"
+						/>
 
 						{activeRepositoryState.error ? (
 							<div style={errorBannerStyle}>
 								<span>{activeRepositoryState.error}</span>
 								<button
 									type="button"
+									className="clone-remote-btn clone-remote-btn--secondary"
 									style={secondaryButtonStyle}
 									onClick={() =>
 										void (activeTab === 'basic'
@@ -1136,6 +1177,7 @@ export function CloneRemoteRepositoryModal({
 																event.stopPropagation();
 																setOpenInfoRepoId((current) => (current === repository.id ? null : repository.id));
 															}}
+															className="clone-remote-btn clone-remote-btn--icon"
 															style={iconButtonStyle}
 															aria-label={`Repository details for ${repository.full_name}`}
 														>
@@ -1175,36 +1217,30 @@ const inputStyle: React.CSSProperties = {
 	width: '100%',
 	boxSizing: 'border-box',
 	borderRadius: 8,
-	border: '1px solid var(--app-border)',
 	padding: '8px 10px',
 	fontSize: 13,
-	background: 'var(--app-bg)',
 	color: 'var(--app-text)',
 };
 
-const primaryButtonStyle: React.CSSProperties = {
-	border: 'none',
-	background: 'var(--app-accent)',
-	color: '#ffffff',
+const baseInteractiveStyle: React.CSSProperties = {
 	borderRadius: 8,
+	transition: 'background-color 160ms ease, border-color 160ms ease, box-shadow 160ms ease, opacity 160ms ease',
+};
+
+const primaryButtonStyle: React.CSSProperties = {
+	...baseInteractiveStyle,
 	padding: '8px 12px',
 	cursor: 'pointer',
 };
 
 const secondaryButtonStyle: React.CSSProperties = {
-	border: '1px solid var(--app-border)',
-	background: 'transparent',
-	color: 'var(--app-text)',
-	borderRadius: 8,
+	...baseInteractiveStyle,
 	padding: '8px 12px',
 	cursor: 'pointer',
 };
 
 const iconButtonStyle: React.CSSProperties = {
-	border: '1px solid var(--app-border)',
-	background: 'var(--app-surface-muted)',
-	color: 'var(--app-text)',
-	borderRadius: 8,
+	...baseInteractiveStyle,
 	padding: '8px 10px',
 	cursor: 'pointer',
 	display: 'flex',
@@ -1221,18 +1257,14 @@ const fieldLabelStyle: React.CSSProperties = {
 };
 
 const tabButtonStyle: React.CSSProperties = {
-	border: '1px solid var(--app-border)',
-	background: 'transparent',
-	color: 'var(--app-text)',
 	padding: '7px 10px',
 	borderRadius: 8,
 	fontSize: 12,
+	cursor: 'pointer',
 };
 
 const activeTabButtonStyle: React.CSSProperties = {
 	...tabButtonStyle,
-	borderColor: 'var(--app-accent)',
-	background: 'color-mix(in srgb, var(--app-accent) 16%, transparent)',
 };
 
 const tabBarStickyStyle: React.CSSProperties = {

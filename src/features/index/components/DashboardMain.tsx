@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { MagnifyingGlass, X } from "@phosphor-icons/react";
 import { RepositoryCard } from "./RepositoryCard";
+import { SearchBar } from "../../../components/search-bar/SearchBar";
 import { WorkspaceQuickFilters } from "./WorkspaceQuickFilters";
 import { BulkActionToolbar } from "./BulkActionToolbar";
 import { FilterDropdown } from "./common/FilterDropdown";
@@ -140,28 +140,18 @@ export function DashboardMain({ onOpenManagementModal, onCleanupDanglingTags }: 
         <div className="action-buttons-group" />
 
         <div className="filter-controls-group">
-          <div className="search-input-wrapper dashboard-control-shell">
-            <MagnifyingGlass size={16} className="search-icon-inside" />
-            <input
-              type="text"
-              placeholder="Search workspaces..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              onKeyDown={handleSearchKeyDown}
-              aria-label="Search workspaces"
-            />
-            {searchQuery.trim().length > 0 ? (
-              <button
-                type="button"
-                className="search-clear-button"
-                onClick={handleSearchClear}
-                aria-label="Clear search"
-                title="Clear search"
-              >
-                <X size={14} weight="bold" />
-              </button>
-            ) : null}
-          </div>
+          <SearchBar
+            value={searchQuery}
+            onChange={setSearchQuery}
+            onClear={handleSearchClear}
+            onKeyDown={handleSearchKeyDown}
+            placeholder="Search workspaces..."
+            ariaLabel="Search workspaces"
+            className="search-input-wrapper dashboard-control-shell"
+            containerStyle={{ width: 280 }}
+            showShellBorder={false}
+            showFocusRing={false}
+          />
 
           <FilterDropdown
             value={selectedRepoTypeIds}
