@@ -11,6 +11,7 @@ import { useWorkspaceStore } from '../../../stores/workspace-store';
 import { useProfileContext } from '../../auth-profile/hooks/useProfileContext';
 import type {
 	CloneRemoteRepositoryResult,
+	ParsedRemoteRepositorySlug,
 	RemoteBranch,
 	RemoteBranchPage,
 	RemoteRepository,
@@ -179,6 +180,9 @@ export function CloneRemoteRepositoryModal({
 	const [enterpriseState, setEnterpriseState] = useState<RepositoryListState>(createInitialListState);
 	const [urlInput, setUrlInput] = useState('');
 	const [urlBranchInput, setUrlBranchInput] = useState('main');
+	const [urlBranchOptions, setUrlBranchOptions] = useState<RemoteBranch[]>([]);
+	const [isUrlBranchLoading, setIsUrlBranchLoading] = useState(false);
+	const [urlBranchError, setUrlBranchError] = useState<string | null>(null);
 	const [urlDestinationPath, setUrlDestinationPath] = useState('');
 	const [urlError, setUrlError] = useState<string | null>(null);
 	const [urlCloneError, setUrlCloneError] = useState<string | null>(null);
@@ -191,6 +195,7 @@ export function CloneRemoteRepositoryModal({
 	const isOpenRef = useRef(isOpen);
 	const listRequestKeyRef = useRef<Record<RepositoryTab, number>>({ basic: 0, enterprise: 0 });
 	const branchRequestKeyRef = useRef<Record<RepositoryTab, number>>({ basic: 0, enterprise: 0 });
+	const urlBranchRequestKeyRef = useRef(0);
 
 	const { addToast } = useNotifications();
 	const { hydrateFromBackend, hydrateQuickFilterMetadata } = useWorkspaceStore();
@@ -212,6 +217,7 @@ export function CloneRemoteRepositoryModal({
 
 	const debouncedBasicSearch = useDebouncedValue(basicState.search, 300);
 	const debouncedEnterpriseSearch = useDebouncedValue(enterpriseState.search, 300);
+	const debouncedUrlInput = useDebouncedValue(urlInput, 300);
 
 	const isAnyFetchInProgress =
 		githubRepositories.isLoading ||
@@ -619,6 +625,69 @@ export function CloneRemoteRepositoryModal({
 		urlInput,
 	]);
 
+	const fetchBranchesForUrl = useCallback(
+		async (rawUrl: string) => {
+			if (!activeProfile?.id) {
+				return;
+			}
+
+			const trimmedUrl = rawUrl.trim();
+			if (!isValidRemoteUrl(trimmedUrl)) {
+				return;
+			}
+
+			const requestKey = urlBranchRequestKeyRef.current + 1;
+			urlBranchRequestKeyRef.current = requestKey;
+			setIsUrlBranchLoading(true);
+			setUrlBranchError(null);
+
+			try {
+				const slug = await invoke<ParsedRemoteRepositorySlug>('parse_remote_repository_slug', {
+					repoUrl: trimmedUrl,
+				});
+
+				const payload = await invoke<RemoteBranchPage>('list_remote_branches', {
+					profileId: activeProfile.id,
+					owner: slug.owner,
+					repoName: slug.repo_name,
+					page: 1,
+					perPage: 100,
+				});
+
+				if (!isOpenRef.current || urlBranchRequestKeyRef.current !== requestKey) {
+					return;
+				}
+
+				setUrlBranchOptions(payload.items);
+				setUrlBranchInput((current) => {
+					const trimmedCurrent = current.trim();
+					if (trimmedCurrent && payload.items.some((branch) => branch.name === trimmedCurrent)) {
+						return trimmedCurrent;
+					}
+
+					if (payload.items.some((branch) => branch.name === 'main')) {
+						return 'main';
+					}
+
+					return payload.items[0]?.name ?? 'main';
+				});
+				setIsUrlBranchLoading(false);
+				setUrlBranchError(null);
+			} catch (error) {
+				if (!isOpenRef.current || urlBranchRequestKeyRef.current !== requestKey) {
+					return;
+				}
+
+				const message = extractErrorMessage(error, 'Failed to fetch branches for this repository URL.');
+				setUrlBranchOptions([]);
+				setUrlBranchInput('main');
+				setIsUrlBranchLoading(false);
+				setUrlBranchError(message);
+			}
+		},
+		[activeProfile?.id]
+	);
+
 	const pickDestination = useCallback(
 		async (target: 'basic' | 'enterprise' | 'url') => {
 			try {
@@ -664,6 +733,7 @@ export function CloneRemoteRepositoryModal({
 		listRequestKeyRef.current.enterprise += 1;
 		branchRequestKeyRef.current.basic += 1;
 		branchRequestKeyRef.current.enterprise += 1;
+		urlBranchRequestKeyRef.current += 1;
 
 		setActiveTab('basic');
 		setOpenInfoRepoId(null);
@@ -680,11 +750,32 @@ export function CloneRemoteRepositoryModal({
 		setEnterpriseState(createInitialListState());
 		setUrlInput('');
 		setUrlBranchInput('main');
+		setUrlBranchOptions([]);
+		setIsUrlBranchLoading(false);
+		setUrlBranchError(null);
 		setUrlDestinationPath('');
 		setUrlError(null);
 		setUrlCloneError(null);
 		setIsCloning(false);
 	}, [isOpen]);
+
+	useEffect(() => {
+		if (!isOpen || activeTab !== 'url') {
+			return;
+		}
+
+		const trimmedUrl = debouncedUrlInput.trim();
+		if (!trimmedUrl || !isValidRemoteUrl(trimmedUrl)) {
+			urlBranchRequestKeyRef.current += 1;
+			setUrlBranchOptions([]);
+			setUrlBranchInput('main');
+			setIsUrlBranchLoading(false);
+			setUrlBranchError(null);
+			return;
+		}
+
+		void fetchBranchesForUrl(trimmedUrl);
+	}, [activeTab, debouncedUrlInput, fetchBranchesForUrl, isOpen]);
 
 	useEffect(() => {
 		if (!isOpen || !isEnterpriseConfigured || !activeProfile?.id) {
@@ -791,6 +882,10 @@ export function CloneRemoteRepositoryModal({
 	useEffect(() => {
 		setOpenInfoRepoId(null);
 		if (activeTab !== 'url') {
+			urlBranchRequestKeyRef.current += 1;
+			setUrlBranchOptions([]);
+			setIsUrlBranchLoading(false);
+			setUrlBranchError(null);
 			setUrlError(null);
 			setUrlCloneError(null);
 		}
@@ -1049,15 +1144,27 @@ export function CloneRemoteRepositoryModal({
 
 						<label style={fieldLabelStyle}>
 							<span>Branch</span>
-							<input
-								type="text"
+							<select
 								value={urlBranchInput}
-								onChange={(event) => setUrlBranchInput(event.target.value)}
-								placeholder="main"
-								className="clone-remote-input"
+								onChange={(event) => {
+									setUrlBranchInput(event.target.value);
+									setUrlBranchError(null);
+								}}
+								className="clone-remote-input clone-remote-select"
 								style={inputStyle}
-								disabled={isCloning}
-							/>
+								disabled={isCloning || isUrlBranchLoading}
+							>
+								{urlBranchOptions.length === 0 ? (
+									<option value="main">
+										{isUrlBranchLoading ? 'Loading branches…' : 'main'}
+									</option>
+								) : null}
+								{urlBranchOptions.map((branch) => (
+									<option key={branch.name} value={branch.name}>
+										{branch.name}
+									</option>
+								))}
+							</select>
 						</label>
 
 						<label style={fieldLabelStyle}>
@@ -1089,6 +1196,7 @@ export function CloneRemoteRepositoryModal({
 						</label>
 
 						{urlError ? <p style={errorTextStyle}>{urlError}</p> : null}
+						{urlBranchError ? <p style={errorTextStyle}>{urlBranchError}</p> : null}
 						{urlCloneError ? <p style={errorTextStyle}>{urlCloneError}</p> : null}
 					</div>
 				) : activeTab === 'enterprise' && !isEnterpriseConfigured ? (
