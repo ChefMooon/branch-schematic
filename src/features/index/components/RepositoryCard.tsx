@@ -21,18 +21,24 @@ import { TagSelectionModal } from "./RepositoryCard/RepoTagSelectionMenu";
 import { RepoThemeModal } from "./RepositoryCard/RepoThemeModal";
 import { RepoBranchDropdown } from "./RepositoryCard/RepoBranchDropdown";
 import { useNotifications } from "../../../components/notifications/NotificationProvider";
+import { useResolveRepoOrigin } from "../hooks/useResolveRepoOrigin";
+import { useRepoOriginBadgeState } from "../hooks/useResolveRepoOrigin";
+import type { RepoOriginType } from "../hooks/useResolveRepoOrigin";
 
 interface RepositoryCardProps {
   repo: TrackedPath;
   onRefresh: () => void;
   onOpenManagement?: () => void;
   onOpenManagementModal?: () => void;
+  resolvedOriginType?: RepoOriginType;
   isSelected?: boolean;
   onToggleSelection?: () => void;
 }
 
-export function RepositoryCard({ repo, onRefresh, onOpenManagement, onOpenManagementModal, isSelected = false, onToggleSelection }: RepositoryCardProps) {
-  const originType = repo.repo_origin_type ?? "LOCAL_ONLY";
+export function RepositoryCard({ repo, onRefresh, onOpenManagement, onOpenManagementModal, resolvedOriginType, isSelected = false, onToggleSelection }: RepositoryCardProps) {
+  const computedOriginType = useResolveRepoOrigin(repo);
+  const originType = resolvedOriginType ?? computedOriginType;
+  const originBadgeState = useRepoOriginBadgeState(repo, originType);
   const setRepositoryFavorite = useWorkspaceStore((state) => state.setRepositoryFavorite);
   const setRepositoryGroup = useWorkspaceStore((state) => state.setRepositoryGroup);
   const updateRepositoryTheme = useWorkspaceStore((state) => state.updateRepositoryTheme);
@@ -286,6 +292,8 @@ export function RepositoryCard({ repo, onRefresh, onOpenManagement, onOpenManage
           }}
           onUntrack={handleUntrackProject}
           onThemeChange={handleThemeChange}
+          isOriginInactive={originBadgeState.isInactiveByProfile}
+          originBadgeTitle={originBadgeState.title}
         />
       </div>
 

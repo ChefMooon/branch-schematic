@@ -5,6 +5,8 @@ import type { QuickFilterMetadata } from '../../../types/git';
 import { FilterDropdown } from './common/FilterDropdown';
 import { useGroupOptions } from './common/useGroupOptions';
 
+export const OWNER_GROUPING_FILTER_VALUE = '__group_by_owner__';
+
 type WorkspaceQuickFiltersProps = {
   metadata: QuickFilterMetadata | null;
   groupOptions?: string[];
@@ -39,9 +41,13 @@ export function WorkspaceQuickFilters({
   const tagOptions = metadata?.tags ?? [];
 
   const groupDropdownOptions = useMemo(() => {
+    const ownerGroupingOption = {
+      label: 'Group by owner',
+      value: OWNER_GROUPING_FILTER_VALUE,
+    };
     const fromHook = fetchedGroupOptions.map((option) => ({ label: option.label, value: option.value }));
     const fromMetadata = availableGroupOptions.map((group) => ({ label: group, value: group }));
-    const merged = [...fromHook, ...fromMetadata];
+    const merged = [ownerGroupingOption, ...fromHook, ...fromMetadata];
     const seen = new Set<string>();
 
     return merged.filter((option) => {

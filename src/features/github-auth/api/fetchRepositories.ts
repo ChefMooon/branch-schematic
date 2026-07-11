@@ -14,12 +14,18 @@ function normalizeRepository(candidate: unknown): GitHubRepository | null {
 		return null;
 	}
 
-	const entry = candidate as Partial<GitHubRepository> & {
+	const entry = candidate as {
 		id?: unknown;
 		name?: unknown;
 		full_name?: unknown;
 		owner?: unknown;
 		private?: unknown;
+		description?: unknown;
+		default_branch?: unknown;
+		updated_at?: unknown;
+		clone_url?: unknown;
+		ssh_url?: unknown;
+		html_url?: unknown;
 	};
 
 	if (typeof entry.id !== 'number' || typeof entry.name !== 'string' || typeof entry.full_name !== 'string') {

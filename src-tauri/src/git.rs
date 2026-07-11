@@ -31,6 +31,7 @@ pub struct WorkspaceDetails {
     pub alias_name: Option<String>,
     pub absolute_path: String,
     pub repo_origin_type: String,
+    pub github_owner_login: Option<String>,
     pub current_branch: String,
     pub available_branches: Vec<String>,
     pub uncommitted_changes_count: usize,
@@ -85,9 +86,12 @@ pub struct RemoteRepository {
     pub name: String,
     pub full_name: String,
     pub owner: RemoteRepositoryOwner,
+    pub owner_login: String,
     pub description: Option<String>,
     #[serde(rename = "private")]
     pub is_private: bool,
+    pub fork: bool,
+    pub permissions_push: bool,
     pub default_branch: String,
     pub updated_at: String,
     pub clone_url: String,
@@ -141,6 +145,14 @@ struct GitHubRepoOwnerPayload {
 }
 
 #[derive(Debug, Deserialize)]
+struct GitHubRepoPermissionsPayload {
+    #[serde(default)]
+    push: bool,
+    #[serde(default)]
+    admin: bool,
+}
+
+#[derive(Debug, Deserialize)]
 struct GitHubRepoPayload {
     id: i64,
     name: String,
@@ -149,11 +161,20 @@ struct GitHubRepoPayload {
     description: Option<String>,
     #[serde(rename = "private")]
     is_private: bool,
+    #[serde(default)]
+    fork: bool,
+    permissions: Option<GitHubRepoPermissionsPayload>,
     default_branch: Option<String>,
     updated_at: Option<String>,
     clone_url: Option<String>,
     ssh_url: Option<String>,
     html_url: Option<String>,
+}
+
+struct GitHubSingleRepoMeta {
+    fork: bool,
+    owner_login: String,
+    permissions_push: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -217,6 +238,140 @@ fn parse_oauth_scopes_header(header_value: Option<&HeaderValue>) -> Option<Vec<S
                 .filter(|scope| !scope.is_empty())
                 .collect::<Vec<String>>()
         })
+}
+
+fn derive_origin_type(
+    meta: &GitHubSingleRepoMeta,
+    authenticated_username: Option<&str>,
+) -> &'static str {
+    if meta.fork {
+        return "FORK";
+    }
+
+    if let Some(username) = authenticated_username
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        if meta.owner_login.eq_ignore_ascii_case(username) {
+            return "OWNED";
+        }
+
+        if meta.permissions_push {
+            return "CONTRIBUTOR";
+        }
+    }
+
+    "OWNED"
+}
+
+async fn fetch_single_github_repo_metadata(
+    profile: &auth::AuthProfileRow,
+    owner: &str,
+    repo_name: &str,
+) -> Option<GitHubSingleRepoMeta> {
+    let token = ensure_remote_access(profile).ok()?;
+    let authorization_header = build_bearer_auth_header(&token).ok()?;
+    let api_base_url = normalize_api_base_url(profile);
+    let endpoint = format!("{}/repos/{}/{}", api_base_url, owner, repo_name);
+
+    if url::Url::parse(&endpoint).is_err() {
+        eprintln!(
+            "Skipping GitHub repo metadata fetch for profile {} because the API base URL is invalid.",
+            profile.id
+        );
+        return None;
+    }
+
+    let response = match reqwest::Client::new()
+        .get(&endpoint)
+        .header(USER_AGENT, "branch-schematic")
+        .header(ACCEPT, "application/vnd.github+json")
+        .header(AUTHORIZATION, authorization_header)
+        .send()
+        .await
+    {
+        Ok(response) => response,
+        Err(error) => {
+            eprintln!(
+                "Failed to request GitHub repo metadata for profile {} and repo {}/{}: {}",
+                profile.id, owner, repo_name, error
+            );
+            return None;
+        }
+    };
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        eprintln!(
+            "GitHub repo metadata request failed for profile {} and repo {}/{} ({}): {}",
+            profile.id, owner, repo_name, status, body
+        );
+        return None;
+    }
+
+    let payload: GitHubRepoPayload = match response.json().await {
+        Ok(payload) => payload,
+        Err(error) => {
+            eprintln!(
+                "Failed to decode GitHub repo metadata for profile {} and repo {}/{}: {}",
+                profile.id, owner, repo_name, error
+            );
+            return None;
+        }
+    };
+
+    Some(GitHubSingleRepoMeta {
+        fork: payload.fork,
+        owner_login: payload.owner.login,
+        permissions_push: payload.permissions.map(|permissions| permissions.push).unwrap_or(false),
+    })
+}
+
+async fn resolve_repository_origin_metadata(
+    pool: &sqlx::SqlitePool,
+    remote_url: Option<&str>,
+    profile_id: Option<&str>,
+    enrich_via_api: bool,
+) -> (String, Option<String>) {
+    let Some(remote_url) = remote_url.map(str::trim).filter(|value| !value.is_empty()) else {
+        return ("LOCAL_ONLY".to_string(), None);
+    };
+
+    let parsed_slug = parse_owner_and_repo_from_url(remote_url);
+    let mut github_owner_login = parsed_slug.as_ref().map(|(owner, _)| owner.clone());
+
+    if !enrich_via_api {
+        return ("OWNED".to_string(), github_owner_login);
+    }
+
+    let Some((owner, repo_name)) = parsed_slug else {
+        return ("OWNED".to_string(), None);
+    };
+
+    let profile = match auth::resolve_profile_for_remote(pool, profile_id).await {
+        Ok(profile) => profile,
+        Err(error) => {
+            eprintln!(
+                "Skipping GitHub enrichment for remote '{}' because profile resolution failed: {}",
+                remote_url, error
+            );
+            None
+        }
+    };
+
+    let Some(profile) = profile else {
+        return ("OWNED".to_string(), github_owner_login);
+    };
+
+    let Some(meta) = fetch_single_github_repo_metadata(&profile, &owner, &repo_name).await else {
+        return ("OWNED".to_string(), github_owner_login);
+    };
+
+    let repo_origin_type = derive_origin_type(&meta, profile.username.as_deref()).to_string();
+    github_owner_login = Some(meta.owner_login);
+
+    (repo_origin_type, github_owner_login)
 }
 
 fn describe_remote_repository_listing_error(raw_error: &str) -> String {
@@ -362,20 +517,32 @@ async fn fetch_remote_repositories_page(
 
     let items = payloads
         .into_iter()
-        .map(|repository| RemoteRepository {
-            id: repository.id.to_string(),
-            name: repository.name,
-            full_name: repository.full_name,
-            owner: RemoteRepositoryOwner {
-                login: repository.owner.login,
-            },
-            description: repository.description,
-            is_private: repository.is_private,
-            default_branch: repository.default_branch.unwrap_or_else(|| "main".to_string()),
-            updated_at: repository.updated_at.unwrap_or_default(),
-            clone_url: repository.clone_url.unwrap_or_default(),
-            ssh_url: repository.ssh_url.unwrap_or_default(),
-            html_url: repository.html_url.unwrap_or_default(),
+        .map(|repository| {
+            let owner_login = repository.owner.login;
+            let permissions_push = repository
+                .permissions
+                .as_ref()
+                .map(|permissions| permissions.push)
+                .unwrap_or(false);
+
+            RemoteRepository {
+                id: repository.id.to_string(),
+                name: repository.name,
+                full_name: repository.full_name,
+                owner: RemoteRepositoryOwner {
+                    login: owner_login.clone(),
+                },
+                owner_login,
+                description: repository.description,
+                is_private: repository.is_private,
+                fork: repository.fork,
+                permissions_push,
+                default_branch: repository.default_branch.unwrap_or_else(|| "main".to_string()),
+                updated_at: repository.updated_at.unwrap_or_default(),
+                clone_url: repository.clone_url.unwrap_or_default(),
+                ssh_url: repository.ssh_url.unwrap_or_default(),
+                html_url: repository.html_url.unwrap_or_default(),
+            }
         })
         .collect();
 
@@ -720,7 +887,7 @@ pub async fn clone_remote_repository(
         .ok_or_else(|| "Failed to resolve cloned repository path.".to_string())?
         .to_string();
 
-    let track_result = track_repository_path(&state.0, &target_path_string).await?;
+    let track_result = track_repository_path(&state.0, &target_path_string, profile_id.as_deref()).await?;
     let path_id = db::fetch_tracked_path_id_by_absolute_path(&state.0, &target_path_string)
         .await
         .map_err(|error| format!("Failed to resolve tracked repository id: {}", error))?
@@ -977,17 +1144,28 @@ pub async fn initialize_new_repository(
         &license_template,
     )?;
 
-    let repo = Repository::open(&target_path)
-        .map_err(|error| format!("The repository path was not created successfully: {}", error))?;
+    let remote_url = {
+        let repo = Repository::open(&target_path)
+            .map_err(|error| format!("The repository path was not created successfully: {}", error))?;
+        let mut remote_url: Option<String> = None;
 
-    let mut remote_url: Option<String> = None;
-    let mut repo_origin_type = "LOCAL_ONLY";
-
-    if let Ok(remote) = repo.find_remote("origin") {
-        if let Some(url) = remote.url() {
-            remote_url = Some(url.to_string());
-            repo_origin_type = "OWNED";
+        if let Ok(remote) = repo.find_remote("origin") {
+            if let Some(url) = remote.url() {
+                remote_url = Some(url.to_string());
+            }
         }
+
+        remote_url
+    };
+
+    let mut repo_origin_type = "LOCAL_ONLY".to_string();
+    let mut github_owner_login: Option<String> = None;
+
+    if remote_url.is_some() {
+        let (derived_origin_type, derived_owner_login) =
+            resolve_repository_origin_metadata(&state.0, remote_url.as_deref(), None, false).await;
+        repo_origin_type = derived_origin_type;
+        github_owner_login = derived_owner_login;
     }
 
     let id = Uuid::new_v4().to_string();
@@ -998,7 +1176,8 @@ pub async fn initialize_new_repository(
         &display_name,
         &target_path.to_string_lossy(),
         remote_url.as_deref(),
-        repo_origin_type,
+        &repo_origin_type,
+        github_owner_login.as_deref(),
     )
     .await
     .map_err(|error| format!("Database indexing loop failure: {}", error))?;
@@ -1083,11 +1262,23 @@ pub fn crawl_repositories_command(root_path: String, max_depth: u32) -> Result<V
 async fn track_repository_path(
     pool: &sqlx::SqlitePool,
     absolute_path: &str,
+    profile_id: Option<&str>,
 ) -> Result<RepositoryTrackResult, String> {
     let path = Path::new(absolute_path);
 
-    let repo = Repository::open(path)
-        .map_err(|e| format!("The selected folder is not a valid Git repository workspace context: {}", e))?;
+    let remote_url = {
+        let repo = Repository::open(path)
+            .map_err(|e| format!("The selected folder is not a valid Git repository workspace context: {}", e))?;
+        let mut remote_url: Option<String> = None;
+
+        if let Ok(remote) = repo.find_remote("origin") {
+            if let Some(url) = remote.url() {
+                remote_url = Some(url.to_string());
+            }
+        }
+
+        remote_url
+    };
 
     let display_name = path
         .file_name()
@@ -1095,14 +1286,14 @@ async fn track_repository_path(
         .unwrap_or("Unknown Repository")
         .to_string();
 
-    let mut remote_url: Option<String> = None;
-    let mut repo_origin_type = "LOCAL_ONLY";
+    let mut repo_origin_type = "LOCAL_ONLY".to_string();
+    let mut github_owner_login: Option<String> = None;
 
-    if let Ok(remote) = repo.find_remote("origin") {
-        if let Some(url) = remote.url() {
-            remote_url = Some(url.to_string());
-            repo_origin_type = "OWNED";
-        }
+    if remote_url.is_some() {
+        let (derived_origin_type, derived_owner_login) =
+            resolve_repository_origin_metadata(pool, remote_url.as_deref(), profile_id, true).await;
+        repo_origin_type = derived_origin_type;
+        github_owner_login = derived_owner_login;
     }
 
     let existing_path_id = db::fetch_tracked_path_id_by_absolute_path(pool, absolute_path)
@@ -1116,7 +1307,8 @@ async fn track_repository_path(
         &display_name,
         absolute_path,
         remote_url.as_deref(),
-        repo_origin_type,
+        &repo_origin_type,
+        github_owner_login.as_deref(),
     )
     .await
     .map_err(|err| format!("Database indexing loop failure: {}", err))?;
@@ -1143,7 +1335,7 @@ pub async fn add_new_tracked_path(
     state: tauri::State<'_, DbState>,
     absolute_path: String
 ) -> Result<RepositoryTrackResult, String> {
-    track_repository_path(&state.0, &absolute_path).await
+    track_repository_path(&state.0, &absolute_path, None).await
 }
 
 #[tauri::command]
@@ -1170,6 +1362,7 @@ pub async fn get_tracked_workspaces(
             tracked_paths.alias_name,
             tracked_paths.absolute_path,
             tracked_paths.repo_origin_type,
+            tracked_paths.github_owner_login,
             tracked_paths.is_favorite,
             tracked_paths.group_id,
             custom_groups.group_name AS custom_group,
@@ -1218,6 +1411,7 @@ pub async fn get_tracked_workspaces(
         let alias_name: Option<String> = row.get("alias_name");
         let absolute_path: String = row.get("absolute_path");
         let repo_origin_type: String = row.get("repo_origin_type");
+        let github_owner_login: Option<String> = row.get("github_owner_login");
         let is_favorite: i64 = row.get("is_favorite");
         let group_id: Option<String> = row.get("group_id");
         let custom_group: Option<String> = row.get("custom_group");
@@ -1267,6 +1461,7 @@ pub async fn get_tracked_workspaces(
             alias_name,
             absolute_path,
             repo_origin_type,
+            github_owner_login,
             current_branch,
             available_branches,
             uncommitted_changes_count,
@@ -2147,8 +2342,8 @@ mod tests {
             pool
         });
 
-        let first_result = tauri::async_runtime::block_on(track_repository_path(&pool, path_str)).unwrap();
-        let second_result = tauri::async_runtime::block_on(track_repository_path(&pool, path_str)).unwrap();
+        let first_result = tauri::async_runtime::block_on(track_repository_path(&pool, path_str, None)).unwrap();
+        let second_result = tauri::async_runtime::block_on(track_repository_path(&pool, path_str, None)).unwrap();
 
         assert_eq!(first_result.outcome, "added");
         assert_eq!(second_result.outcome, "already_tracked");

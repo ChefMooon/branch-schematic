@@ -2,10 +2,12 @@ import { useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { RepositoryCard } from "./RepositoryCard";
 import { SearchBar } from "../../../components/search-bar/SearchBar";
-import { WorkspaceQuickFilters } from "./WorkspaceQuickFilters";
+import { OWNER_GROUPING_FILTER_VALUE, WorkspaceQuickFilters } from "./WorkspaceQuickFilters";
 import { BulkActionToolbar } from "./BulkActionToolbar";
 import { FilterDropdown } from "./common/FilterDropdown";
 import { useWorkspaceStore } from "../../../stores/workspace-store";
+import { useProfileStore } from "../../auth-profile/stores/profileStore";
+import { resolveRepoOrigin } from "../hooks/useResolveRepoOrigin";
 import "./Dashboard.css";
 
 type DashboardMainProps = {
@@ -32,6 +34,11 @@ export function DashboardMain({ onOpenManagementModal, onCleanupDanglingTags }: 
     refreshRepositoryGitStatus,
     cleanupDanglingTags: cleanupDanglingTagsFromStore,
   } = useWorkspaceStore();
+  const activeProfileId = useProfileStore((state) => state.activeProfileId);
+  const activeGithubUsername = useProfileStore((state) => {
+    const activeProfile = state.profiles.find((profile) => profile.id === state.activeProfileId) ?? null;
+    return activeProfile?.username?.trim() ?? null;
+  });
 
   useEffect(() => {
     void fetchRepositoriesData();
@@ -112,15 +119,38 @@ export function DashboardMain({ onOpenManagementModal, onCleanupDanglingTags }: 
     []
   );
 
+  const groupByOwner = selectedGroup === OWNER_GROUPING_FILTER_VALUE;
+
+  const resolvedOriginByRepoId = useMemo(() => {
+    const entries = allRepos.map((repo) => [repo.id, resolveRepoOrigin(repo, activeGithubUsername)] as const);
+    return Object.fromEntries(entries);
+  }, [allRepos, activeGithubUsername]);
+
+  useEffect(() => {
+    const ownedCount = allRepos.reduce((count, repo) => {
+      return resolvedOriginByRepoId[repo.id] === "OWNED" ? count + 1 : count;
+    }, 0);
+
+    console.info("[DashboardMain] profile origin recompute", {
+      activeProfileId,
+      activeGithubUsername,
+      repositoryCount: allRepos.length,
+      ownedCount,
+    });
+  }, [activeProfileId, activeGithubUsername, allRepos, resolvedOriginByRepoId]);
+
   const processedRepositories = allRepos
     .filter(repo => {
       const matchesSearch = repo.display_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
                             repo.absolute_path.toLowerCase().includes(searchQuery.toLowerCase());
       const matchesType =
-        selectedRepoTypeIds.length === 0 || selectedRepoTypeIds.includes(repo.repo_origin_type ?? "LOCAL_ONLY");
+        selectedRepoTypeIds.length === 0 || selectedRepoTypeIds.includes(resolvedOriginByRepoId[repo.id]);
       const matchesFavorites = !favoritesOnly || (repo.is_favorite ?? 0) === 1;
       const matchesGroup =
-        !selectedGroup || repo.custom_group === selectedGroup || repo.group_id === selectedGroup;
+        !selectedGroup ||
+        groupByOwner ||
+        repo.custom_group === selectedGroup ||
+        repo.group_id === selectedGroup;
       const tagIds = (repo.tags ?? []).map((tag) => tag.id);
       const matchesTags =
         selectedTagIds.length === 0 || selectedTagIds.some((tagId) => tagIds.includes(tagId));
@@ -133,6 +163,33 @@ export function DashboardMain({ onOpenManagementModal, onCleanupDanglingTags }: 
       const bTime = b.last_accessed_at ? new Date(b.last_accessed_at).getTime() : 0;
       return bTime - aTime;
     });
+
+  const ownerGroupedRepositories = useMemo(() => {
+    if (!groupByOwner) {
+      return [] as Array<{ owner: string; repositories: typeof processedRepositories }>;
+    }
+
+    const grouped = new Map<string, typeof processedRepositories>();
+
+    for (const repo of processedRepositories) {
+      const owner = repo.github_owner_login?.trim() || "Local";
+      const existing = grouped.get(owner);
+      if (existing) {
+        existing.push(repo);
+        continue;
+      }
+
+      grouped.set(owner, [repo]);
+    }
+
+    return Array.from(grouped.entries())
+      .sort(([leftOwner], [rightOwner]) => {
+        if (leftOwner === "Local") return 1;
+        if (rightOwner === "Local") return -1;
+        return leftOwner.localeCompare(rightOwner, undefined, { sensitivity: "base" });
+      })
+      .map(([owner, repositories]) => ({ owner, repositories }));
+  }, [groupByOwner, processedRepositories]);
 
   return (
     <div className="dashboard-container">
@@ -205,12 +262,34 @@ export function DashboardMain({ onOpenManagementModal, onCleanupDanglingTags }: 
           <div className="repo-grid-empty-state">
             No workspace references matching criteria found.
           </div>
+        ) : groupByOwner ? (
+          <div className="repo-owner-groups">
+            {ownerGroupedRepositories.map(({ owner, repositories }) => (
+              <section key={owner} className="repo-owner-group">
+                <h3 className="repo-owner-group-heading">{owner}</h3>
+                <div className="repo-responsive-grid repo-responsive-grid-grouped">
+                  {repositories.map((repo) => (
+                    <RepositoryCard
+                      key={repo.id}
+                      repo={repo}
+                      resolvedOriginType={resolvedOriginByRepoId[repo.id]}
+                      onRefresh={fetchRepositoriesData}
+                      onOpenManagement={() => onOpenManagementModal?.()}
+                      isSelected={selectedRepoIds.has(repo.id)}
+                      onToggleSelection={() => toggleRepoSelection(repo.id)}
+                    />
+                  ))}
+                </div>
+              </section>
+            ))}
+          </div>
         ) : (
           <div className="repo-responsive-grid">
             {processedRepositories.map(repo => (
               <RepositoryCard
                 key={repo.id}
                 repo={repo}
+                resolvedOriginType={resolvedOriginByRepoId[repo.id]}
                 onRefresh={fetchRepositoriesData}
                 onOpenManagement={() => onOpenManagementModal?.()}
                 isSelected={selectedRepoIds.has(repo.id)}

@@ -22,6 +22,8 @@ type RepoCardHeaderProps = {
   onToggleFavorite: () => void | Promise<void>;
   onUntrack: (event: React.MouseEvent<HTMLButtonElement>) => void;
   onThemeChange: (colorHex: string | null, iconName: string | null) => void | Promise<void>;
+  isOriginInactive?: boolean;
+  originBadgeTitle?: string | null;
 };
 
 export function RepoCardHeader({
@@ -44,6 +46,8 @@ export function RepoCardHeader({
   onToggleFavorite,
   onUntrack,
   onThemeChange,
+  isOriginInactive = false,
+  originBadgeTitle = null,
 }: RepoCardHeaderProps) {
   const isFavorite = (repo.is_favorite ?? 0) === 1;
   const primaryTitle = repo.alias_name || repo.display_name;
@@ -106,7 +110,12 @@ export function RepoCardHeader({
         <span className="repo-absolute-path" title={repo.absolute_path}>
           {repo.absolute_path}
         </span>
-        <span className="badge-origin-type badge-origin-type-inline">{formatOriginType(originType)}</span>
+        <span
+          className={`badge-origin-type badge-origin-type-inline ${isOriginInactive ? 'is-inactive-by-profile' : ''}`}
+          title={originBadgeTitle ?? undefined}
+        >
+          {formatOriginType(originType)}
+        </span>
       </div>
     </div>
   );

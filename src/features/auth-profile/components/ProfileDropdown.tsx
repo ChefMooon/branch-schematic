@@ -110,6 +110,7 @@ export function ProfileDropdown({
   }
 
   const handleSelectProfile = (profileId: string) => {
+    console.info('[ProfileDropdown] profile row selected', { profileId });
     onSelectProfile(profileId);
     onClose();
   };

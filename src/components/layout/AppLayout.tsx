@@ -388,7 +388,8 @@ export function AppLayout({ children }: AppLayoutProps) {
               tokenHealthMap={tokenHealthMap}
               onClose={() => setIsProfileDropdownOpen(false)}
               onSelectProfile={(profileId) => {
-                selectProfile(profileId);
+                console.info('[AppLayout] selectProfile requested', { profileId });
+                void selectProfile(profileId);
                 setIsProfileDropdownOpen(false);
               }}
               onToggleFavorite={(profileId, favorite) => {

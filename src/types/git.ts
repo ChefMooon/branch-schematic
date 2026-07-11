@@ -49,6 +49,8 @@ export interface TrackedPath {
   absolute_path: string;
   /** Optional URL remote tracking coordinate string configuration if registered */
   remote_url?: string | null;
+  /** Parsed GitHub or GitHub Enterprise owner login, when available */
+  github_owner_login?: string | null;
   /** Repository provenance classification for the UI */
   repo_origin_type?: "OWNED" | "FORK" | "LOCAL_ONLY" | "CONTRIBUTOR";
   /** Number of locally modified files or changes pending */

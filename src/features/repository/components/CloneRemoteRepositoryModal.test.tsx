@@ -12,8 +12,11 @@ const sampleRepository = {
   name: 'alpha',
   full_name: 'octocat/alpha',
   owner: { login: 'octocat' },
+  owner_login: 'octocat',
   description: 'Sample repository',
   private: false,
+  fork: false,
+  permissions_push: true,
   default_branch: 'main',
   updated_at: '2026-07-09T12:00:00Z',
 };
@@ -576,8 +579,15 @@ describe('CloneRemoteRepositoryModal', () => {
   });
 
   it('shows enterprise last updated status and force refreshes while loading', async () => {
-    let resolveFirstRequest: ((value: unknown) => void) | null = null;
-    const firstRequest = new Promise((resolve) => {
+    type DeferredRepositoryResponse = {
+      items: unknown[];
+      page: number;
+      per_page: number;
+      has_more: boolean;
+    };
+
+    let resolveFirstRequest: any = null;
+    const firstRequest = new Promise<DeferredRepositoryResponse>((resolve) => {
       resolveFirstRequest = resolve;
     });
 
@@ -630,11 +640,14 @@ describe('CloneRemoteRepositoryModal', () => {
     const enterpriseCalls = invokeMock.mock.calls.filter(([command]) => command === 'list_enterprise_repositories');
     expect(enterpriseCalls.length).toBeGreaterThanOrEqual(2);
 
-    resolveFirstRequest?.({
-      items: [],
-      page: 1,
-      per_page: 30,
-      has_more: false,
-    });
+    if (resolveFirstRequest) {
+      resolveFirstRequest({
+        items: [],
+        page: 1,
+        per_page: 30,
+        has_more: false,
+      });
+    }
   });
 });
+

@@ -26,8 +26,11 @@ export interface RemoteRepository {
   owner: {
     login: string;
   };
+  owner_login?: string;
   description: string | null;
   private: boolean;
+  fork?: boolean;
+  permissions_push?: boolean;
   default_branch: string;
   updated_at: string;
   clone_url: string;

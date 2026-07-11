@@ -174,7 +174,7 @@ pub fn get_migrations() -> Vec<Migration> {
                 absolute_path TEXT NOT NULL UNIQUE,
                 remote_url TEXT,
                 
-                repo_origin_type TEXT NOT NULL DEFAULT 'LOCAL_ONLY', -- 'OWNED', 'FORK', 'LOCAL_ONLY'
+                repo_origin_type TEXT NOT NULL DEFAULT 'LOCAL_ONLY', -- Values: 'OWNED', 'FORK', 'CONTRIBUTOR', 'LOCAL_ONLY'
                 uncommitted_changes_count INTEGER NOT NULL DEFAULT 0,
                 last_viewed_at DATETIME DEFAULT NULL,
                 group_id TEXT DEFAULT NULL,
@@ -184,6 +184,7 @@ pub fn get_migrations() -> Vec<Migration> {
 
                 theme_color_hex TEXT DEFAULT NULL,
                 icon_name TEXT DEFAULT NULL,
+                github_owner_login TEXT DEFAULT NULL,
                 
                 is_active INTEGER NOT NULL DEFAULT 1,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -974,22 +975,25 @@ pub async fn insert_tracked_path(
     absolute_path: &str,
     remote_url: Option<&str>,
     repo_origin_type: &str,
+    github_owner_login: Option<&str>,
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
         "INSERT INTO tracked_paths (
-            id, display_name, absolute_path, remote_url, repo_origin_type, uncommitted_changes_count, is_active
-         ) VALUES (?, ?, ?, ?, ?, 0, 1)
+            id, display_name, absolute_path, remote_url, repo_origin_type, github_owner_login, uncommitted_changes_count, is_active
+         ) VALUES (?, ?, ?, ?, ?, ?, 0, 1)
          ON CONFLICT(absolute_path) DO UPDATE SET
             is_active = 1,
             display_name = excluded.display_name,
             remote_url = excluded.remote_url,
-            repo_origin_type = excluded.repo_origin_type;"
+            repo_origin_type = excluded.repo_origin_type,
+            github_owner_login = excluded.github_owner_login;"
     )
     .bind(id)
     .bind(display_name)
     .bind(absolute_path)
     .bind(remote_url)
     .bind(repo_origin_type)
+    .bind(github_owner_login)
     .execute(pool)
     .await?;
     Ok(())

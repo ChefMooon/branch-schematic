@@ -459,6 +459,33 @@
   gap: 1.5rem;
 }
 
+.repo-owner-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 1.35rem;
+}
+
+.repo-owner-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.repo-owner-group-heading {
+  margin: 0;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--card-border);
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.repo-responsive-grid-grouped {
+  width: 100%;
+}
+
 /* Grid Breakpoint Scaling Hooks */
 @media (min-width: 720px) {
   .repo-responsive-grid {
@@ -650,6 +677,13 @@
 .origin-fork .badge-origin-type-inline { border-color: color-mix(in srgb, var(--app-success) 16%, transparent); }
 .origin-local_only .badge-origin-type-inline { border-color: color-mix(in srgb, var(--app-warning) 16%, transparent); }
 .origin-contributor .badge-origin-type-inline { border-color: color-mix(in srgb, var(--app-accent-strong) 16%, transparent); }
+
+.badge-origin-type-inline.is-inactive-by-profile {
+  color: var(--text-muted) !important;
+  border-color: color-mix(in srgb, var(--text-muted) 36%, transparent) !important;
+  background: color-mix(in srgb, var(--text-muted) 8%, transparent) !important;
+  opacity: 0.88;
+}
 
 .repo-path-row {
   display: flex;

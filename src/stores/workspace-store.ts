@@ -89,6 +89,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         alias_name: repo.alias_name,
         absolute_path: repo.absolute_path,
         remote_url: repo.remote_url,
+        github_owner_login: repo.github_owner_login ?? null,
         repo_origin_type: (repo.repo_origin_type || "LOCAL_ONLY"),
         uncommitted_changes_count: repo.uncommitted_changes_count || 0,
         current_branch: repo.current_branch || "main",
