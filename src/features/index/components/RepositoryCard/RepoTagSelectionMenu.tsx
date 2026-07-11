@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-  CheckSquare,
-  MagnifyingGlass,
-  Plus,
-  Square,
-  Trash,
-  X,
+  CheckSquareIcon,
+  MagnifyingGlassIcon,
+  PlusIcon,
+  SquareIcon,
+  TrashIcon,
+  XIcon,
 } from '@phosphor-icons/react';
+import { Button } from '../../../../components/button/Button';
 import { ConfirmationModal } from '../../../../components/Modal/ConfirmationModal';
 import { useNotifications } from '../../../../components/notifications/NotificationProvider';
 import type { TagFilterSummary } from '../../../../types/git';
@@ -186,15 +187,15 @@ export function TagSelectionModal({
         <div className="app-modal theme-aware-modal" onClick={(event) => event.stopPropagation()}>
           <div className="app-modal-header">
             <h3>Assign Tags</h3>
-            <button type="button" className="app-modal-close" onClick={onClose}>
-              <X size={16} />
-            </button>
+            <Button type="button" variant="close" className="app-modal-close" onClick={onClose}>
+              <XIcon size={16} weight="bold" />
+            </Button>
           </div>
 
           <div className="app-modal-body">
             <div className="tag-selection-toolbar">
               <div className="tag-selection-search">
-                <MagnifyingGlass size={14} />
+                <MagnifyingGlassIcon size={14} />
                 <input
                   type="text"
                   value={search}
@@ -203,12 +204,12 @@ export function TagSelectionModal({
                 />
               </div>
               <div className="tag-selection-toolbar-actions">
-                <button type="button" className="btn-secondary" onClick={() => setSelected(new Set(filteredTags.map((tag) => tag.tag_name)))}>
+                <Button type="button" variant="basic" onClick={() => setSelected(new Set(filteredTags.map((tag) => tag.tag_name)))}>
                   Select visible
-                </button>
-                <button type="button" className="btn-secondary" onClick={() => setSelected(new Set())}>
+                </Button>
+                <Button type="button" variant="danger" onClick={() => setSelected(new Set())}>
                   Clear
-                </button>
+                </Button>
               </div>
             </div>
 
@@ -231,10 +232,10 @@ export function TagSelectionModal({
                 onChange={(event) => setDraftColor(event.target.value)}
                 aria-label="Choose tag color"
               />
-              <button type="button" className="btn-primary" onClick={() => void handleCreateTag()} disabled={isCreating || !draftName.trim()}>
-                <Plus size={14} />
+              <Button type="button" variant="submit" onClick={() => void handleCreateTag()} disabled={isCreating || !draftName.trim()}>
+                <PlusIcon size={14} weight="bold" />
                 {isCreating ? 'Creating…' : 'Create'}
-              </button>
+              </Button>
             </div>
 
             <div className="tag-selection-grid">
@@ -247,7 +248,7 @@ export function TagSelectionModal({
                       className="tag-selection-item-main"
                       onClick={() => toggleTag(tag.tag_name)}
                     >
-                      {checked ? <CheckSquare size={16} weight="fill" /> : <Square size={16} />}
+                      {checked ? <CheckSquareIcon size={16} weight="fill" /> : <SquareIcon size={16} />}
                       <span className="tag-selection-color" style={{ backgroundColor: tag.color_hex }} />
                       <span className="tag-selection-label">{tag.tag_name}</span>
                       <span className="tag-selection-meta">{tag.repo_count} repo{tag.repo_count === 1 ? '' : 's'}</span>
@@ -259,7 +260,7 @@ export function TagSelectionModal({
                         aria-label={`Delete ${tag.tag_name}`}
                         onClick={() => setDeleteTarget(tag)}
                       >
-                        <Trash size={14} />
+                        <TrashIcon size={14} weight="bold" />
                       </button>
                     )}
                   </div>
@@ -280,21 +281,21 @@ export function TagSelectionModal({
           </div>
 
           <div className="app-modal-footer">
-            <button type="button" className="tag-modal-manage-link" onClick={handleOpenManagement}>
+            <Button type="button" variant="basic" onClick={handleOpenManagement}>
               Manage Global Tags
-            </button>
-            <button type="button" className="btn-secondary" onClick={onClose}>
+            </Button>
+            <Button type="button" variant="danger" onClick={onClose}>
               Cancel
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
-              className="btn-primary"
+              variant="submit"
               onClick={() => {
                 void onApply(orderedSelected);
               }}
             >
               Save Tags
-            </button>
+            </Button>
           </div>
         </div>
       </div>

@@ -5,6 +5,7 @@ import { ArrowsClockwise, BookOpen, FolderOpen, Info, Lock } from '@phosphor-ico
 import { RepositoryModalShell } from './RepositoryModalShell';
 import './CloneRemoteRepositoryModal.css';
 import { SearchBar } from '../../../components/search-bar/SearchBar';
+import { Button } from '../../../components/button/Button';
 import { useGithubRepositories } from '../../github-auth/hooks/useGithubRepositories';
 import { useNotifications } from '../../../components/notifications/NotificationProvider';
 import { useWorkspaceStore } from '../../../stores/workspace-store';
@@ -926,35 +927,32 @@ export function CloneRemoteRepositoryModal({
 		activeTab === 'url'
 			? (
 				<>
-					<button
+					<Button
 						type="button"
-						className="clone-remote-btn clone-remote-btn--secondary"
-						style={secondaryButtonStyle}
+						variant="basic"
 						onClick={onClose}
 					>
 						Cancel
-					</button>
-					<button
+					</Button>
+					<Button
 						type="button"
-						className="clone-remote-btn clone-remote-btn--primary"
-						style={primaryButtonStyle}
+						variant="submit"
 						onClick={() => void runCloneFromUrl()}
 						disabled={isCloning || !canUseRemoteClone}
 					>
 						{isCloning ? 'Cloning…' : 'Clone'}
-					</button>
+					</Button>
 				</>
 			)
 			: !isEnterpriseConfigured && activeTab === 'enterprise'
 				? (
-					<button
+					<Button
 						type="button"
-						className="clone-remote-btn clone-remote-btn--secondary"
-						style={secondaryButtonStyle}
+						variant="basic"
 						onClick={onClose}
 					>
 						Cancel
-					</button>
+					</Button>
 				)
 				: (
 					<>
@@ -1002,32 +1000,29 @@ export function CloneRemoteRepositoryModal({
 									style={inputStyle}
 									disabled={isCloning}
 								/>
-								<button
+								<Button
 									type="button"
-										className="clone-remote-btn clone-remote-btn--icon"
-									style={iconButtonStyle}
+									variant="basic"
 									onClick={() => void pickDestination(activeTab)}
 									disabled={isCloning}
 									aria-label="Choose destination"
 								>
 									<FolderOpen size={16} weight="bold" />
-								</button>
+								</Button>
 							</div>
 						</div>
 
-						<button
+						<Button
 							type="button"
-							className="clone-remote-btn clone-remote-btn--secondary"
-							style={secondaryButtonStyle}
+							variant="basic"
 							onClick={onClose}
 							disabled={isCloning}
 						>
 							Cancel
-						</button>
-						<button
+						</Button>
+						<Button
 							type="button"
-							className="clone-remote-btn clone-remote-btn--primary"
-							style={primaryButtonStyle}
+							variant="submit"
 							onClick={() => void runCloneForRepositoryTab()}
 							disabled={
 								isCloning ||
@@ -1037,7 +1032,7 @@ export function CloneRemoteRepositoryModal({
 							}
 						>
 							{isCloning ? 'Cloning…' : 'Clone'}
-						</button>
+						</Button>
 					</>
 				);
 
@@ -1059,38 +1054,37 @@ export function CloneRemoteRepositoryModal({
 
 				<div style={tabBarStickyStyle}>
 					<div style={{ display: 'flex', gap: 6 }}>
-						<button
+						<Button
 							type="button"
-							className={`clone-remote-btn clone-remote-btn--tab ${activeTab === 'basic' ? 'is-active' : ''}`}
-							style={activeTab === 'basic' ? activeTabButtonStyle : tabButtonStyle}
+							variant="basic"
+							className={`${activeTab === 'basic' ? 'is-active' : ''}`}
 							onClick={() => setActiveTab('basic')}
 						>
 							Basic Clone
-						</button>
-						<button
+						</Button>
+						<Button
 							type="button"
-							className={`clone-remote-btn clone-remote-btn--tab ${activeTab === 'enterprise' ? 'is-active' : ''}`}
-							style={activeTab === 'enterprise' ? activeTabButtonStyle : tabButtonStyle}
+							variant="basic"
+							className={`${activeTab === 'enterprise' ? 'is-active' : ''}`}
 							onClick={() => setActiveTab('enterprise')}
 						>
 							Enterprise Clone
-						</button>
-						<button
+						</Button>
+						<Button
 							type="button"
-							className={`clone-remote-btn clone-remote-btn--tab ${activeTab === 'url' ? 'is-active' : ''}`}
-							style={activeTab === 'url' ? activeTabButtonStyle : tabButtonStyle}
+							variant="basic"
+							className={`${activeTab === 'url' ? 'is-active' : ''}`}
 							onClick={() => setActiveTab('url')}
 						>
 							Clone from URL
-						</button>
+						</Button>
 					</div>
 
 					{activeTab !== 'url' ? (
-						<button
+						<Button
 							type="button"
+							variant="basic"
 							onClick={handleRefresh}
-							className="clone-remote-btn clone-remote-btn--icon"
-							style={iconButtonStyle}
 							disabled={!canUseRemoteClone}
 							aria-label="Refresh repositories"
 						>
@@ -1099,7 +1093,7 @@ export function CloneRemoteRepositoryModal({
 								weight="bold"
 								style={isAnyFetchInProgress ? { animation: 'spin-kf 1s linear infinite' } : undefined}
 							/>
-						</button>
+						</Button>
 					) : null}
 				</div>
 
@@ -1182,16 +1176,15 @@ export function CloneRemoteRepositoryModal({
 									style={inputStyle}
 									disabled={isCloning}
 								/>
-								<button
+								<Button
 									type="button"
-									className="clone-remote-btn clone-remote-btn--icon"
-									style={iconButtonStyle}
+									variant="basic"
 									onClick={() => void pickDestination('url')}
 									disabled={isCloning}
 									aria-label="Choose destination"
 								>
 									<FolderOpen size={16} weight="bold" />
-								</button>
+								</Button>
 							</div>
 						</label>
 
@@ -1204,14 +1197,13 @@ export function CloneRemoteRepositoryModal({
 						<p style={{ margin: 0, fontSize: 13, color: 'var(--app-muted)', textAlign: 'center' }}>
 							Enterprise cloning requires an active full OAuth profile with an enterprise API base URL.
 						</p>
-						<button
+						<Button
 							type="button"
-							className="clone-remote-btn clone-remote-btn--secondary"
-							style={secondaryButtonStyle}
+							variant="basic"
 							onClick={onOpenProfileManagement}
 						>
 							Open Profile Management
-						</button>
+						</Button>
 					</div>
 				) : (
 					<div style={{ display: 'grid', gap: 10 }}>
@@ -1237,10 +1229,9 @@ export function CloneRemoteRepositoryModal({
 						{activeRepositoryState.error ? (
 							<div style={errorBannerStyle}>
 								<span>{activeRepositoryState.error}</span>
-								<button
+								<Button
 									type="button"
-									className="clone-remote-btn clone-remote-btn--secondary"
-									style={secondaryButtonStyle}
+									variant="basic"
 									onClick={() =>
 										void (activeTab === 'basic'
 											? githubRepositories.reload()
@@ -1249,7 +1240,7 @@ export function CloneRemoteRepositoryModal({
 									disabled={activeRepositoryState.isLoading}
 								>
 									Retry
-								</button>
+								</Button>
 							</div>
 						) : null}
 
@@ -1294,19 +1285,19 @@ export function CloneRemoteRepositoryModal({
 													</div>
 
 													<div style={{ position: 'relative' }}>
-														<button
+														<Button
 															type="button"
+															variant="basic"
 															data-repo-info-trigger
 															onClick={(event) => {
 																event.stopPropagation();
 																setOpenInfoRepoId((current) => (current === repository.id ? null : repository.id));
 															}}
 															className="clone-remote-btn clone-remote-btn--icon"
-															style={iconButtonStyle}
 															aria-label={`Repository details for ${repository.full_name}`}
 														>
 															<Info size={14} weight="bold" />
-														</button>
+														</Button>
 
 														{openInfoRepoId === repository.id ? (
 															<div ref={infoPopoverRef} data-remote-info-popover style={infoPopoverStyle}>
@@ -1349,27 +1340,6 @@ const inputStyle: React.CSSProperties = {
 const baseInteractiveStyle: React.CSSProperties = {
 	borderRadius: 8,
 	transition: 'background-color 160ms ease, border-color 160ms ease, box-shadow 160ms ease, opacity 160ms ease',
-};
-
-const primaryButtonStyle: React.CSSProperties = {
-	...baseInteractiveStyle,
-	padding: '8px 12px',
-	cursor: 'pointer',
-};
-
-const secondaryButtonStyle: React.CSSProperties = {
-	...baseInteractiveStyle,
-	padding: '8px 12px',
-	cursor: 'pointer',
-};
-
-const iconButtonStyle: React.CSSProperties = {
-	...baseInteractiveStyle,
-	padding: '8px 10px',
-	cursor: 'pointer',
-	display: 'flex',
-	alignItems: 'center',
-	justifyContent: 'center',
 };
 
 const fieldLabelStyle: React.CSSProperties = {

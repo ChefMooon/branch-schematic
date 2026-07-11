@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { ArrowSquareOut, CheckCircle, SpinnerGap } from '@phosphor-icons/react';
 import type { UserProfile } from '../types';
 import { useOAuthFlow } from '../hooks/useOAuthFlow';
+import { Button } from '../../../components/button/Button';
 
 interface OAuthConnectButtonProps {
   draft: Partial<UserProfile>;
@@ -46,21 +47,17 @@ export function OAuthConnectButton({ draft, onChange }: OAuthConnectButtonProps)
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', justifyContent: 'flex-end' }}>
-      <button type="button" onClick={() => { void handleConnect(); }} disabled={isWorking} style={{
+      <Button type="button" variant="basic" onClick={() => { void handleConnect(); }} disabled={isWorking} style={{
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
         gap: '6px',
-        borderRadius: '10px',
-        border: '1px solid var(--app-border)',
-        backgroundColor: 'transparent',
         color: 'inherit',
-        padding: '8px 12px',
         cursor: isWorking ? 'wait' : 'pointer',
       }}>
         {isWorking ? <SpinnerGap size={16} className="spin" /> : hasToken ? <CheckCircle size={16} color="var(--accent, #3b82f6)" /> : <ArrowSquareOut size={16} />}
         <span>{hasToken ? 'Re-authorize' : 'Connect OAuth'}</span>
-      </button>
+      </Button>
       {status ? (
         <div
           role="status"

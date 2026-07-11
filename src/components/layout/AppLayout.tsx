@@ -26,6 +26,7 @@ import { ProfileIndicator } from '../../features/auth-profile/components/Profile
 import { ProfileDropdown } from '../../features/auth-profile/components/ProfileDropdown';
 import { ProfileManagementModal } from '../../features/auth-profile/components/ProfileManagementModal';
 import { useProfileContext } from '../../features/auth-profile/hooks/useProfileContext';
+import { Button } from '../button/Button';
 import type { RepositoryModalAction } from '../../features/repository/types';
 import type { UserProfile } from '../../features/auth-profile/types';
 
@@ -273,9 +274,11 @@ export function AppLayout({ children }: AppLayoutProps) {
       >
         
         {/* Hamburger/Close Button */}
-        <button
+        <Button
+          type="button"
+          variant="basic"
           onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-          className={`titlebar-action-button ${isSidebarOpen ? 'is-active' : ''}`}
+          className={`${isSidebarOpen ? 'is-active' : ''}`}
           style={styles.menuBtn}
           title={isSidebarOpen ? "Close navigation" : "Open navigation"}
         >
@@ -284,7 +287,7 @@ export function AppLayout({ children }: AppLayoutProps) {
           ) : (
             <ListIcon size={18} weight="bold" color="var(--app-text)" style={{ display: 'block' }} />
           )}
-        </button>
+        </Button>
 
         {/* Page breadcrumb */}
         <span style={styles.headerTitle}>{currentTitle}</span>
@@ -295,7 +298,9 @@ export function AppLayout({ children }: AppLayoutProps) {
         {/* Right: actions */}
         <div style={styles.headerRight}>
           <div style={{ position: 'relative' }}>
-            <button
+            <Button
+              type="button"
+              variant="basic"
               className={`titlebar-action-button ${isNotificationDropdownOpen ? 'is-active' : ''}`}
               style={styles.iconBtn}
               title="Notifications"
@@ -308,7 +313,7 @@ export function AppLayout({ children }: AppLayoutProps) {
                   {unreadCount > 9 ? '9+' : unreadCount}
                 </span>
               )}
-            </button>
+            </Button>
             <NotificationDropdown
               isOpen={isNotificationDropdownOpen}
               onClose={() => setIsNotificationDropdownOpen(false)}
@@ -329,7 +334,9 @@ export function AppLayout({ children }: AppLayoutProps) {
           </div>
 
           <div style={{ position: 'relative' }}>
-            <button
+            <Button
+              type="button"
+              variant="basic"
               ref={(node) => setRepositoryDropdownAnchor(node)}
               data-repository-dropdown-trigger
               className={`titlebar-action-button ${isRepositoryDropdownOpen ? 'is-active' : ''}`}
@@ -339,7 +346,7 @@ export function AppLayout({ children }: AppLayoutProps) {
               onClick={handleToggleRepositoryDropdown}
             >
               <PlusIcon size={18} color="var(--app-text)" style={{ display: 'block' }} />
-            </button>
+            </Button>
             <RepositoryDropdown
               isOpen={isRepositoryDropdownOpen}
               onClose={() => setIsRepositoryDropdownOpen(false)}
@@ -357,8 +364,9 @@ export function AppLayout({ children }: AppLayoutProps) {
             />
           </div>
 
-          <button
-            className="titlebar-action-button"
+          <Button
+            type="button"
+            variant="basic"
             style={styles.iconBtn}
             title={`Switch theme (current: ${themeMode})`}
             onClick={() => {
@@ -369,7 +377,7 @@ export function AppLayout({ children }: AppLayoutProps) {
             }}
           >
             <CircleHalfIcon size={18} color="var(--app-text)" style={{ display: 'block' }} />
-          </button>
+          </Button>
 
           <div style={{ position: 'relative' }}>
             <ProfileIndicator

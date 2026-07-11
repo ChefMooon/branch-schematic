@@ -1,6 +1,7 @@
-import { X } from "@phosphor-icons/react";
+import { XIcon } from "@phosphor-icons/react";
 import { ColorPicker } from "../../../../components/color-picker/ColorPicker";
 import { IconSelector } from "../../../icon/components/IconSelector";
+import { Button } from "../../../../components/button/Button";
 
 type RepoThemeModalProps = {
   isOpen: boolean;
@@ -26,9 +27,9 @@ export function RepoThemeModal({
       <div className="app-modal theme-aware-modal repo-theme-modal" onClick={(event) => event.stopPropagation()}>
         <div className="app-modal-header">
           <h3>Repository Theme</h3>
-          <button type="button" className="app-modal-close" onClick={onClose}>
-            <X size={16} />
-          </button>
+          <Button type="button" variant="close" className="app-modal-close" onClick={onClose}>
+            <XIcon size={16} weight="bold" />
+          </Button>
         </div>
 
         <div className="app-modal-body repo-theme-modal-body">
@@ -45,19 +46,19 @@ export function RepoThemeModal({
         </div>
 
         <div className="app-modal-footer repo-theme-modal-footer">
-          <button
+          <Button
             type="button"
-            className="btn-secondary"
+            variant="danger"
             onClick={() => {
               void onThemeChange(null, null);
             }}
             disabled={isBusy}
           >
             Reset defaults
-          </button>
-          <button type="button" className="btn-primary" onClick={onClose}>
+          </Button>
+          <Button type="button" variant="submit" onClick={onClose}>
             Done
-          </button>
+          </Button>
         </div>
       </div>
     </div>

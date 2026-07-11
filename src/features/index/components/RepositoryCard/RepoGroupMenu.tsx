@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { X } from '@phosphor-icons/react';
 import { TextInputModal } from '../../../../components/Modal/TextInputModal';
 import type { GroupSummary, TrackedPath } from '../../../../types/git';
+import { Button } from '../../../../components/button/Button';
 
 type RepoGroupMenuProps = {
   repo: TrackedPath;
@@ -96,26 +97,27 @@ export function RepoGroupMenu({
       {isDropdownOpen ? (
         <div className="repo-group-menu-panel" role="menu">
           <div className="repo-group-menu-panel-marker" aria-hidden="true" />
-          <button type="button" className="repo-group-menu-item" onClick={() => handleGroupSelect(null)}>
+          <Button type="button" variant="menu-item" onClick={() => handleGroupSelect(null)}>
             No Group
-          </button>
+          </Button>
           {availableGroups.map((group) => (
-            <button
+            <Button
               key={group.id}
               type="button"
-              className={`repo-group-menu-item ${repo.group_id === group.id ? 'active' : ''}`}
+              variant="menu-item"
+              className={`${repo.group_id === group.id ? 'is-active' : ''}`}
               onClick={() => handleGroupSelect(group.id)}
             >
               <span className="repo-tag-dot" style={{ backgroundColor: group.color_hex }} />
               {group.group_name}
-            </button>
+            </Button>
           ))}
-          <button type="button" className="repo-group-menu-item" onClick={() => { setIsDropdownOpen(false); setIsCreateModalOpen(true); }}>
+          <Button type="button" variant="menu-item" onClick={() => { setIsDropdownOpen(false); setIsCreateModalOpen(true); }}>
             + Create Group
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
-            className="repo-group-menu-item"
+            variant="menu-item"
             onClick={() => {
               setIsDropdownOpen(false);
               (onOpenManagement ?? onOpenManagementModal)?.();
@@ -123,7 +125,7 @@ export function RepoGroupMenu({
             }}
           >
             Manage Tags and Groups
-          </button>
+          </Button>
         </div>
       ) : null}
       <TextInputModal

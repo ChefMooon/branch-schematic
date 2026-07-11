@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
-import './RepositoryModalShell.css';
+import { Button } from '../../../components/button/Button';
+import { XIcon } from '@phosphor-icons/react';
 
 interface RepositoryModalShellProps {
   isOpen: boolean;
@@ -70,24 +71,14 @@ export function RepositoryModalShell({
               <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--app-muted)' }}>{description}</p>
             ) : null}
           </div>
-          <button
+          <Button
             type="button"
+            variant="close"
             onClick={onClose}
             aria-label="Close modal"
-            className="repository-modal-close-button"
-            style={{
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              padding: 4,
-              width: 28,
-              height: 28,
-              borderRadius: 6,
-            }}
           >
-            ×
-          </button>
+            <XIcon size={14} weight="bold" color="var(--app-text)" style={{ display: 'block' }} />
+          </Button>
         </div>
 
         <div

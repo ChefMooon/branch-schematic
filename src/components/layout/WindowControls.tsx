@@ -1,6 +1,7 @@
 import { MinusIcon, SquareIcon, XIcon } from '@phosphor-icons/react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { useOS } from '../../hooks/useOS';
+import { Button } from '../button/Button';
 import './titlebar.css';
 
 const appWindow = getCurrentWindow();
@@ -12,9 +13,9 @@ export function WindowControls() {
 
   return (
     <div style={styles.container}>
-      <button
+      <Button
         type="button"
-        className="titlebar-action-button"
+        variant="basic"
         style={styles.button}
         title="Minimize"
         onClick={async () => {
@@ -26,11 +27,11 @@ export function WindowControls() {
         }}
       >
         <MinusIcon size={14} weight="bold" color="var(--app-text)" style={{ display: 'block' }} />
-      </button>
+      </Button>
 
-      <button
+      <Button
         type="button"
-        className="titlebar-action-button"
+        variant="basic"
         style={styles.button}
         title="Maximize or restore"
         onClick={async () => {
@@ -42,12 +43,12 @@ export function WindowControls() {
         }}
       >
         <SquareIcon size={12} weight="bold" color="var(--app-text)" style={{ display: 'block' }} />
-      </button>
+      </Button>
 
-      <button
+      <Button
         type="button"
-        className="titlebar-action-button titlebar-close-button"
-        style={{ ...styles.button, ...styles.closeButton }}
+        variant="close"
+        style={styles.button}
         title="Close"
         onClick={async () => {
           try {
@@ -58,7 +59,7 @@ export function WindowControls() {
         }}
       >
         <XIcon size={14} weight="bold" color="var(--app-text)" style={{ display: 'block' }} />
-      </button>
+      </Button>
     </div>
   );
 }
@@ -78,8 +79,5 @@ const styles: Record<string, React.CSSProperties> = {
     justifyContent: 'center',
     cursor: 'pointer',
     padding: 0,
-  },
-  closeButton: {
-    borderColor: 'var(--app-border)',
   },
 };

@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { ArrowDown, ArrowUp, Check, CopySimple, PencilSimple, Star, Trash, X } from '@phosphor-icons/react';
 import type { CanvasViewRecord } from '../../../stores/canvas-store';
+import { Button } from '../../../components/button/Button';
 
 type ViewManagerSidebarProps = {
   isDark: boolean;
@@ -66,22 +67,13 @@ export function ViewManagerSidebar({
       }}
     >
       <div style={{ padding: '14px 14px 10px', borderBottom: `1px solid ${isDark ? '#262626' : '#e2e8f0'}` }}>
-        <button
+        <Button
           onClick={onCreate}
-          style={{
-            width: '100%',
-            border: 'none',
-            borderRadius: 8,
-            padding: '8px 10px',
-            fontSize: 12,
-            fontWeight: 700,
-            background: '#4f46e5',
-            color: '#fff',
-            cursor: 'pointer',
-          }}
+          variant="submit"
+          style={{ width: '100%' }}
         >
           + Create View
-        </button>
+        </Button>
       </div>
 
       <div

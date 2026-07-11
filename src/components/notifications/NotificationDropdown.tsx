@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
-import { Archive, BellSimpleRinging, Eye, PushPin, PushPinSlash } from '@phosphor-icons/react';
+import { ArchiveIcon, BellSimpleRingingIcon, EyeIcon, PushPinIcon, PushPinSlashIcon } from '@phosphor-icons/react';
 import type { NotificationEntry } from './NotificationProvider';
+import { Button } from '../button/Button';
 
 interface NotificationDropdownProps {
   isOpen: boolean;
@@ -69,12 +70,12 @@ export function NotificationDropdown({
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button type="button" onClick={onMarkAllAsRead} style={actionButtonStyle} title="Mark all as read">
-            <Eye size={14} />
-          </button>
-          <button type="button" onClick={onArchiveAll} style={actionButtonStyle} title="Archive all">
-            <Archive size={14} />
-          </button>
+          <Button type="button" variant="basic" onClick={onMarkAllAsRead} title="Mark all as read">
+            <EyeIcon size={14} />
+          </Button>
+          <Button type="button" variant="basic" onClick={onArchiveAll} title="Archive all">
+            <ArchiveIcon size={14} />
+          </Button>
         </div>
       </div>
 
@@ -82,7 +83,7 @@ export function NotificationDropdown({
         {notifications.length === 0 ? (
           <div style={{ padding: '24px 12px', textAlign: 'center', color: 'var(--app-text-muted, #64748b)', fontSize: 13 }}>
             <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 8 }}>
-              <BellSimpleRinging size={20} />
+              <BellSimpleRingingIcon size={20} />
             </div>
             No notifications yet.
           </div>
@@ -118,7 +119,7 @@ export function NotificationDropdown({
                   style={iconButtonStyle}
                   title={notification.isPinned ? 'Unpin notification' : 'Pin notification'}
                 >
-                  {notification.isPinned ? <PushPinSlash size={13} /> : <PushPin size={13} />}
+                  {notification.isPinned ? <PushPinSlashIcon size={13} /> : <PushPinIcon size={13} />}
                 </button>
               </div>
 
@@ -137,7 +138,7 @@ export function NotificationDropdown({
                     style={iconButtonStyle}
                     title="Archive notification"
                   >
-                    <Archive size={13} />
+                    <ArchiveIcon size={13} />
                   </button>
                 </div>
               </div>
@@ -148,18 +149,6 @@ export function NotificationDropdown({
     </div>
   );
 }
-
-const actionButtonStyle: React.CSSProperties = {
-  border: '1px solid var(--app-border)',
-  background: 'transparent',
-  color: 'var(--app-text)',
-  borderRadius: 8,
-  padding: '6px 7px',
-  cursor: 'pointer',
-  display: 'inline-flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-};
 
 const iconButtonStyle: React.CSSProperties = {
   border: 'none',

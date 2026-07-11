@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { FolderOpen, GitBranch, Plus, TreeStructure } from '@phosphor-icons/react';
+import { Button } from '../../../components/button/Button';
 import type { RepositoryModalAction } from '../types';
 
 interface RepositoryDropdownProps {
@@ -90,55 +91,56 @@ export function RepositoryDropdown({
         overflow: 'hidden',
       }}
     >
-      <button
+      <Button
         type="button"
+        variant="menu-item"
         onClick={() => {
           onSelect('create');
           onClose();
         }}
-        style={menuItemStyle}
       >
         <Plus size={16} weight="bold" />
         <span>New Repository...</span>
-      </button>
+      </Button>
 
-      <button
+      <Button
         type="button"
+        variant="menu-item"
         onClick={() => {
           onSelect('add-local');
           onClose();
         }}
-        style={menuItemStyle}
       >
         <FolderOpen size={16} weight="bold" />
         <span>Add Local Repository...</span>
-      </button>
+      </Button>
 
-      <button
+      <Button
         type="button"
+        variant="menu-item"
         onClick={() => {
           onSelect('create-view');
           onClose();
         }}
-        style={menuItemStyle}
       >
         <TreeStructure size={16} weight="bold" />
         <span>Create New View</span>
-      </button>
+      </Button>
 
-      <button
+      <Button
         type="button"
+        variant="menu-item"
         disabled={!canCloneRemote}
         onClick={() => {
           if (!canCloneRemote) return;
           onSelect('clone');
           onClose();
         }}
-        style={{ ...menuItemStyle, opacity: canCloneRemote ? 1 : 0.6, cursor: canCloneRemote ? 'pointer' : 'not-allowed' }}
+        style={{ opacity: canCloneRemote ? 1 : 0.6, cursor: canCloneRemote ? 'pointer' : 'not-allowed' }}
       >
         <GitBranch size={16} weight="bold" />
         <span>{canCloneRemote ? 'Clone Repository...' : 'Clone Repository (Sign in required)'}</span>
-      </button>
+      </Button>
     </div>
   );
 }

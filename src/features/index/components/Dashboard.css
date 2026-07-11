@@ -1642,28 +1642,6 @@
   opacity: 0.95;
 }
 
-.repo-group-menu-item {
-  border: none;
-  background: transparent;
-  text-align: left;
-  border-radius: 8px;
-  padding: 0.35rem 0.5rem;
-  font-size: 0.78rem;
-  color: var(--text-main);
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  transition: background-color 0.15s ease, color 0.15s ease, transform 0.15s ease;
-}
-
-.repo-group-menu-item:hover,
-.repo-group-menu-item.active {
-  background: var(--item-hover);
-  color: var(--text-main);
-  transform: translateX(1px);
-}
-
 .repo-card-overflow-menu {
   position: relative;
   display: inline-flex;

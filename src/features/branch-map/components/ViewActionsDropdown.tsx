@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { ConfirmationModal } from '../../../components/Modal/ConfirmationModal';
 import type { CanvasViewRecord } from '../../../stores/canvas-store';
 import { useCanvasStore } from '../../../stores/canvas-store';
+import { Button } from '../../../components/button/Button';
 
 type ViewActionsDropdownProps = {
   isDark?: boolean;
@@ -221,7 +222,9 @@ export function ViewActionsDropdown({
 
   return (
     <div ref={menuRef} style={{ position: 'relative' }}>
-      <button
+      <Button
+        type="button"
+        variant="basic"
         onClick={() => setIsOpen(!isOpen)}
         aria-label="View actions"
         title="View actions"
@@ -232,17 +235,13 @@ export function ViewActionsDropdown({
           alignItems: 'center',
           justifyContent: 'center',
           borderRadius: '6px',
-          border: `1px solid ${isDark ? '#404040' : '#e2e8f0'}`,
-          backgroundColor: isDark ? '#111111' : '#ffffff',
-          color: isDark ? '#d4d4d4' : '#475569',
           fontSize: '16px',
           lineHeight: 1,
-          cursor: 'pointer',
           padding: 0,
         }}
       >
         ⋯
-      </button>
+      </Button>
 
       {isOpen && menuPosition && (
         <div
@@ -264,56 +263,68 @@ export function ViewActionsDropdown({
             zIndex: 18,
           }}
         >
-          <button
+          <Button
+            type="button"
+            variant="menu-item"
             onClick={() => {
               onOpenCreateView?.();
               setIsOpen(false);
             }}
-            style={menuButtonStyle(isDark)}
+            style={menuButtonStyle()}
           >
             New View
-          </button>
+          </Button>
 
-          <button
+          <Button
+            type="button"
+            variant="menu-item"
             onClick={handleDuplicate}
-            style={menuButtonStyle(isDark)}
+            style={menuButtonStyle()}
             disabled={!activeView}
           >
             Duplicate
-          </button>
+          </Button>
 
-          <button
+          <Button
+            type="button"
+            variant="menu-item"
             onClick={handleFavoriteToggle}
-            style={menuButtonStyle(isDark)}
+            style={menuButtonStyle()}
             disabled={!activeView}
           >
             {activeView && (activeView.is_favorite ?? 0) === 1 ? 'Unfavorite' : 'Favorite'}
-          </button>
+          </Button>
 
-          <button
+          <Button
+            type="button"
+            variant="menu-item"
             onClick={handleMoveUp}
-            style={menuButtonStyle(isDark)}
+            style={menuButtonStyle()}
             disabled={!activeView || !canMoveUp}
           >
             Move Up
-          </button>
+          </Button>
 
-          <button
+          <Button
+            type="button"
+            variant="menu-item"
             onClick={handleMoveDown}
-            style={menuButtonStyle(isDark)}
+            style={menuButtonStyle()}
             disabled={!activeView || !canMoveDown}
           >
             Move Down
-          </button>
+          </Button>
 
           {!isRenameOpen ? (
-            <button
+            <Button
+              type="button"
+              variant="menu-item"
               onClick={() => setIsRenameOpen(true)}
-              style={menuButtonStyle(isDark)}
+              style={menuButtonStyle()}
               disabled={!activeView}
             >
               Rename
-            </button>
+            </Button>
           ) : (
             <div style={{ margin: '6px 0', display: 'grid', gap: '6px' }}>
               <input
@@ -334,43 +345,51 @@ export function ViewActionsDropdown({
                 }}
               />
               <div style={{ display: 'flex', gap: '6px' }}>
-                <button onClick={handleRename} style={{ ...menuButtonStyle(isDark), flex: 1 }}>
-                  Save
-                </button>
-                <button
+                <Button
+                  type="button"
+                  variant="menu-item"
                   onClick={() => setIsRenameOpen(false)}
-                  style={{ ...menuButtonStyle(isDark), flex: 1 }}
+                  style={{ ...menuButtonStyle(), flex: 1 }}
                 >
                   Cancel
-                </button>
+                </Button>
+                <Button type="button" variant="menu-item" onClick={handleRename} style={{ ...menuButtonStyle(), flex: 1 }}>
+                  Save
+                </Button>
               </div>
             </div>
           )}
 
-          <button
+          <Button
+            type="button"
+            variant="menu-item-danger"
             onClick={handleDelete}
-            style={menuButtonStyle(isDark, true)}
+            style={menuButtonStyle()}
             disabled={!activeView || !canDelete}
             title={canDelete ? 'Delete active view' : 'At least one view must remain'}
           >
             Delete
-          </button>
+          </Button>
 
-          <button
+          <Button
+            type="button"
+            variant="menu-item"
             onClick={handleSaveBaseline}
-            style={menuButtonStyle(isDark)}
+            style={menuButtonStyle()}
             disabled={!activeView}
           >
             Save View as Base View
-          </button>
+          </Button>
 
-          <button
+          <Button
+            type="button"
+            variant="menu-item"
             onClick={handleSaveCardState}
-            style={menuButtonStyle(isDark)}
+            style={menuButtonStyle()}
             disabled={!activeView}
           >
             Save Card State
-          </button>
+          </Button>
 
           <div
             style={{
@@ -380,15 +399,17 @@ export function ViewActionsDropdown({
             }}
           />
 
-          <button
+          <Button
+            type="button"
+            variant="menu-item"
             onClick={() => {
               onOpenManager();
               setIsOpen(false);
             }}
-            style={menuButtonStyle(isDark)}
+            style={menuButtonStyle()}
           >
             Open View Manager
-          </button>
+          </Button>
         </div>
       )}
 
@@ -411,16 +432,13 @@ export function ViewActionsDropdown({
   );
 }
 
-function menuButtonStyle(isDark: boolean, isDanger = false) {
+function menuButtonStyle() {
   return {
     width: '100%',
     textAlign: 'left' as const,
-    border: 'none',
+    justifyContent: 'flex-start' as const,
+    marginBottom: '2px',
     borderRadius: '7px',
-    background: 'transparent',
-    color: isDanger
-      ? (isDark ? '#fca5a5' : '#dc2626')
-      : (isDark ? '#e4e4e7' : '#334155'),
     fontSize: '12px',
     fontWeight: 600,
     cursor: 'pointer',

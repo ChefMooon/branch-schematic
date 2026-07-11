@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
-import { PencilSimple, Plus, Trash, Wrench, X } from '@phosphor-icons/react';
+import { PencilSimple, Plus, Trash, Wrench, XIcon } from '@phosphor-icons/react';
 import { ConfirmationModal } from '../../../components/Modal/ConfirmationModal';
 import { useNotifications } from '../../../components/notifications/NotificationProvider';
+import { Button } from '../../../components/button/Button';
 import type { GroupSummary, TagFilterSummary } from '../../../types/git';
 
 type SettingsManagementModalProps = {
@@ -303,26 +304,28 @@ export function SettingsManagementModal({
       <div className="app-modal app-modal-wide" onClick={(event) => event.stopPropagation()}>
         <div className="app-modal-header">
           <h3>Tag and Group Management</h3>
-          <button type="button" className="app-modal-close" onClick={onClose}>
-            <X size={16} />
-          </button>
+          <Button type="button" variant="close" className="app-modal-close" onClick={onClose}>
+            <XIcon size={14}  weight="bold"/>
+          </Button>
         </div>
 
         <div className="management-tabs">
-          <button
+          <Button
             type="button"
-            className={`management-tab ${tab === 'tags' ? 'active' : ''}`}
+            variant="basic"
+            className={`${tab === 'tags' ? 'is-active' : ''}`}
             onClick={() => setTab('tags')}
           >
             Tags
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
-            className={`management-tab ${tab === 'groups' ? 'active' : ''}`}
+            variant="basic"
+            className={`${tab === 'groups' ? 'is-active' : ''}`}
             onClick={() => setTab('groups')}
           >
             Groups
-          </button>
+          </Button>
         </div>
 
         <div className="app-modal-body">
@@ -340,14 +343,14 @@ export function SettingsManagementModal({
                   value={tagCreateDraft.color}
                   onChange={(event) => setTagCreateDraft((prev) => ({ ...prev, color: event.target.value }))}
                 />
-                <button
+                <Button
                   type="submit"
-                  className="btn-primary"
+                  variant="submit"
                   disabled={isCreatingTag || !tagCreateDraft.name.trim() || Boolean(tagCreateWarning)}
                 >
-                  <Plus size={14} />
+                  <Plus size={14} weight="bold" />
                   {isCreatingTag ? 'Creating…' : 'Create'}
-                </button>
+                </Button>
               </form>
               {tagCreateWarning && <p className="management-helper-text error">{tagCreateWarning}</p>}
 
@@ -371,9 +374,9 @@ export function SettingsManagementModal({
                       }
                     />
                     <span className="management-count">{tag.repo_count} repos</span>
-                    <button
+                    <Button
                       type="button"
-                      className="btn-secondary"
+                      variant="basic"
                       disabled={!isDirty}
                       onClick={() => {
                         void handleSaveTag(tag, draft);
@@ -381,17 +384,17 @@ export function SettingsManagementModal({
                     >
                       <PencilSimple size={14} />
                       Save
-                    </button>
-                    <button
+                    </Button>
+                    <Button
                       type="button"
-                      className="btn-secondary danger"
+                      variant="danger"
                       onClick={() => {
                         void handleDeleteTag(tag);
                       }}
                     >
-                      <Trash size={14} />
+                      <Trash size={14} weight="bold" />
                       Delete
-                    </button>
+                    </Button>
                   </div>
                 );
               })}
@@ -401,16 +404,16 @@ export function SettingsManagementModal({
                   <strong>Dangling tags</strong>
                   <p>{danglingLabel || 'None currently detected.'}</p>
                 </div>
-                <button
+                <Button
                   type="button"
-                  className="btn-secondary danger"
+                  variant="danger"
                   onClick={() => {
                     handleCleanup();
                   }}
                 >
-                  <Wrench size={14} />
+                  <Wrench size={14} weight="bold" />
                   Cleanup Unused
-                </button>
+                </Button>
               </div>
             </div>
           )}
@@ -429,14 +432,14 @@ export function SettingsManagementModal({
                   value={groupCreateDraft.color}
                   onChange={(event) => setGroupCreateDraft((prev) => ({ ...prev, color: event.target.value }))}
                 />
-                <button
+                <Button
                   type="submit"
-                  className="btn-primary"
+                  variant="submit"
                   disabled={isCreatingGroup || !groupCreateDraft.name.trim() || Boolean(groupCreateWarning)}
                 >
-                  <Plus size={14} />
+                  <Plus size={14} weight="bold" />
                   {isCreatingGroup ? 'Creating…' : 'Create'}
-                </button>
+                </Button>
               </form>
               {groupCreateWarning && <p className="management-helper-text error">{groupCreateWarning}</p>}
 
@@ -460,27 +463,27 @@ export function SettingsManagementModal({
                       }
                     />
                     <span className="management-count">{group.repo_count} repos</span>
-                    <button
+                    <Button
                       type="button"
-                      className="btn-secondary"
+                      variant="basic"
                       disabled={!isDirty}
                       onClick={() => {
                         void handleSaveGroup(group, draft);
                       }}
                     >
-                      <PencilSimple size={14} />
+                      <PencilSimple size={14} weight="bold" />
                       Save
-                    </button>
-                    <button
+                    </Button>
+                    <Button
                       type="button"
-                      className="btn-secondary danger"
+                      variant="danger"
                       onClick={() => {
                         void handleDeleteGroup(group);
                       }}
                     >
-                      <Trash size={14} />
+                      <Trash size={14} weight="bold" />
                       Delete
-                    </button>
+                    </Button>
                   </div>
                 );
               })}

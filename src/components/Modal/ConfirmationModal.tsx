@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { Button } from '../button/Button';
 
 export type ConfirmationModalVariant = 'danger' | 'primary';
 
@@ -61,22 +62,22 @@ export function ConfirmationModal({
         <div className="confirmation-modal__body">{message}</div>
 
         <div className="confirmation-modal__actions">
-          <button
+          <Button
             type="button"
-            className="confirmation-modal__button confirmation-modal__button--secondary"
+            variant="basic"
             onClick={onCancel}
             disabled={isBusy}
           >
             {cancelLabel}
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
-            className={`confirmation-modal__button confirmation-modal__button--${variant}`}
+            variant="submit"
             onClick={onConfirm}
             disabled={isBusy}
           >
             {confirmLabel}
-          </button>
+          </Button>
         </div>
       </div>
     </div>

@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
-import { FolderOpen } from '@phosphor-icons/react';
+import { FolderOpenIcon } from '@phosphor-icons/react';
+import { Button } from '../../../components/button/Button';
 import { RepositoryModalShell } from './RepositoryModalShell';
 import { useWorkspaceStore } from '../../../stores/workspace-store';
 import { useNotifications } from '../../../components/notifications/NotificationProvider';
@@ -165,17 +166,17 @@ export function BulkImportLocalRepositoryModal({
       description="Scan a folder tree for Git repositories and import the ones you want."
       footer={
         <>
-          <button type="button" onClick={onClose} style={secondaryButtonStyle}>
+          <Button type="button" variant="basic" onClick={onClose}>
             Cancel
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
+            variant="submit"
             onClick={handleImportSelected}
             disabled={isImporting || discoveries.length === 0}
-            style={primaryButtonStyle}
           >
             {isImporting ? 'Importing…' : 'Import selected'}
-          </button>
+          </Button>
         </>
       }
     >
@@ -190,9 +191,9 @@ export function BulkImportLocalRepositoryModal({
               placeholder="C:/Users/you/projects"
               style={inputStyle}
             />
-            <button type="button" onClick={handlePickDirectory} style={iconButtonStyle}>
-              <FolderOpen size={16} weight="bold" />
-            </button>
+            <Button type="button" variant="basic" onClick={handlePickDirectory}>
+              <FolderOpenIcon size={16} weight="bold" />
+            </Button>
           </div>
         </label>
 
@@ -209,22 +210,22 @@ export function BulkImportLocalRepositoryModal({
         </label>
 
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <button
+          <Button
             type="button"
+            variant="basic"
             onClick={handleRunPreview}
             disabled={isScanning || !rootPath.trim()}
-            style={secondaryButtonStyle}
           >
             {isScanning ? 'Scanning…' : 'Scan'}
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
+            variant="basic"
             onClick={handleClearSelection}
             disabled={discoveries.length === 0}
-            style={secondaryButtonStyle}
           >
             Clear
-          </button>
+          </Button>
         </div>
 
         {error ? <p style={{ margin: 0, fontSize: 12, color: '#ef4444' }}>{error}</p> : null}
@@ -284,34 +285,4 @@ const inputStyle: React.CSSProperties = {
   fontSize: 13,
   background: 'var(--app-bg)',
   color: 'var(--app-text)',
-};
-
-const iconButtonStyle: React.CSSProperties = {
-  border: '1px solid var(--app-border)',
-  background: 'var(--app-surface-muted)',
-  color: 'var(--app-text)',
-  borderRadius: 8,
-  padding: '8px 10px',
-  cursor: 'pointer',
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-};
-
-const secondaryButtonStyle: React.CSSProperties = {
-  border: '1px solid var(--app-border)',
-  background: 'transparent',
-  color: 'var(--app-text)',
-  borderRadius: 8,
-  padding: '8px 12px',
-  cursor: 'pointer',
-};
-
-const primaryButtonStyle: React.CSSProperties = {
-  border: 'none',
-  background: 'var(--app-accent)',
-  color: '#ffffff',
-  borderRadius: 8,
-  padding: '8px 12px',
-  cursor: 'pointer',
 };

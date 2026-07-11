@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
-import { FolderOpen } from '@phosphor-icons/react';
+import { FolderOpenIcon } from '@phosphor-icons/react';
+import { Button } from '../../../components/button/Button';
 import { RepositoryModalShell } from './RepositoryModalShell';
 import { useWorkspaceStore } from '../../../stores/workspace-store';
 
@@ -104,12 +105,12 @@ export function CreateRepositoryModal({ isOpen, onClose }: CreateRepositoryModal
       description="Create a local Git workspace footprint for a new repository entry."
       footer={
         <>
-          <button type="button" onClick={onClose} style={secondaryButtonStyle}>
+          <Button type="button" variant="basic" onClick={onClose}>
             Cancel
-          </button>
-          <button type="button" onClick={handleSubmit} disabled={isSubmitting} style={primaryButtonStyle}>
+          </Button>
+          <Button type="button" variant="submit" onClick={handleSubmit} disabled={isSubmitting}>
             {isSubmitting ? 'Creating…' : 'Create Repository'}
-          </button>
+          </Button>
         </>
       }
     >
@@ -135,9 +136,9 @@ export function CreateRepositoryModal({ isOpen, onClose }: CreateRepositoryModal
               placeholder="C:/Users/you/projects"
               style={inputStyle}
             />
-            <button type="button" onClick={handlePickDirectory} style={iconButtonStyle}>
-              <FolderOpen size={16} weight="bold" />
-            </button>
+            <Button type="button" variant="basic" onClick={handlePickDirectory}>
+              <FolderOpenIcon size={16} weight="bold" />
+            </Button>
           </div>
         </label>
 
@@ -196,34 +197,4 @@ const inputStyle: React.CSSProperties = {
   fontSize: 13,
   background: 'var(--app-bg)',
   color: 'var(--app-text)',
-};
-
-const iconButtonStyle: React.CSSProperties = {
-  border: '1px solid var(--app-border)',
-  background: 'var(--app-surface-muted)',
-  color: 'var(--app-text)',
-  borderRadius: 8,
-  padding: '8px 10px',
-  cursor: 'pointer',
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-};
-
-const secondaryButtonStyle: React.CSSProperties = {
-  border: '1px solid var(--app-border)',
-  background: 'transparent',
-  color: 'var(--app-text)',
-  borderRadius: 8,
-  padding: '8px 12px',
-  cursor: 'pointer',
-};
-
-const primaryButtonStyle: React.CSSProperties = {
-  border: 'none',
-  background: 'var(--app-accent)',
-  color: '#ffffff',
-  borderRadius: 8,
-  padding: '8px 12px',
-  cursor: 'pointer',
 };

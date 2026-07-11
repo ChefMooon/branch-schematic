@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { X } from '@phosphor-icons/react';
 import { invoke } from '@tauri-apps/api/core';
 import { RepositoryScopeRow } from './RepositoryScopeRow';
+import { Button } from '../../../components/button/Button';
 
 type WorkspaceScopeRecord = {
   id: string;
@@ -219,26 +220,14 @@ export function CreateViewModal({
               Add a new canvas view with optional favorites and viewport sync.
             </p>
           </div>
-          <button
+          <Button
             type="button"
+            variant="close"
             onClick={onClose}
             aria-label="Close modal"
-            style={{
-              border: 'none',
-              background: 'transparent',
-              color: isDark ? '#d4d4d8' : '#475569',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              padding: 4,
-              width: 28,
-              height: 28,
-              borderRadius: 6,
-            }}
           >
-            <X size={18} weight="bold" />
-          </button>
+            <X size={14} weight="bold" />
+          </Button>
         </div>
 
         <form
@@ -359,13 +348,11 @@ export function CreateViewModal({
                     </div>
                   </div>
                   <div style={{ display: 'flex', gap: 6 }}>
-                    <button
+                    <Button
                       type="button"
+                      variant="basic"
                       onClick={handleSelectAll}
                       style={{
-                        border: `1px solid ${isDark ? '#404040' : '#cbd5e1'}`,
-                        background: isDark ? '#1a1a1d' : '#ffffff',
-                        color: isDark ? '#f5f5f5' : '#0f172a',
                         borderRadius: 6,
                         padding: '4px 8px',
                         cursor: 'pointer',
@@ -373,14 +360,12 @@ export function CreateViewModal({
                       }}
                     >
                       Select all
-                    </button>
-                    <button
+                    </Button>
+                    <Button
                       type="button"
+                      variant="basic"
                       onClick={handleClearAll}
                       style={{
-                        border: `1px solid ${isDark ? '#404040' : '#cbd5e1'}`,
-                        background: isDark ? '#1a1a1d' : '#ffffff',
-                        color: isDark ? '#f5f5f5' : '#0f172a',
                         borderRadius: 6,
                         padding: '4px 8px',
                         cursor: 'pointer',
@@ -388,7 +373,7 @@ export function CreateViewModal({
                       }}
                     >
                       Clear all
-                    </button>
+                    </Button>
                   </div>
                 </div>
 
@@ -426,35 +411,20 @@ export function CreateViewModal({
               background: isDark ? '#0d0d0f' : '#ffffff',
             }}
           >
-            <button
+            <Button
               type="button"
+              variant="basic"
               onClick={onClose}
-              style={{
-                border: `1px solid ${isDark ? '#404040' : '#cbd5e1'}`,
-                background: 'transparent',
-                color: isDark ? '#f5f5f5' : '#0f172a',
-                borderRadius: 8,
-                padding: '8px 12px',
-                cursor: 'pointer',
-              }}
             >
               Cancel
-            </button>
-            <button
+            </Button>
+            <Button
               type="submit"
               disabled={!isNameValid}
-              style={{
-                border: 'none',
-                background: '#4f46e5',
-                color: '#ffffff',
-                borderRadius: 8,
-                padding: '8px 12px',
-                cursor: isNameValid ? 'pointer' : 'not-allowed',
-                opacity: isNameValid ? 1 : 0.65,
-              }}
+              variant="submit"
             >
               Create View
-            </button>
+            </Button>
           </div>
         </form>
       </div>

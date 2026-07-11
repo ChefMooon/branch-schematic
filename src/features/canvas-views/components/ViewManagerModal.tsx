@@ -3,6 +3,7 @@ import { X } from '@phosphor-icons/react';
 import { useCanvasStore } from '../../../stores/canvas-store';
 import { ViewManagerSidebar } from './ViewManagerSidebar';
 import { ViewDetailsConfigurator } from './ViewDetailsConfigurator';
+import { Button } from '../../../components/button/Button';
 
 function sortViews(views: ReturnType<typeof useCanvasStore.getState>['views']) {
   return [...views].sort((left, right) => {
@@ -115,26 +116,14 @@ export function ViewManagerModal({ isDark, isOpen, onClose }: ViewManagerModalPr
               Configure decoupled environments with baseline viewport and scoped visibility.
             </p>
           </div>
-          <button
+          <Button
             onClick={onClose}
+            variant="close"
             aria-label="Close modal"
             title="Close"
-            style={{
-              border: 'none',
-              background: 'transparent',
-              color: isDark ? '#d4d4d8' : '#475569',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              padding: 4,
-              width: 28,
-              height: 28,
-              borderRadius: 6,
-            }}
           >
             <X size={18} weight="bold" />
-          </button>
+          </Button>
         </div>
 
         <div

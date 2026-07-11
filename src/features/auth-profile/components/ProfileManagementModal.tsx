@@ -1,15 +1,16 @@
 import { useEffect, useMemo, useState } from 'react';
 import { 
-  CaretDown, 
-  CaretUp, 
-  CheckCircle, 
-  Heartbeat, 
-  PlusCircle, 
-  Trash, 
+  CaretDownIcon, 
+  CaretUpIcon, 
+  CheckCircleIcon, 
+  HeartbeatIcon, 
+  PlusCircleIcon, 
+  TrashIcon, 
   WarningCircle, 
-  XCircle,
+  XIcon,
   IconContext
 } from '@phosphor-icons/react';
+import { Button } from '../../../components/button/Button';
 import { ConfirmationModal } from '../../../components/Modal/ConfirmationModal';
 import { OAuthConnectButton } from './OAuthConnectButton.tsx';
 import { ProfileListItem } from './ProfileListItem';
@@ -222,9 +223,9 @@ export function ProfileManagementModal({
                   : 'Create a new profile while keeping your current active profile intact.'}
               </div>
             </div>
-            <button type="button" onClick={onClose} style={styles.closeButton}>
-              <XCircle size={18} />
-            </button>
+            <Button type="button" variant="close" onClick={onClose}>
+              <XIcon size={14} weight="bold" />
+            </Button>
           </div>
 
           <div style={styles.content}>
@@ -236,10 +237,10 @@ export function ProfileManagementModal({
                 <div style={styles.sectionActions}>
                   {isWorkspaceCollapsed ? (
                     <div style={styles.workspaceDropdownWrapper}>
-                      <button type="button" onClick={() => setIsProfileMenuOpen((value) => !value)} style={styles.inlineButton}>
+                      <Button type="button" variant="basic" onClick={() => setIsProfileMenuOpen((value) => !value)}>
                         <span>{profile?.display_name ?? 'Select profile'}</span>
-                        <CaretDown size={14} />
-                      </button>
+                        <CaretDownIcon size={14} />
+                      </Button>
                       {isProfileMenuOpen && (
                         <div style={styles.workspaceDropdownMenu}>
                           {profiles.map((entry) => {
@@ -258,7 +259,7 @@ export function ProfileManagementModal({
                                   <div style={styles.workspaceDropdownName}>{entry.display_name}</div>
                                   <div style={styles.workspaceDropdownMeta}>{entry.auth_level.replace('_', ' ')}</div>
                                 </div>
-                                {isSelected ? <CheckCircle size={14} color="var(--accent, #3b82f6)" /> : null}
+                                {isSelected ? <CheckCircleIcon size={14} color="var(--accent, #3b82f6)" /> : null}
                               </button>
                             );
                           })}
@@ -266,12 +267,12 @@ export function ProfileManagementModal({
                       )}
                     </div>
                   ) : null}
-                  <button type="button" onClick={() => setIsWorkspaceCollapsed((value) => !value)} style={styles.collapseButton} title={isWorkspaceCollapsed ? 'Expand profile workspace' : 'Collapse profile workspace'}>
-                    {isWorkspaceCollapsed ? <CaretDown size={14} /> : <CaretUp size={14} />}
-                  </button>
-                  <button type="button" onClick={() => setIsHealthPopoverOpen((value) => !value)} style={styles.healthButton} title="Profile health">
-                    <Heartbeat size={14} />
-                  </button>
+                  <Button type="button" variant="basic" onClick={() => setIsWorkspaceCollapsed((value) => !value)} title={isWorkspaceCollapsed ? 'Expand profile workspace' : 'Collapse profile workspace'}>
+                    {isWorkspaceCollapsed ? <CaretDownIcon size={14} /> : <CaretUpIcon size={14} />}
+                  </Button>
+                  <Button type="button" variant="basic" onClick={() => setIsHealthPopoverOpen((value) => !value)} title="Profile health">
+                    <HeartbeatIcon size={14} />
+                  </Button>
                   {isHealthPopoverOpen && (
                     <div style={styles.healthPopover}>
                       <div style={styles.healthPopoverHeader}>
@@ -308,10 +309,10 @@ export function ProfileManagementModal({
                       )}
                     </div>
                   )}
-                  <button type="button" onClick={() => onSelectProfile(null)} style={styles.inlineButton}>
-                    <PlusCircle size={14} />
+                  <Button type="button" variant="basic" onClick={() => onSelectProfile(null)}>
+                    <PlusCircleIcon size={14} weight="bold" />
                     <span>New</span>
-                  </button>
+                  </Button>
                 </div>
               </div>
               {!isWorkspaceCollapsed ? (
@@ -438,21 +439,21 @@ export function ProfileManagementModal({
 
           <div style={styles.footer}>
             {profile?.id ? (
-              <button type="button" onClick={() => requestDeleteConfirmation(profile)} disabled={isBusy} style={{ ...styles.secondaryButton, color: '#ef4444' }}>
-                <Trash size={16} />
+              <Button type="button" variant="danger" onClick={() => requestDeleteConfirmation(profile)} disabled={isBusy}>
+                <TrashIcon size={16} weight="bold" />
                 <span>Delete</span>
-              </button>
+              </Button>
             ) : (
               <div />
             )}
             <div style={styles.footerActions}>
-              <button type="button" onClick={onClose} disabled={isBusy} style={styles.secondaryButton}>
+              <Button type="button" variant="basic" onClick={onClose} disabled={isBusy}>
                 Cancel
-              </button>
-              <button type="button" onClick={submit} disabled={isBusy || isOAuthMissingToken} style={styles.primaryButton}>
-                <PlusCircle size={16} />
+              </Button>
+              <Button type="button" variant="submit" onClick={submit} disabled={isBusy || isOAuthMissingToken}>
+                <PlusCircleIcon size={16} weight="bold" />
                 <span>{mode === 'edit' ? 'Save profile' : 'Create profile'}</span>
-              </button>
+              </Button>
             </div>
           </div>
         </IconContext.Provider>
@@ -526,21 +527,6 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: '12px',
     color: 'var(--app-text-muted, #64748b)',
   },
-  closeButton: {
-    width: '36px',
-    height: '36px',
-    border: '1px solid var(--app-border)',
-    borderRadius: '999px',
-    backgroundColor: 'transparent',
-    color: 'var(--app-text, #1e293b)',
-    cursor: 'pointer',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
-    boxShadow: 'none',
-    outline: 'none',
-  },
   content: {
     display: 'grid',
     gap: '12px',
@@ -568,19 +554,6 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: 'center',
     gap: '8px',
   },
-  collapseButton: {
-    width: '30px',
-    height: '30px',
-    borderRadius: '999px',
-    border: '1px solid var(--app-border)',
-    backgroundColor: 'transparent',
-    color: 'var(--app-text)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    cursor: 'pointer',
-    outline: 'none',
-  },
   sectionActions: {
     position: 'relative',
     display: 'flex',
@@ -590,44 +563,6 @@ const styles: Record<string, React.CSSProperties> = {
   sectionTitle: {
     fontWeight: 700,
     fontSize: '13px',
-  },
-  inlineButton: {
-    border: '1px solid var(--app-border)',
-    borderRadius: '999px',
-    padding: '6px 10px',
-    backgroundColor: 'transparent',
-    color: 'inherit',
-    display: 'flex',
-    alignItems: 'center',
-    gap: '6px',
-    cursor: 'pointer',
-    outline: 'none',
-  },
-  iconButton: {
-    border: '1px solid var(--app-border)',
-    borderRadius: '999px',
-    width: '30px',
-    height: '30px',
-    backgroundColor: 'transparent',
-    color: 'inherit',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    cursor: 'pointer',
-    outline: 'none',
-  },
-  healthButton: {
-    border: '1px solid var(--app-border)',
-    borderRadius: '999px',
-    width: '30px',
-    height: '30px',
-    backgroundColor: 'transparent',
-    color: 'var(--app-text)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    cursor: 'pointer',
-    outline: 'none',
   },
   healthPopover: {
     position: 'absolute',
@@ -805,14 +740,6 @@ const styles: Record<string, React.CSSProperties> = {
     gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
     gap: '10px',
   },
-  healthCard: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-    padding: '8px 10px',
-    borderRadius: '10px',
-    backgroundColor: 'rgba(59, 130, 246, 0.12)',
-  },
   footer: {
     display: 'flex',
     alignItems: 'center',
@@ -827,27 +754,5 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     alignItems: 'center',
     gap: '8px',
-  },
-  secondaryButton: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '6px',
-    borderRadius: '10px',
-    border: '1px solid var(--app-border)',
-    backgroundColor: 'transparent',
-    color: 'inherit',
-    padding: '8px 12px',
-    cursor: 'pointer',
-  },
-  primaryButton: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '6px',
-    borderRadius: '10px',
-    border: 'none',
-    backgroundColor: 'var(--accent, #3b82f6)',
-    color: '#fff',
-    padding: '8px 12px',
-    cursor: 'pointer',
   },
 };

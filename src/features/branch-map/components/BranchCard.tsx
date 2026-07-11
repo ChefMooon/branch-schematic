@@ -3,6 +3,7 @@ import { Handle, Position, NodeProps, Node, useViewport } from '@xyflow/react';
 import { useCanvasStore } from '../../../stores/canvas-store';
 import { CommitTimeline } from './CommitTimeline';
 import type { RepoTag } from '../../../types/git';
+import { Button } from '../../../components/button/Button';
 
 export type BranchCardNode = Node<{
   title: string;
@@ -175,12 +176,14 @@ export function BranchCard({ data }: NodeProps<BranchCardNode>) {
           <span style={{ fontSize: '11px', fontWeight: 500, padding: '2px 6px', borderRadius: '4px', ...badgeStyles[data.status || 'Draft'] }}>
             {data.status}
           </span>
-          <button 
+          <Button 
+            type="button"
+            variant="basic"
             onClick={() => setMenuOpen(!menuOpen)}
-            style={{ background: 'none', border: 'none', color: '#71717a', cursor: 'pointer', fontSize: '14px', padding: '4px 10px', marginBottom: '2px' }}
+            style={{ fontSize: '14px', padding: '4px 10px', marginBottom: '2px' }}
           >
             ⋮
-          </button>
+          </Button>
         </div>
       </div>
 

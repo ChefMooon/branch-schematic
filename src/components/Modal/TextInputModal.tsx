@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { Button } from '../button/Button';
+import { XIcon } from '@phosphor-icons/react';
 
 type TextInputModalProps = {
   isOpen: boolean;
@@ -66,9 +68,9 @@ export function TextInputModal({
       >
         <div className="app-modal-header">
           <h3 id="text-input-modal-title">{title}</h3>
-          <button type="button" className="app-modal-close" onClick={onCancel}>
-            ×
-          </button>
+          <Button type="button" variant="close" onClick={onCancel} aria-label="Close modal">
+            <XIcon size={16} weight="bold" />
+          </Button>
         </div>
 
         <div className="app-modal-body">
@@ -94,12 +96,12 @@ export function TextInputModal({
         </div>
 
         <div className="app-modal-footer">
-          <button type="button" className="btn-secondary" onClick={onCancel} disabled={isBusy}>
+          <Button type="button" variant="basic" onClick={onCancel} disabled={isBusy}>
             {cancelLabel}
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
-            className="btn-primary"
+            variant="submit"
             onClick={() => {
               if (!trimmedDraft) return;
               void onConfirm(trimmedDraft);
@@ -107,7 +109,7 @@ export function TextInputModal({
             disabled={isBusy || !trimmedDraft}
           >
             {confirmLabel}
-          </button>
+          </Button>
         </div>
       </div>
     </div>

@@ -79,8 +79,8 @@ export function ViewDetailsConfigurator({ isDark, view }: ViewDetailsConfigurato
                   fontSize: 12,
                   fontWeight: 700,
                   cursor: 'pointer',
-                  background: selected ? '#2563eb' : (isDark ? 'rgba(148, 163, 184, 0.12)' : 'rgba(37, 99, 235, 0.1)'),
-                  color: selected ? '#fff' : (isDark ? '#d4d4d8' : '#334155'),
+                  background: selected ? 'var(--app-accent)' : 'var(--app-surface-muted)',
+                  color: selected ? 'var(--app-surface)' : 'var(--app-text)',
                 }}
               >
                 {tab.label}
