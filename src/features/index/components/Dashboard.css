@@ -1282,13 +1282,13 @@
 .repo-card-selection-control input:checked::after {
   content: '';
   position: absolute;
-  left: 2px;
-  top: 0;
+  top: 40%;
+  left: 47%;
   width: 4px;
   height: 8px;
   border: solid var(--app-on-accent);
   border-width: 0 2px 2px 0;
-  transform: rotate(45deg);
+  transform: translate(-50%, -50%) rotate(45deg);
 }
 
 .repo-card-selection-control input:focus-visible {
