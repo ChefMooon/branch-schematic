@@ -27,6 +27,45 @@ export interface CanvasViewRecord {
   baseline_pan_y?: number;
 }
 
+type ViewportState = {
+  zoom: number;
+  x: number;
+  y: number;
+};
+
+export function sortCanvasViews(views: CanvasViewRecord[]): CanvasViewRecord[] {
+  return [...views].sort((left, right) => {
+    const favoriteDelta = (right.is_favorite ?? 0) - (left.is_favorite ?? 0);
+    if (favoriteDelta !== 0) return favoriteDelta;
+
+    const displayOrderDelta = (left.display_order ?? 0) - (right.display_order ?? 0);
+    if (displayOrderDelta !== 0) return displayOrderDelta;
+
+    return left.name.localeCompare(right.name);
+  });
+}
+
+function resolveInitialViewport(view: CanvasViewRecord): ViewportState {
+  const hasBaseline =
+    view.baseline_zoom !== undefined &&
+    view.baseline_pan_x !== undefined &&
+    view.baseline_pan_y !== undefined;
+
+  if (hasBaseline) {
+    return {
+      zoom: view.baseline_zoom as number,
+      x: view.baseline_pan_x as number,
+      y: view.baseline_pan_y as number,
+    };
+  }
+
+  return {
+    zoom: view.zoom_level ?? 1,
+    x: view.pan_x ?? 0,
+    y: view.pan_y ?? 0,
+  };
+}
+
 export interface WorkspaceNodeRecord {
   repo_path_id?: string;
   path_id?: string;
@@ -115,6 +154,9 @@ function parseManualEdgeNodePair(edgeId: string): [string, string] | null {
 interface CanvasState {
   views: CanvasViewRecord[];
   activeViewId: string | null;
+  isViewHydrating: boolean;
+  sessionViewportByViewId: Record<string, ViewportState>;
+  openedViewIds: Record<string, boolean>;
   nodes: BranchCardNode[];
   edges: Edge[];
   activeTagFilters: string[];
@@ -137,6 +179,7 @@ interface CanvasState {
   toggleBranchVisibility: (viewId: string, branchId: string, visible: boolean) => Promise<CanvasViewScopeState | null>;
   snapshotBaselineViewport: (viewId: string, zoom: number, x: number, y: number) => Promise<void>;
   saveCardState: (viewId: string, cardStateJson: string) => Promise<void>;
+  initializeBranchMapSession: () => Promise<void>;
   hydrateViewsList: () => Promise<void>;
   hydrateWorkspaceNodes: () => Promise<void>;
   updateNodeConfig: (repoPathId: string, viewMode: 'COMPACT' | 'EXPANDED', density: number, hex: string, explodeBranches: boolean) => Promise<void>;
@@ -147,6 +190,9 @@ interface CanvasState {
 export const useCanvasStore = create<CanvasState>((set, get) => ({
   views: [],
   activeViewId: null,
+  isViewHydrating: false,
+  sessionViewportByViewId: {},
+  openedViewIds: {},
   nodes: [],
   edges: [],
   activeTagFilters: [],
@@ -268,41 +314,104 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
         baseline_pan_y: v.baseline_pan_y ?? undefined,
       }));
 
-      set({ views: mappedViews });
-      if (mappedViews.length > 0 && !get().activeViewId) {
-        set({ activeViewId: mappedViews[0].id });
-      }
+      const orderedViews = sortCanvasViews(mappedViews);
+      const sessionViewportByViewId = get().sessionViewportByViewId;
+      const openedViewIds = get().openedViewIds;
+      const validViewIds = new Set(orderedViews.map((view) => view.id));
+
+      const nextSessionViewportByViewId = Object.fromEntries(
+        Object.entries(sessionViewportByViewId).filter(([viewId]) => validViewIds.has(viewId)),
+      );
+      const nextOpenedViewIds = Object.fromEntries(
+        Object.entries(openedViewIds).filter(([viewId]) => validViewIds.has(viewId)),
+      );
+
+      const currentActiveViewId = get().activeViewId;
+      const nextActiveViewId = currentActiveViewId && validViewIds.has(currentActiveViewId)
+        ? currentActiveViewId
+        : null;
+
+      set({
+        views: orderedViews,
+        sessionViewportByViewId: nextSessionViewportByViewId,
+        openedViewIds: nextOpenedViewIds,
+        activeViewId: nextActiveViewId,
+      });
     } catch (error) {
       console.error('Failed to fetch views collection:', error);
     }
   },
 
-  setActiveView: async (viewId) => {
-    const targetView = get().views.find((view) => view.id === viewId);
-    const hasBaseline =
-      targetView?.baseline_zoom !== undefined &&
-      targetView?.baseline_pan_x !== undefined &&
-      targetView?.baseline_pan_y !== undefined;
-
-    if (targetView && hasBaseline) {
-      set({
-        activeViewId: viewId,
-        views: get().views.map((view) =>
-          view.id === viewId
-            ? {
-                ...view,
-                zoom_level: targetView.baseline_zoom as number,
-                pan_x: targetView.baseline_pan_x as number,
-                pan_y: targetView.baseline_pan_y as number,
-              }
-            : view,
-        ),
-      });
-    } else {
-      set({ activeViewId: viewId });
+  initializeBranchMapSession: async () => {
+    const views = get().views;
+    if (views.length === 0) {
+      set({ activeViewId: null, nodes: [], edges: [], isViewHydrating: false });
+      return;
     }
 
-    await get().hydrateWorkspaceNodes();
+    const activeViewId = get().activeViewId;
+    const viewToActivate =
+      (activeViewId && views.some((view) => view.id === activeViewId)
+        ? activeViewId
+        : views[0].id);
+
+    await get().setActiveView(viewToActivate);
+  },
+
+  setActiveView: async (viewId) => {
+    const targetView = get().views.find((view) => view.id === viewId);
+    if (!targetView) return;
+
+    const isSameView = get().activeViewId === viewId;
+    if (isSameView && get().nodes.length > 0) {
+      return;
+    }
+
+    const isSwitchingViews = get().activeViewId !== null && !isSameView;
+
+    const sessionViewport = get().sessionViewportByViewId[viewId];
+    const hasOpenedView = Boolean(get().openedViewIds[viewId]);
+
+    const nextViewport = sessionViewport
+      ? sessionViewport
+      : hasOpenedView
+        ? {
+            zoom: targetView.zoom_level ?? 1,
+            x: targetView.pan_x ?? 0,
+            y: targetView.pan_y ?? 0,
+          }
+        : resolveInitialViewport(targetView);
+
+    set({
+      activeViewId: viewId,
+      isViewHydrating: true,
+      nodes: isSwitchingViews ? [] : get().nodes,
+      edges: isSwitchingViews ? [] : get().edges,
+      sessionViewportByViewId: {
+        ...get().sessionViewportByViewId,
+        [viewId]: nextViewport,
+      },
+      openedViewIds: {
+        ...get().openedViewIds,
+        [viewId]: true,
+      },
+      views: get().views.map((view) =>
+        view.id === viewId
+          ? {
+              ...view,
+              zoom_level: nextViewport.zoom,
+              pan_x: nextViewport.x,
+              pan_y: nextViewport.y,
+            }
+          : view,
+      ),
+    });
+
+    try {
+      await get().hydrateWorkspaceNodes();
+    } finally {
+      set({ isViewHydrating: false });
+    }
   },
 
   createNewView: async ({ name, isFavorite = false, viewportDefaults, scope }) => {
@@ -763,6 +872,24 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   saveViewport: async (zoom, x, y) => {
     const viewId = get().activeViewId;
     if (!viewId) return;
+
+    set({
+      sessionViewportByViewId: {
+        ...get().sessionViewportByViewId,
+        [viewId]: { zoom, x, y },
+      },
+      views: get().views.map((view) =>
+        view.id === viewId
+          ? {
+              ...view,
+              zoom_level: zoom,
+              pan_x: x,
+              pan_y: y,
+            }
+          : view,
+      ),
+    });
+
     try {
       await invoke('save_viewport_state', { viewId, zoomLevel: zoom, panX: x, panY: y });
     } catch (error) {

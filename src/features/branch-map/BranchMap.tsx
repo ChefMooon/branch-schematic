@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import {
   ReactFlow,
@@ -50,6 +50,7 @@ function MapWorkspace() {
   const views = useCanvasStore((state) => state.views);
   const activeViewId = useCanvasStore((state) => state.activeViewId);
   const hydrateViewsList = useCanvasStore((state) => state.hydrateViewsList);
+  const initializeBranchMapSession = useCanvasStore((state) => state.initializeBranchMapSession);
   const hydrateWorkspaceNodes = useCanvasStore((state) => state.hydrateWorkspaceNodes);
 
   const nodes = useCanvasStore((state) => state.nodes);
@@ -59,6 +60,12 @@ function MapWorkspace() {
   const onConnect = useCanvasStore((state) => state.onConnect);
   const onEdgeClick = useCanvasStore((state) => state.onEdgeClick);
   const saveViewport = useCanvasStore((state) => state.saveViewport);
+  const isViewHydrating = useCanvasStore((state) => state.isViewHydrating);
+  const activeViewObj = useMemo(
+    () => views.find((view) => view.id === activeViewId) ?? null,
+    [views, activeViewId],
+  );
+  const isCanvasReady = views.length === 0 || Boolean(activeViewObj);
 
   // 1. Initial workspace registration and views initialization
   useEffect(() => {
@@ -79,10 +86,11 @@ function MapWorkspace() {
         console.error('Failed to look up active tracked paths:', err);
       } finally {
         await hydrateViewsList();
+        await initializeBranchMapSession();
       }
     }
     initializeAndHydrate();
-  }, [hydrateViewsList]);
+  }, [hydrateViewsList, initializeBranchMapSession]);
 
   // 2. Fetch workspace nodes cleanly whenever the active view channel shifts
   useEffect(() => {
@@ -107,18 +115,14 @@ function MapWorkspace() {
   useEffect(() => {
     if (!activeViewId) return;
 
-    const activeViewObj = views.find((view) => view.id === activeViewId);
     if (!activeViewObj) return;
 
-    setViewport(
-      {
-        zoom: activeViewObj.zoom_level || 1.0,
-        x: activeViewObj.pan_x || 0.0,
-        y: activeViewObj.pan_y || 0.0,
-      },
-      { duration: 300 },
-    );
-  }, [activeViewId, setViewport]);
+    setViewport({
+      zoom: activeViewObj.zoom_level || 1.0,
+      x: activeViewObj.pan_x || 0.0,
+      y: activeViewObj.pan_y || 0.0,
+    });
+  }, [activeViewId, activeViewObj, setViewport]);
 
   const handleNodeDragStop: OnNodeDrag<BranchCardNode> = async (_event, node) => {
     if (!activeViewId) return;
@@ -159,34 +163,85 @@ function MapWorkspace() {
         onModalOpenChange={setIsViewManagerOpen}
       />
 
-      <ReactFlow
-        nodes={nodes}
-        edges={edges}
-        onNodesChange={onNodesChange}
-        onEdgesChange={onEdgesChange}
-        onConnect={onConnect}
-        onEdgeClick={onEdgeClick}
-        onNodeDragStop={handleNodeDragStop}
-        onMoveEnd={(_event, viewport) => {
-          if (activeViewId) {
-            saveViewport(viewport.zoom, viewport.x, viewport.y);
-          }
-        }}
-        nodeTypes={nodeTypes}
-        proOptions={{ hideAttribution: true }}
-        minZoom={0.05}
-        maxZoom={3}
-        edgesFocusable={true}
-        nodesDraggable={true} // Explicitly enables global viewport dragging interactivity
-        nodesConnectable={true}
-      >
-        <Background 
-          variant={BackgroundVariant.Dots} 
-          gap={24} 
-          size={1.5} 
-          color={isDark ? '#404040' : '#cbd5e1'} 
-        />
-      </ReactFlow>
+      {isCanvasReady && (
+        <>
+          <ReactFlow
+            defaultViewport={
+              activeViewObj
+                ? {
+                    zoom: activeViewObj.zoom_level || 1.0,
+                    x: activeViewObj.pan_x || 0.0,
+                    y: activeViewObj.pan_y || 0.0,
+                  }
+                : {
+                    zoom: 1.0,
+                    x: 0.0,
+                    y: 0.0,
+                  }
+            }
+            nodes={nodes}
+            edges={edges}
+            onNodesChange={onNodesChange}
+            onEdgesChange={onEdgesChange}
+            onConnect={onConnect}
+            onEdgeClick={onEdgeClick}
+            onNodeDragStop={handleNodeDragStop}
+            onMoveEnd={(_event, viewport) => {
+              if (activeViewId) {
+                saveViewport(viewport.zoom, viewport.x, viewport.y);
+              }
+            }}
+            nodeTypes={nodeTypes}
+            proOptions={{ hideAttribution: true }}
+            minZoom={0.05}
+            maxZoom={3}
+            edgesFocusable={true}
+            nodesDraggable={true} // Explicitly enables global viewport dragging interactivity
+            nodesConnectable={true}
+          >
+            <Background 
+              variant={BackgroundVariant.Dots} 
+              gap={24} 
+              size={1.5} 
+              color={isDark ? '#404040' : '#cbd5e1'} 
+            />
+          </ReactFlow>
+
+          {isViewHydrating && (
+            <div
+              aria-hidden="true"
+              style={{
+                position: 'absolute',
+                inset: 0,
+                zIndex: 15,
+                pointerEvents: 'none',
+                background: isDark ? 'rgba(10, 10, 10, 0.42)' : 'rgba(248, 250, 252, 0.5)',
+                backdropFilter: 'blur(1px)',
+                overflow: 'hidden',
+              }}
+            >
+              <div
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  background: isDark
+                    ? 'linear-gradient(120deg, transparent 25%, rgba(255, 255, 255, 0.04) 50%, transparent 75%)'
+                    : 'linear-gradient(120deg, transparent 25%, rgba(15, 23, 42, 0.04) 50%, transparent 75%)',
+                  backgroundSize: '220% 100%',
+                  animation: 'branchMapHydrateShimmer 900ms ease-in-out infinite',
+                }}
+              />
+
+              <style>
+                {`@keyframes branchMapHydrateShimmer {
+                  0% { background-position: 200% 0; }
+                  100% { background-position: -20% 0; }
+                }`}
+              </style>
+            </div>
+          )}
+        </>
+      )}
 
       <MapToolbar isDark={isDark} hidden={isViewManagerOpen} />
     </div>

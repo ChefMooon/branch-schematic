@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useViewport } from '@xyflow/react';
-import { useCanvasStore } from '../../../stores/canvas-store';
+import { sortCanvasViews, useCanvasStore } from '../../../stores/canvas-store';
 import { CreateViewModal } from '../../canvas-views/components/CreateViewModal';
 import { ViewManagerModal } from '../../canvas-views/components/ViewManagerModal';
 import { ViewActionsDropdown } from './ViewActionsDropdown';
@@ -45,15 +45,7 @@ export function ViewSelectorTabs({
   const createNewView = useCanvasStore((state) => state.createNewView);
 
   const orderedViews = useMemo(() => {
-    return [...views].sort((left, right) => {
-      const favoriteDelta = (right.is_favorite ?? 0) - (left.is_favorite ?? 0);
-      if (favoriteDelta !== 0) return favoriteDelta;
-
-      const displayOrderDelta = (left.display_order ?? 0) - (right.display_order ?? 0);
-      if (displayOrderDelta !== 0) return displayOrderDelta;
-
-      return left.name.localeCompare(right.name);
-    });
+    return sortCanvasViews(views);
   }, [views]);
 
   const activeView = orderedViews.find((view) => view.id === activeViewId) ?? null;
