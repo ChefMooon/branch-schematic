@@ -1,6 +1,6 @@
 # Database Schema Specification
 
-*Auto-generated on 2026-07-08 from `db.rs` migrations.*
+*Auto-generated on 2026-07-12 from `db.rs` migrations.*
 
 > 🔄 **To Regenerate This File:** If you have modified your SQLite migrations or tables, run:
 > ```bash
@@ -35,6 +35,7 @@ erDiagram
         TEXT default_branch_name
         TEXT theme_color_hex
         TEXT icon_name
+        TEXT github_owner_login
         INTEGER is_active
         DATETIME created_at
         DATETIME archived_at

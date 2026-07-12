@@ -109,8 +109,12 @@ ${Array.from(mermaidRelationships).join('\n')}
     
     // Write out the fresh file
     const sanitizedContent = markdownContent.replace(/\u00A0/g, ' ');
-    fs.writeFileSync(OUTPUT_FILE, sanitizedContent, 'utf8');
-    console.log(`Success! Mermaid Markdown documentation generated at: ${OUTPUT_FILE}`);
+    try {
+        fs.writeFileSync(OUTPUT_FILE, sanitizedContent, 'utf8');
+        console.log(`\x1b[32m✔ Successfully generated Mermaid Markdown documentation at: ${OUTPUT_FILE}\x1b[0m`);
+    } catch (err) {
+        console.error(`\x1b[31m✖ Error writing to ${OUTPUT_FILE}:\x1b[0m`, err);
+    }
 }
 
 parseMigrations();
