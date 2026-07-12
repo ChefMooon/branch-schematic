@@ -131,7 +131,14 @@ pub struct NotificationRow {
     pub route_params_json: Option<String>,
 }
 
+#[cfg(debug_assertions)]
+pub const DB_NAME: &str = "branch-schematic-dev.db";
+#[cfg(not(debug_assertions))]
 pub const DB_NAME: &str = "branch-schematic.db";
+
+#[cfg(debug_assertions)]
+pub const DB_URL: &str = "sqlite:branch-schematic-dev.db";
+#[cfg(not(debug_assertions))]
 pub const DB_URL: &str = "sqlite:branch-schematic.db";
 pub const DEFAULT_CANVAS_VIEW_ID: &str = "default-workspace-view";
 

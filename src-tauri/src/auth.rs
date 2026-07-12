@@ -364,7 +364,7 @@ fn resolve_github_user_info_url(provider_url: Option<&str>) -> String {
 async fn fetch_github_user_profile(access_token: &str, provider_url: Option<&str>) -> Result<GitHubUserProfilePayload, String> {
     let user_url = resolve_github_user_info_url(provider_url);
     let response = reqwest::Client::new()
-        .get(user_url)
+        .get(&user_url)
         .header("Authorization", format!("Bearer {access_token}"))
         .header("Accept", "application/vnd.github+json")
         .header("User-Agent", "branch-schematic")
@@ -372,8 +372,9 @@ async fn fetch_github_user_profile(access_token: &str, provider_url: Option<&str
         .await
         .map_err(|error| format!("Unable to fetch GitHub user profile: {error}"))?;
 
-    if !response.status().is_success() {
-        return Err(format!("Unable to read GitHub user profile: {}", response.status()));
+    let status = response.status();
+    if !status.is_success() {
+        return Err(format!("Unable to read GitHub user profile: {status}"));
     }
 
     let body = response.text().await.map_err(|error| error.to_string())?;
@@ -389,7 +390,6 @@ async fn exchange_code_with_provider(payload: &OAuthExchangePayload) -> Result<S
     let provider_url = resolve_oauth_token_url(payload.provider_url.as_deref(), None);
     let client_id = resolve_oauth_client_id(payload.client_id.as_deref());
     let client_secret = resolve_oauth_client_secret(payload.client_secret.as_deref());
-
     let mut params = vec![
         ("code", normalized_code.to_string()),
         ("client_id", client_id),

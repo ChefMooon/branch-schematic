@@ -29,6 +29,30 @@ fn sqlite_connect_options(path: &std::path::Path) -> Result<SqliteConnectOptions
         .create_if_missing(true))
 }
 
+const APP_DATA_DIR_NAME: &str = "com.justi.branch-schematic";
+
+#[cfg(debug_assertions)]
+const WINDOW_STATE_FILE: &str = ".window-state-dev.json";
+
+#[cfg(not(debug_assertions))]
+const WINDOW_STATE_FILE: &str = ".window-state.json";
+
+fn resolve_app_data_directory() -> std::path::PathBuf {
+    std::env::var("APPDATA")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|_| std::env::current_dir().unwrap_or_default())
+        .join(APP_DATA_DIR_NAME)
+}
+
+fn resolve_database_path() -> std::path::PathBuf {
+    resolve_app_data_directory().join(db::DB_NAME)
+}
+
+#[tauri::command]
+fn get_database_path() -> Result<String, String> {
+    Ok(resolve_database_path().to_string_lossy().into_owned())
+}
+
 // Shared Tauri State container for our background SQLx Pool
 pub struct DbState(pub SqlitePool);
 
@@ -370,23 +394,16 @@ async fn archive_all_notifications(state: tauri::State<'_, DbState>) -> Result<(
         .map_err(|error| error.to_string())
 }
 
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Generate context cleanly
     let context = tauri::generate_context!();
 
     // Resolve the app data directory used by Tauri and ensure the migration plugin
     // and the runtime SQLx pool target the exact same SQLite file.
-    let app_dir_name = if cfg!(debug_assertions) {
-        "branch-schematic-dev"
-    } else {
-        "branch-schematic"
-    };
-    let app_dir = std::env::var("APPDATA")
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(|_| std::env::current_dir().unwrap_or_default())
-        .join(app_dir_name);
+    let app_dir = resolve_app_data_directory();
     let _ = std::fs::create_dir_all(&app_dir);
-    let target_db_path = app_dir.join(db::DB_NAME);
+    let target_db_path = resolve_database_path();
     let _ = ensure_sqlite_db_file(&target_db_path);
     let target_db_url = format!("sqlite:{}", target_db_path.to_string_lossy());
     let migration_db_url = target_db_url.clone();
@@ -451,6 +468,7 @@ pub fn run() {
         })
         .plugin(
             tauri_plugin_window_state::Builder::new()
+                .with_filename(WINDOW_STATE_FILE)
                 .with_state_flags(tauri_plugin_window_state::StateFlags::empty())
                 .skip_initial_state("main")
                 .build(),
@@ -471,6 +489,7 @@ pub fn run() {
         .plugin(tauri_plugin_keyring::init())
         .invoke_handler(tauri::generate_handler![
             greet,
+            get_database_path,
             watch_project_directory,
             get_active_tracked_paths,
             get_canvas_views,

@@ -1337,28 +1337,12 @@ const inputStyle: React.CSSProperties = {
 	color: 'var(--app-text)',
 };
 
-const baseInteractiveStyle: React.CSSProperties = {
-	borderRadius: 8,
-	transition: 'background-color 160ms ease, border-color 160ms ease, box-shadow 160ms ease, opacity 160ms ease',
-};
-
 const fieldLabelStyle: React.CSSProperties = {
 	display: 'grid',
 	gap: 6,
 	fontSize: 12,
 	color: 'var(--app-text)',
 	fontWeight: 600,
-};
-
-const tabButtonStyle: React.CSSProperties = {
-	padding: '7px 10px',
-	borderRadius: 8,
-	fontSize: 12,
-	cursor: 'pointer',
-};
-
-const activeTabButtonStyle: React.CSSProperties = {
-	...tabButtonStyle,
 };
 
 const tabBarStickyStyle: React.CSSProperties = {

@@ -1,8 +1,7 @@
 import Database from '@tauri-apps/plugin-sql';
-import { appDataDir, join } from '@tauri-apps/api/path';
+import { invoke } from '@tauri-apps/api/core';
 
 export async function openAppDatabase() {
-  const appData = await appDataDir();
-  const dbPath = await join(appData, 'branch-schematic.db');
+  const dbPath = await invoke<string>('get_database_path');
   return Database.load(`sqlite:${dbPath}`);
 }

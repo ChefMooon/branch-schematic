@@ -72,7 +72,7 @@ export function ConfirmationModal({
           </Button>
           <Button
             type="button"
-            variant="submit"
+            variant={variant === 'danger' ? 'danger' : 'submit'}
             onClick={onConfirm}
             disabled={isBusy}
           >

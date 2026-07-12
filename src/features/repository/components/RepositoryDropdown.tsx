@@ -144,19 +144,3 @@ export function RepositoryDropdown({
     </div>
   );
 }
-
-const menuItemStyle: React.CSSProperties = {
-  border: 'none',
-  background: 'transparent',
-  color: 'var(--app-text)',
-  padding: '8px 10px',
-  borderRadius: 8,
-  display: 'flex',
-  alignItems: 'center',
-  gap: 8,
-  cursor: 'pointer',
-  textAlign: 'left',
-  fontSize: 13,
-  fontWeight: 600,
-  transition: 'background-color 120ms ease',
-};
