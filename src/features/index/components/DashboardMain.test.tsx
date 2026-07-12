@@ -21,9 +21,13 @@ vi.mock('./RepositoryCard', () => ({
   RepositoryCard: () => <div>repo</div>,
 }));
 
-vi.mock('./WorkspaceQuickFilters', () => ({
-  WorkspaceQuickFilters: () => null,
-}));
+vi.mock('./WorkspaceQuickFilters', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./WorkspaceQuickFilters')>();
+  return {
+    ...actual,
+    WorkspaceQuickFilters: () => null,
+  };
+});
 
 vi.mock('./BulkActionToolbar', () => ({
   BulkActionToolbar: () => null,
