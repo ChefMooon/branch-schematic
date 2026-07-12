@@ -376,10 +376,15 @@ pub fn run() {
 
     // Resolve the app data directory used by Tauri and ensure the migration plugin
     // and the runtime SQLx pool target the exact same SQLite file.
+    let app_dir_name = if cfg!(debug_assertions) {
+        "branch-schematic-dev"
+    } else {
+        "branch-schematic"
+    };
     let app_dir = std::env::var("APPDATA")
         .map(std::path::PathBuf::from)
         .unwrap_or_else(|_| std::env::current_dir().unwrap_or_default())
-        .join("com.justi.branch-schematic");
+        .join(app_dir_name);
     let _ = std::fs::create_dir_all(&app_dir);
     let target_db_path = app_dir.join(db::DB_NAME);
     let _ = ensure_sqlite_db_file(&target_db_path);
