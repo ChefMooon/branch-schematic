@@ -1,0 +1,32 @@
+:root {
+  /* Font Override */
+  --vp-font-family-base: Inter, Avenir, Helvetica, Arial, sans-serif;
+
+  /* Brand / Accent Colors (Applies to both Light and Dark) */
+  --vp-c-brand-1: #396cd8; /* Maps to --app-accent */
+  --vp-c-brand-2: #467ee0; /* Maps to --app-accent-strong */
+  --vp-c-brand-3: #224fbf;
+  
+  /* Buttons */
+  --vp-button-brand-bg: var(--vp-c-brand-1);
+  --vp-button-brand-hover-bg: var(--vp-c-brand-2);
+  --vp-button-brand-text: #ffffff; /* Maps to --app-on-accent */
+
+  /* Light Theme Surface & Text */
+  --vp-c-bg: #f6f6f6;          /* Maps to --app-bg */
+  --vp-c-bg-alt: #ffffff;      /* Maps to --app-surface */
+  --vp-c-bg-soft: #e6e6e6;     /* Maps to --app-surface-muted */
+  --vp-c-text-1: #0f0f0f;      /* Maps to --app-text */
+  --vp-c-text-2: #777;         /* Maps to --app-muted */
+  --vp-c-divider: #e8e8e8;     /* Maps to --app-border */
+}
+
+.dark {
+  /* Dark Theme Surface & Text */
+  --vp-c-bg: #1f1f1f;          /* Maps to --app-bg (Dark) */
+  --vp-c-bg-alt: #2a2a2a;      /* Maps to --app-surface (Dark) */
+  --vp-c-bg-soft: #3a3a3a;     /* Maps to --app-surface-muted (Dark) */
+  --vp-c-text-1: #f6f6f6;      /* Maps to --app-text (Dark) */
+  --vp-c-text-2: #b0b0b0;      /* Maps to --app-muted (Dark) */
+  --vp-c-divider: #444444;     /* Maps to --app-border (Dark) */
+}

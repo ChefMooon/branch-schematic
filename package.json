@@ -38,6 +38,7 @@
     "jsdom": "^26.1.0",
     "typescript": "~5.8.3",
     "vite": "^7.0.4",
+    "vitepress": "^1.6.4",
     "vitest": "^2.1.4"
   }
 }
