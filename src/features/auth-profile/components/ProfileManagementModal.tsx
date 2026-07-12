@@ -15,6 +15,7 @@ import { ConfirmationModal } from '../../../components/Modal/ConfirmationModal';
 import { OAuthConnectButton } from './OAuthConnectButton.tsx';
 import { ProfileListItem } from './ProfileListItem';
 import { useProfileStore } from '../stores/profileStore';
+import { CollapsiblePanel } from '../../../components/collapsible-panel/CollapsiblePanel';
 import type { AuthLevel, TokenHealthStatus, UserProfile } from '../types';
 
 interface ProfileManagementModalProps {
@@ -390,51 +391,50 @@ export function ProfileManagementModal({
               </div>
             </section>
 
-            <section style={styles.panel}>
-              <div style={styles.sectionTitle}>Connection & automation</div>
+            <CollapsiblePanel title="Enterprise Connection & Automation" defaultExpanded={false}>
+            <label style={styles.field}>
+              <span style={styles.label}>Enterprise API base URL</span>
+              <input
+                value={draft.api_base_url ?? ''}
+                onChange={(event) => setDraft((current) => ({ ...current, api_base_url: event.target.value }))}
+                style={styles.input}
+              />
+            </label>
+            <div style={styles.row}>
               <label style={styles.field}>
-                <span style={styles.label}>Enterprise API base URL</span>
+                <span style={styles.label}>Commit name</span>
                 <input
-                  value={draft.api_base_url ?? ''}
-                  onChange={(event) => setDraft((current) => ({ ...current, api_base_url: event.target.value }))}
+                  value={draft.commit_name ?? ''}
+                  onChange={(event) => setDraft((current) => ({ ...current, commit_name: event.target.value }))}
                   style={styles.input}
                 />
               </label>
-              <div style={styles.row}>
-                <label style={styles.field}>
-                  <span style={styles.label}>Commit name</span>
-                  <input
-                    value={draft.commit_name ?? ''}
-                    onChange={(event) => setDraft((current) => ({ ...current, commit_name: event.target.value }))}
-                    style={styles.input}
-                  />
-                </label>
-                <label style={styles.field}>
-                  <span style={styles.label}>Commit email</span>
-                  <input
-                    value={draft.commit_email ?? ''}
-                    onChange={(event) => setDraft((current) => ({ ...current, commit_email: event.target.value }))}
-                    style={styles.input}
-                  />
-                </label>
-              </div>
               <label style={styles.field}>
-                <span style={styles.label}>Repository scope</span>
-                <textarea
-                  value={getScopeText(draft.repository_scope)}
-                  onChange={(event) => setDraft((current) => ({ ...current, repository_scope: parseScopeText(event.target.value) }))}
-                  style={{ ...styles.input, minHeight: '72px', resize: 'vertical' }}
+                <span style={styles.label}>Commit email</span>
+                <input
+                  value={draft.commit_email ?? ''}
+                  onChange={(event) => setDraft((current) => ({ ...current, commit_email: event.target.value }))}
+                  style={styles.input}
                 />
               </label>
-              <label style={styles.field}>
-                <span style={styles.label}>Folder scope</span>
-                <textarea
-                  value={getScopeText(draft.folder_scope)}
-                  onChange={(event) => setDraft((current) => ({ ...current, folder_scope: parseScopeText(event.target.value) }))}
-                  style={{ ...styles.input, minHeight: '72px', resize: 'vertical' }}
-                />
-              </label>
-            </section>
+            </div>
+            <label style={styles.field}>
+              <span style={styles.label}>Repository scope</span>
+              <textarea
+                value={getScopeText(draft.repository_scope)}
+                onChange={(event) => setDraft((current) => ({ ...current, repository_scope: parseScopeText(event.target.value) }))}
+                style={{ ...styles.input, minHeight: '72px', resize: 'vertical' }}
+              />
+            </label>
+            <label style={styles.field}>
+              <span style={styles.label}>Folder scope</span>
+              <textarea
+                value={getScopeText(draft.folder_scope)}
+                onChange={(event) => setDraft((current) => ({ ...current, folder_scope: parseScopeText(event.target.value) }))}
+                style={{ ...styles.input, minHeight: '72px', resize: 'vertical' }}
+              />
+            </label>
+          </CollapsiblePanel>
           </div>
 
           <div style={styles.footer}>

@@ -8,7 +8,6 @@ import {
 } from '@phosphor-icons/react';
 import { AppLogo } from '../app-logo/AppLogo';
 import { Button } from '../button/Button';
-import './layout.css';
 
 interface NavItem {
   label: string;
