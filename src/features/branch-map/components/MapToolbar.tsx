@@ -119,11 +119,11 @@ export function MapToolbar({ isDark = false, hidden = false }: MapToolbarProps) 
       />
 
       <button
-        style={{ ...buttonStyle, backgroundColor: '#4f46e5', color: '#ffffff', fontSize: '14px' }}
+        style={{ ...buttonStyle, backgroundColor: 'var(--app-accent)', color: '#ffffff', fontSize: '14px' }}
         onClick={() => fitView({ duration: 400 })}
         title="Fit Screen View"
-        onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#4338ca')}
-        onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = '#4f46e5')}
+        onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'var(--app-accent-strong)')}
+        onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'var(--app-accent)')}
       >
         ⤢
       </button>
