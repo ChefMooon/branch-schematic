@@ -301,7 +301,7 @@ export function AppLayout({ children }: AppLayoutProps) {
             <Button
               type="button"
               variant="basic"
-              className={`titlebar-action-button ${isNotificationDropdownOpen ? 'is-active' : ''}`}
+              className={`${isNotificationDropdownOpen ? 'is-active' : ''}`}
               style={styles.iconBtn}
               title="Notifications"
               onMouseDown={(event) => event.stopPropagation()}
@@ -339,7 +339,7 @@ export function AppLayout({ children }: AppLayoutProps) {
               variant="basic"
               ref={(node) => setRepositoryDropdownAnchor(node)}
               data-repository-dropdown-trigger
-              className={`titlebar-action-button ${isRepositoryDropdownOpen ? 'is-active' : ''}`}
+              className={`${isRepositoryDropdownOpen ? 'is-active' : ''}`}
               style={styles.iconBtn}
               title="New"
               onMouseDown={(event) => event.stopPropagation()}

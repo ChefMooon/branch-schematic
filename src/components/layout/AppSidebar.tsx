@@ -7,6 +7,7 @@ import {
   WrenchIcon,
 } from '@phosphor-icons/react';
 import { AppLogo } from '../app-logo/AppLogo';
+import { Button } from '../button/Button';
 import './layout.css';
 
 interface NavItem {
@@ -22,9 +23,9 @@ interface AppSidebarProps {
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { label: 'Home',           icon: <HouseIcon size={16} color="currentColor" style={{ display: 'block' }} />,      to: '/' },
-  { label: 'Branch Map',     icon: <GitBranchIcon size={16} color="currentColor" style={{ display: 'block' }} />,  to: '/branch-map' },
-  { label: 'DatabaseIcon',       icon: <DatabaseIcon size={16} color="currentColor" style={{ display: 'block' }} />,   to: '/database' },
+  { label: 'Home',           icon: <HouseIcon size={16} weight="bold" color="currentColor" style={{ display: 'block' }} />,      to: '/' },
+  { label: 'Branch Map',     icon: <GitBranchIcon size={16} weight="bold" color="currentColor" style={{ display: 'block' }} />,  to: '/branch-map' },
+  { label: 'DatabaseIcon',       icon: <DatabaseIcon size={16} weight="bold" color="currentColor" style={{ display: 'block' }} />,   to: '/database' },
 ];
 
 export function AppSidebar({ isOpen, onClose, onOpenManagementModal }: AppSidebarProps) {
@@ -54,47 +55,55 @@ export function AppSidebar({ isOpen, onClose, onOpenManagementModal }: AppSideba
           {NAV_ITEMS.map(({ label, icon, to }) => {
             const active = location.pathname === to || (to === '/' && location.pathname === '/');
             return (
-              <button
+              <Button
                 key={to}
                 onClick={() => {
                   navigate({ to });
                   onClose();
                 }}
-                className={`sidebar-nav-item ${active ? 'is-active' : ''}`}
+                type="button"
+                variant="menu-item"
+                className={`${active ? 'is-active' : ''}`}
                 title={label}
+                style={{ justifyContent: 'flex-start' }}
               >
                 {icon}
                 <span style={styles.navLabel}>{label}</span>
-              </button>
+              </Button>
             );
           })}
         </nav>
 
         <div style={styles.bottomArea}>
           <hr style={styles.divider} />
-          <button
+          <Button
             onClick={() => {
               onOpenManagementModal?.();
               window.dispatchEvent(new Event('open-management-modal'));
               onClose();
             }}
-            className="sidebar-nav-item"
+            type="button"
+            variant="menu-item"
             title="Manage Tags/Groups"
+            style={{ justifyContent: 'flex-start' }}
           >
-            <WrenchIcon size={16} color="currentColor" style={{ display: 'block' }} />
+            <WrenchIcon size={16} weight="bold" color="currentColor" style={{ display: 'block' }} />
             <span style={styles.navLabel}>Manage Tags/Groups</span>
-          </button>
-          <button
+          </Button>
+          <Button
+            type="button"
+            variant="menu-item"
             onClick={() => {
               navigate({ to: '/settings' });
               onClose();
             }}
-            className={`sidebar-nav-item ${location.pathname === '/settings' ? 'is-active' : ''}`}
+            className={`${location.pathname === '/settings' ? 'is-active' : ''}`}
             title="Settings"
+            style={{ justifyContent: 'flex-start' }}
           >
-            <GearSixIcon size={16} color="currentColor" style={{ display: 'block' }} />
+            <GearSixIcon size={16} weight="bold" color="currentColor" style={{ display: 'block' }} />
             <span style={styles.navLabel}>Settings</span>
-          </button>
+          </Button>
         </div>
       </aside>
     </>

@@ -1,4 +1,3 @@
-.titlebar-action-button,
 .titlebar-profile-button {
   --titlebar-item-bg: transparent;
   --titlebar-item-hover-bg: var(--app-surface-muted);
@@ -24,20 +23,16 @@
   transition: background-color 0.12s ease, color 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease;
 }
 
-.titlebar-action-button:hover,
-.titlebar-action-button.is-active,
 .titlebar-profile-button:hover,
 .titlebar-profile-button.is-active {
   background-color: var(--titlebar-item-hover-bg);
 }
 
-.titlebar-action-button.is-active,
 .titlebar-profile-button.is-active {
   border-color: var(--titlebar-item-active-border-color);
   box-shadow: inset 0 0 0 1px var(--titlebar-item-active-border-color);
 }
 
-.titlebar-action-button:focus-visible,
 .titlebar-profile-button:focus-visible {
   outline: 2px solid var(--titlebar-item-outline-color);
   outline-offset: 2px;
@@ -56,20 +51,13 @@
   box-shadow: 0 0 0 1px var(--titlebar-item-outline-color);
 }
 
-.titlebar-close-button:hover,
-.titlebar-close-button.is-active {
-  background-color: #ef4444;
-  border-color: #ef4444;
-  color: #ffffff;
-}
-
-.titlebar-profile-button .avatar-frame {
+.titlebar-profile-button {
   width: 100%;
   height: 100%;
   border-radius: inherit;
 }
 
-.titlebar-profile-button .avatar-frame img {
+.titlebar-profile-button img {
   width: 100%;
   height: 100%;
   object-fit: cover;

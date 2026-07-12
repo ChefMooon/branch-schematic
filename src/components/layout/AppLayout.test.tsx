@@ -195,12 +195,8 @@ describe('AppLayout', () => {
       </AppLayout>
     );
 
-    const bellButton = screen.getByTitle(/notifications/i);
-    const repositoryButton = screen.getByTitle(/new/i);
     const profileButton = screen.getByRole('button', { name: /profile/i });
 
-    expect(bellButton).toHaveClass('titlebar-action-button');
-    expect(repositoryButton).toHaveClass('titlebar-action-button');
     expect(profileButton).toHaveClass('titlebar-profile-button');
 
     await user.click(profileButton);
