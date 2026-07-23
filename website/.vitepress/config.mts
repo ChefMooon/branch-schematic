@@ -7,6 +7,9 @@ export default defineConfig({
   title: "Branch Schematic",
   description: "A desktop project management application",
   base: process.env.GITHUB_ACTIONS ? `/${repoName}/` : '/',
+  head: [
+    ['link', { rel: 'icon', href: '/favicon.ico', type: 'image/x-icon' }],
+  ],
   themeConfig: {
     // https://vitepress.dev/reference/default-theme-config
     nav: [
