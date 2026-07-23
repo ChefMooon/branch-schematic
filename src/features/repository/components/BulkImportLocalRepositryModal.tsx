@@ -128,10 +128,11 @@ export function BulkImportLocalRepositoryModal({
       await hydrateFromBackend();
       await hydrateQuickFilterMetadata();
 
+      const repositoryLabel = addedCount === 1 ? 'repository' : 'repositories';
       const summaryMessage =
         skippedCount > 0
-          ? `Imported ${addedCount} repository${addedCount === 1 ? '' : 'ies'}. Skipped ${skippedCount} because it was already tracked.`
-          : `Imported ${addedCount} repository${addedCount === 1 ? '' : 'ies'}.`;
+          ? `Imported ${addedCount} ${repositoryLabel}. Skipped ${skippedCount} because it was already tracked.`
+          : `Imported ${addedCount} ${repositoryLabel}.`;
 
       addToast({
         title: skippedCount > 0 ? 'Bulk import completed' : 'Repositories imported',
