@@ -85,7 +85,7 @@ export function MapToolbar({
         onClick={() => onZoomIn?.()}
         title="Zoom In"
       >
-        <PlusIcon size={14} />
+        <PlusIcon size={14} weight="bold" />
       </Button>
 
       <Button
@@ -95,7 +95,7 @@ export function MapToolbar({
         onClick={() => onZoomOut?.()}
         title="Zoom Out"
       >
-        <MinusIcon size={14} />
+        <MinusIcon size={14} weight="bold" />
       </Button>
 
       <Button
@@ -105,7 +105,7 @@ export function MapToolbar({
         onClick={() => onResetViewport?.()}
         title="Reset Zoom & Position"
       >
-        <ArrowCounterClockwiseIcon size={14} />
+        <ArrowCounterClockwiseIcon size={14} weight="bold" />
       </Button>
 
       <div
@@ -124,7 +124,7 @@ export function MapToolbar({
         onClick={() => onFitView?.()}
         title="Fit Screen View"
       >
-        <ArrowsOutSimpleIcon size={14} />
+        <ArrowsOutSimpleIcon size={14} weight="bold" />
       </Button>
 
       {uniqueTags.length > 0 && (
