@@ -45,7 +45,7 @@ function MapWorkspace() {
   const themeMode = useAppThemeMode();
   const isDark = themeMode === 'dark';
   const [isViewManagerOpen, setIsViewManagerOpen] = useState(false);
-  const { setViewport } = useReactFlow();
+  const { setViewport, zoomIn, zoomOut, fitView } = useReactFlow();
 
   const views = useCanvasStore((state) => state.views);
   const activeViewId = useCanvasStore((state) => state.activeViewId);
@@ -123,6 +123,29 @@ function MapWorkspace() {
       y: activeViewObj.pan_y || 0.0,
     });
   }, [activeViewId, activeViewObj, setViewport]);
+
+  const handleViewportReset = () => {
+    setViewport({ x: 0, y: 0, zoom: 1 }, { duration: 400 });
+    if (activeViewId) {
+      saveViewport(1, 0, 0);
+    }
+  };
+
+  const handleFitView = () => {
+    const attemptFit = (attempt = 0) => {
+      fitView({
+        duration: attempt === 0 ? 0 : 400,
+        padding: 0.16,
+        maxZoom: 1.6,
+      });
+
+      if (attempt < 2 && nodes.length > 0) {
+        window.setTimeout(() => attemptFit(attempt + 1), 160);
+      }
+    };
+
+    window.requestAnimationFrame(() => attemptFit());
+  };
 
   const handleNodeDragStop: OnNodeDrag<BranchCardNode> = async (_event, node) => {
     if (!activeViewId) return;
@@ -243,7 +266,13 @@ function MapWorkspace() {
         </>
       )}
 
-      <MapToolbar isDark={isDark} hidden={isViewManagerOpen} />
+      <MapToolbar
+        hidden={isViewManagerOpen}
+        onZoomIn={() => zoomIn()}
+        onZoomOut={() => zoomOut()}
+        onResetViewport={handleViewportReset}
+        onFitView={handleFitView}
+      />
     </div>
   );
 }
