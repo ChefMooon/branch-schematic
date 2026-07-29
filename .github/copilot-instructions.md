@@ -56,6 +56,7 @@ This is a desktop application providing a visual representation of Git repositor
 - For button and interactive-control styling, follow the shared guidance in `docs/UI-Rules.md`: consistent hover, focus-visible, active, and disabled states; prefer shared CSS variables and theme tokens over one-off styles.
 - Search and filter inputs should include an inline clear control whenever they contain text. When auditing or improving components, treat this as a required accessibility and UX improvement for any search box.
 - For any dropdown, popover, menu, or context panel, use the shared outside-dismiss hook from `src/hooks/useClickOutside.ts` rather than adding one-off document click handlers. This should be the default pattern for future UI work, including canvas-based surfaces where clicks may not bubble normally.
+- For any modal, dialog, or overlay that dismisses on backdrop interaction, use a pointer-aware backdrop dismissal pattern instead of simple click-to-close behavior. The interaction should only dismiss when the press begins on the backdrop and is released on the backdrop, preventing accidental closes when the user presses inside and drags outside. Prefer the shared hook in `src/hooks/useBackdropDismiss.ts` for new or updated overlay UI.
 
 ---
 

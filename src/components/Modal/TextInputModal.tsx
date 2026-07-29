@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Button } from '../button/Button';
 import { XIcon } from '@phosphor-icons/react';
+import { useBackdropDismiss } from '../../hooks/useBackdropDismiss';
 
 type TextInputModalProps = {
   isOpen: boolean;
@@ -31,6 +32,8 @@ export function TextInputModal({
 }: TextInputModalProps) {
   const [draft, setDraft] = useState(inputValue);
   const inputRef = useRef<HTMLInputElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const { handleMouseDown, handleMouseUp, handleMouseLeave, handleTouchStart, handleTouchEnd } = useBackdropDismiss(dialogRef, onCancel, isOpen);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -58,8 +61,16 @@ export function TextInputModal({
   const trimmedDraft = draft.trim();
 
   return (
-    <div className="app-modal-overlay" onClick={onCancel}>
+    <div
+      className="app-modal-overlay"
+      onMouseDown={handleMouseDown}
+      onMouseUp={handleMouseUp}
+      onMouseLeave={handleMouseLeave}
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
+    >
       <div
+        ref={dialogRef}
         className="app-modal theme-aware-modal repo-group-create-modal"
         role="dialog"
         aria-modal="true"

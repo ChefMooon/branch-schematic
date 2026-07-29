@@ -1,5 +1,6 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { Button } from '../button/Button';
+import { useBackdropDismiss } from '../../hooks/useBackdropDismiss';
 
 export type ConfirmationModalVariant = 'danger' | 'primary';
 
@@ -26,6 +27,9 @@ export function ConfirmationModal({
   onConfirm,
   onCancel,
 }: ConfirmationModalProps) {
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const { handleMouseDown, handleMouseUp, handleMouseLeave, handleTouchStart, handleTouchEnd } = useBackdropDismiss(dialogRef, onCancel, isOpen);
+
   useEffect(() => {
     if (!isOpen) return;
 
@@ -47,8 +51,16 @@ export function ConfirmationModal({
   if (!isOpen) return null;
 
   return (
-    <div className="confirmation-modal-overlay" onClick={onCancel}>
+    <div
+      className="confirmation-modal-overlay"
+      onMouseDown={handleMouseDown}
+      onMouseUp={handleMouseUp}
+      onMouseLeave={handleMouseLeave}
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
+    >
       <div
+        ref={dialogRef}
         className="confirmation-modal"
         role="dialog"
         aria-modal="true"

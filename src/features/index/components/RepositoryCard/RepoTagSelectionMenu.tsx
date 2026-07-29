@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   CheckSquareIcon,
   MagnifyingGlassIcon,
@@ -11,6 +11,7 @@ import { useCallback } from 'react';
 import { Button } from '../../../../components/button/Button';
 import { ConfirmationModal } from '../../../../components/Modal/ConfirmationModal';
 import { useNotifications } from '../../../../components/notifications/NotificationProvider';
+import { useBackdropDismiss } from '../../../../hooks/useBackdropDismiss';
 import type { TagFilterSummary } from '../../../../types/git';
 
 type TagSelectionModalProps = {
@@ -52,6 +53,8 @@ export function TagSelectionModal({
   const [isCreating, setIsCreating] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<TagFilterSummary | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const { handleMouseDown, handleMouseUp, handleMouseLeave, handleTouchStart, handleTouchEnd } = useBackdropDismiss(dialogRef, onClose, isOpen);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -189,8 +192,15 @@ export function TagSelectionModal({
 
   return (
     <>
-      <div className="app-modal-overlay" onClick={onClose}>
-        <div className="app-modal theme-aware-modal" onClick={(event) => event.stopPropagation()}>
+      <div
+        className="app-modal-overlay"
+        onMouseDown={handleMouseDown}
+        onMouseUp={handleMouseUp}
+        onMouseLeave={handleMouseLeave}
+        onTouchStart={handleTouchStart}
+        onTouchEnd={handleTouchEnd}
+      >
+        <div ref={dialogRef} className="app-modal theme-aware-modal" onClick={(event) => event.stopPropagation()}>
           <div className="app-modal-header">
             <h3>Assign Tags</h3>
             <Button type="button" variant="close" className="app-modal-close" onClick={onClose}>

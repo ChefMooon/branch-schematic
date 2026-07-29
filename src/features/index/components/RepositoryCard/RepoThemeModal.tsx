@@ -1,7 +1,9 @@
 import { XIcon } from "@phosphor-icons/react";
+import { useRef } from "react";
 import { ColorPicker } from "../../../../components/color-picker/ColorPicker";
 import { IconSelector } from "../../../icon/components/IconSelector";
 import { Button } from "../../../../components/button/Button";
+import { useBackdropDismiss } from "../../../../hooks/useBackdropDismiss";
 
 type RepoThemeModalProps = {
   isOpen: boolean;
@@ -20,11 +22,21 @@ export function RepoThemeModal({
   onClose,
   onThemeChange,
 }: RepoThemeModalProps) {
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const { handleMouseDown, handleMouseUp, handleMouseLeave, handleTouchStart, handleTouchEnd } = useBackdropDismiss(dialogRef, onClose, isOpen);
+
   if (!isOpen) return null;
 
   return (
-    <div className="app-modal-overlay" onClick={onClose}>
-      <div className="app-modal theme-aware-modal repo-theme-modal" onClick={(event) => event.stopPropagation()}>
+    <div
+      className="app-modal-overlay"
+      onMouseDown={handleMouseDown}
+      onMouseUp={handleMouseUp}
+      onMouseLeave={handleMouseLeave}
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
+    >
+      <div ref={dialogRef} className="app-modal theme-aware-modal repo-theme-modal" onClick={(event) => event.stopPropagation()}>
         <div className="app-modal-header">
           <h3>Repository Theme</h3>
           <Button type="button" variant="close" className="app-modal-close" onClick={onClose}>

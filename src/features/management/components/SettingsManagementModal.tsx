@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { PencilSimple, Plus, Trash, Wrench, XIcon } from '@phosphor-icons/react';
 import { ConfirmationModal } from '../../../components/Modal/ConfirmationModal';
 import { useNotifications } from '../../../components/notifications/NotificationProvider';
+import { useBackdropDismiss } from '../../../hooks/useBackdropDismiss';
 import { Button } from '../../../components/button/Button';
 import type { GroupSummary, TagFilterSummary } from '../../../types/git';
 
@@ -300,8 +301,15 @@ export function SettingsManagementModal({
   if (!isOpen) return null;
 
   return (
-    <div className="app-modal-overlay management-modal-overlay" onClick={onClose}>
-      <div className="app-modal app-modal-wide" onClick={(event) => event.stopPropagation()}>
+    <div
+      className="app-modal-overlay management-modal-overlay"
+      onMouseDown={handleMouseDown}
+      onMouseUp={handleMouseUp}
+      onMouseLeave={handleMouseLeave}
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
+    >
+      <div ref={dialogRef} className="app-modal app-modal-wide" onClick={(event) => event.stopPropagation()}>
         <div className="app-modal-header">
           <h3>Tag and Group Management</h3>
           <Button type="button" variant="close" className="app-modal-close" onClick={onClose}>
