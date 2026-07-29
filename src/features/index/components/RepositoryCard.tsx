@@ -349,7 +349,6 @@ export function RepositoryCard({ repo, onRefresh, onOpenManagement, onOpenManage
             }
           }
 
-          setIsTagModalOpen(false);
           await onRefresh();
         }}
       />

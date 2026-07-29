@@ -7,6 +7,7 @@ import {
   TrashIcon,
   XIcon,
 } from '@phosphor-icons/react';
+import { useCallback } from 'react';
 import { Button } from '../../../../components/button/Button';
 import { ConfirmationModal } from '../../../../components/Modal/ConfirmationModal';
 import { useNotifications } from '../../../../components/notifications/NotificationProvider';
@@ -75,18 +76,23 @@ export function TagSelectionModal({
     return Array.from(selected).sort((a, b) => a.localeCompare(b));
   }, [selected]);
 
+  const commitSelection = useCallback(async (nextTagNames: string[]) => {
+    const normalized = Array.from(new Set(nextTagNames.map((tagName) => tagName.trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b));
+    await onApply(normalized);
+    setSelected(new Set(normalized));
+  }, [onApply]);
+
   if (!isOpen) return null;
 
-  const toggleTag = (tagName: string) => {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(tagName)) {
-        next.delete(tagName);
-      } else {
-        next.add(tagName);
-      }
-      return next;
-    });
+  const toggleTag = async (tagName: string) => {
+    const next = new Set(selected);
+    if (next.has(tagName)) {
+      next.delete(tagName);
+    } else {
+      next.add(tagName);
+    }
+
+    await commitSelection(Array.from(next));
   };
 
   const handleCreateTag = async () => {
@@ -113,7 +119,9 @@ export function TagSelectionModal({
     try {
       const createdId = await onCreateTag(clean, draftColor);
       if (createdId) {
-        setSelected((prev) => new Set([...prev, clean]));
+        const next = new Set(selected);
+        next.add(clean);
+        await commitSelection(Array.from(next));
         setDraftName('');
         setDraftColor(defaultTagColor());
         addToast({
@@ -152,11 +160,9 @@ export function TagSelectionModal({
     setIsDeleting(true);
     try {
       await onDeleteTag(tag.id);
-      setSelected((prev) => {
-        const next = new Set(prev);
-        next.delete(tag.tag_name);
-        return next;
-      });
+      const next = new Set(selected);
+      next.delete(tag.tag_name);
+      await commitSelection(Array.from(next));
       addToast({
         variant: 'success',
         title: 'Tag deleted',
@@ -204,10 +210,14 @@ export function TagSelectionModal({
                 />
               </div>
               <div className="tag-selection-toolbar-actions">
-                <Button type="button" variant="basic" onClick={() => setSelected(new Set(filteredTags.map((tag) => tag.tag_name)))}>
+                <Button type="button" variant="basic" onClick={() => {
+                  void commitSelection(filteredTags.map((tag) => tag.tag_name));
+                }}>
                   Select visible
                 </Button>
-                <Button type="button" variant="danger" onClick={() => setSelected(new Set())}>
+                <Button type="button" variant="danger" onClick={() => {
+                  void commitSelection([]);
+                }}>
                   Clear
                 </Button>
               </div>
@@ -246,7 +256,9 @@ export function TagSelectionModal({
                     <button
                       type="button"
                       className="tag-selection-item-main"
-                      onClick={() => toggleTag(tag.tag_name)}
+                      onClick={() => {
+                        void toggleTag(tag.tag_name);
+                      }}
                     >
                       {checked ? <CheckSquareIcon size={16} weight="fill" /> : <SquareIcon size={16} />}
                       <span className="tag-selection-color" style={{ backgroundColor: tag.color_hex }} />
@@ -291,10 +303,10 @@ export function TagSelectionModal({
               type="button"
               variant="submit"
               onClick={() => {
-                void onApply(orderedSelected);
+                onClose();
               }}
             >
-              Save Tags
+              Done
             </Button>
           </div>
         </div>
