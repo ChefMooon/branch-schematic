@@ -4,6 +4,7 @@ import {
   ArrowDown,
   ArrowUp,
   DotsThreeVertical,
+  MagnifyingGlass,
   PencilSimple,
   Star,
   Trash,
@@ -22,6 +23,7 @@ type RepoCardOverflowMenuProps = {
   onPush: () => void | Promise<void>;
   onRenameAlias: () => void;
   onToggleFavorite: () => void | Promise<void>;
+  onValidate?: () => void | Promise<void>;
   onUntrack: (event: React.MouseEvent<HTMLButtonElement>) => void;
   currentThemeColor: string | null;
   currentIconName: string | null;
@@ -38,6 +40,7 @@ export function RepoCardOverflowMenu({
   onPush,
   onRenameAlias,
   onToggleFavorite,
+  onValidate,
   onUntrack,
   currentThemeColor,
   currentIconName,
@@ -228,6 +231,17 @@ export function RepoCardOverflowMenu({
               <Star size={16} weight={isFavorite ? "fill" : "regular"} />
               <span>{isFavorite ? "Remove favorite" : "Toggle favorite"}</span>
             </button>
+            {onValidate ? (
+              <button
+                type="button"
+                className="overflow-menu-item"
+                onClick={() => handleAction(onValidate)}
+                disabled={isBusy}
+              >
+                <MagnifyingGlass size={16} />
+                <span>Validate repository</span>
+              </button>
+            ) : null}
           </div>
 
           <div className="overflow-divider" />

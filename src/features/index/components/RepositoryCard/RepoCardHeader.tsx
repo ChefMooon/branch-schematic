@@ -20,6 +20,7 @@ type RepoCardHeaderProps = {
   onPull: () => void | Promise<void>;
   onPush: () => void | Promise<void>;
   onToggleFavorite: () => void | Promise<void>;
+  onValidate?: () => void | Promise<void>;
   onUntrack: (event: React.MouseEvent<HTMLButtonElement>) => void;
   onThemeChange: (colorHex: string | null, iconName: string | null) => void | Promise<void>;
   isOriginInactive?: boolean;
@@ -44,6 +45,7 @@ export function RepoCardHeader({
   onPull,
   onPush,
   onToggleFavorite,
+  onValidate,
   onUntrack,
   onThemeChange,
   isOriginInactive = false,
@@ -107,6 +109,7 @@ export function RepoCardHeader({
             onPush={onPush}
             onRenameAlias={onStartEditing}
             onToggleFavorite={onToggleFavorite}
+            onValidate={onValidate}
             onUntrack={onUntrack}
             currentThemeColor={repo.theme_color_hex ?? null}
             currentIconName={repo.icon_name ?? null}

@@ -1339,6 +1339,71 @@ pub async fn add_new_tracked_path(
 }
 
 #[tauri::command]
+pub async fn relink_repository_path(
+    state: tauri::State<'_, DbState>,
+    path_id: String,
+    absolute_path: String,
+) -> Result<RepositoryTrackResult, String> {
+    let pool = state.inner().pool();
+    let path = std::path::Path::new(&absolute_path);
+
+    let repo = Repository::open(path)
+        .map_err(|e| format!("The selected folder is not a valid Git repository workspace context: {}", e))?;
+
+    let remote_url = {
+        let mut remote_url: Option<String> = None;
+        if let Ok(remote) = repo.find_remote("origin") {
+            if let Some(url) = remote.url() {
+                remote_url = Some(url.to_string());
+            }
+        }
+        remote_url
+    };
+
+    let display_name = path
+        .file_name()
+        .and_then(|os_str| os_str.to_str())
+        .unwrap_or("Unknown Repository")
+        .to_string();
+
+    let mut repo_origin_type = "LOCAL_ONLY".to_string();
+    let mut github_owner_login: Option<String> = None;
+
+    if remote_url.is_some() {
+        let (derived_origin_type, derived_owner_login) =
+            resolve_repository_origin_metadata(pool, remote_url.as_deref(), None, true).await;
+        repo_origin_type = derived_origin_type;
+        github_owner_login = derived_owner_login;
+    }
+
+    let conflicting_path_id = db::fetch_tracked_path_id_by_absolute_path(pool, &absolute_path).await
+        .map_err(|err| format!("Database lookup failure: {}", err))?;
+
+    if conflicting_path_id.is_some() && conflicting_path_id.as_deref() != Some(path_id.as_str()) {
+        db::deactivate_duplicate_tracked_path(pool, &absolute_path, &path_id)
+            .await
+            .map_err(|err| format!("Database update failure: {}", err))?;
+    }
+
+    db::relink_tracked_path(
+        pool,
+        &path_id,
+        &display_name,
+        &absolute_path,
+        remote_url.as_deref(),
+        &repo_origin_type,
+        github_owner_login.as_deref(),
+    )
+    .await
+    .map_err(|err| format!("Database indexing loop failure: {}", err))?;
+
+    Ok(RepositoryTrackResult {
+        outcome: "updated".to_string(),
+        message: format!("Reattached '{}' to its new workspace location.", display_name),
+    })
+}
+
+#[tauri::command]
 pub async fn untrack_repository(
     state: tauri::State<'_, DbState>,
     path_id: String,

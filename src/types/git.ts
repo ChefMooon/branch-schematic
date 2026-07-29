@@ -91,6 +91,8 @@ export interface TrackedPath {
   theme_color_hex?: string | null;
   /** Optional repository icon override */
   icon_name?: string | null;
+  /** Transient UI status used for missing-repository recovery flows */
+  status?: 'active' | 'missing' | 'verifying';
 }
 
 /**

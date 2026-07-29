@@ -1,5 +1,6 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { open } from "@tauri-apps/plugin-dialog";
 import {
   GitBranch,
   ArrowDown,
@@ -21,6 +22,8 @@ import { TagSelectionModal } from "./RepositoryCard/RepoTagSelectionMenu";
 import { RepoThemeModal } from "./RepositoryCard/RepoThemeModal";
 import { RepoBranchDropdown } from "./RepositoryCard/RepoBranchDropdown";
 import { useNotifications } from "../../../components/notifications/NotificationProvider";
+import { ConfirmationModal } from "../../../components/Modal/ConfirmationModal";
+import { Button } from "../../../components/button/Button";
 import { useResolveRepoOrigin } from "../hooks/useResolveRepoOrigin";
 import { useRepoOriginBadgeState } from "../hooks/useResolveRepoOrigin";
 import type { RepoOriginType } from "../hooks/useResolveRepoOrigin";
@@ -43,6 +46,8 @@ export function RepositoryCard({ repo, onRefresh, onOpenManagement, onOpenManage
   const setRepositoryGroup = useWorkspaceStore((state) => state.setRepositoryGroup);
   const updateRepositoryTheme = useWorkspaceStore((state) => state.updateRepositoryTheme);
   const refreshRepositoryGitStatus = useWorkspaceStore((state) => state.refreshRepositoryGitStatus);
+  const markRepositoryResolved = useWorkspaceStore((state) => state.markRepositoryResolved);
+  const setRepositoriesStatus = useWorkspaceStore((state) => state.setRepositoriesStatus);
   const addTag = useWorkspaceStore((state) => state.addTag);
   const removeTag = useWorkspaceStore((state) => state.removeTag);
   const createGlobalTag = useWorkspaceStore((state) => state.createGlobalTag);
@@ -57,6 +62,7 @@ export function RepositoryCard({ repo, onRefresh, onOpenManagement, onOpenManage
   const [isEditingAlias, setIsEditingAlias] = useState(false);
   const [isTagModalOpen, setIsTagModalOpen] = useState(false);
   const [isThemeModalOpen, setIsThemeModalOpen] = useState(false);
+  const [isConfirmingRemove, setIsConfirmingRemove] = useState(false);
   const [aliasInput, setAliasInput] = useState("");
   const [loadingAction, setLoadingAction] = useState<"fetch" | "pull" | "push" | "checkout" | "alias" | "refresh" | null>(null);
 
@@ -190,6 +196,7 @@ export function RepositoryCard({ repo, onRefresh, onOpenManagement, onOpenManage
 
   const isAnyLoading = loadingAction !== null;
   const availableGroups = getCustomGroups();
+  const isMissing = repo.status === 'missing';
 
   const resolvedGroupColor = useMemo(() => {
     return groupDirectory.find((group) => group.id === repo.group_id)?.color_hex ?? null;
@@ -241,9 +248,84 @@ export function RepositoryCard({ repo, onRefresh, onOpenManagement, onOpenManage
     setIsThemeModalOpen(true);
   };
 
+  const handleLocateRepository = async () => {
+    try {
+      const selectedPath = await open({
+        directory: true,
+        multiple: false,
+        title: `Locate ${repo.display_name}`,
+      });
+
+      if (typeof selectedPath === 'string' && selectedPath.trim()) {
+        await invoke('relink_repository_path', { pathId: repo.id, absolutePath: selectedPath });
+        await refreshRepositoryGitStatus(repo.id, selectedPath);
+        markRepositoryResolved(repo.id, selectedPath);
+        addToast({
+          variant: 'success',
+          title: 'Repository located',
+          message: `${repo.display_name} was reattached to the selected folder.`,
+        });
+      }
+    } catch (error) {
+      console.error('Failed to locate repository path:', error);
+      addToast({
+        variant: 'error',
+        title: 'Locate failed',
+        message: 'The selected folder could not be attached to this repository.',
+      });
+    }
+  };
+
+  const handleCloneAgain = () => {
+    window.dispatchEvent(new CustomEvent('open-repository-modal', { detail: { action: 'clone' } }));
+  };
+
+  const handleValidateRepository = async () => {
+    try {
+      const isValid = await invoke<boolean>('validate_repository_path', { path: repo.absolute_path });
+      if (isValid) {
+        markRepositoryResolved(repo.id, repo.absolute_path);
+        addToast({
+          variant: 'success',
+          title: 'Repository verified',
+          message: `${repo.display_name} still points to a valid Git repository.`,
+        });
+      } else {
+        setRepositoriesStatus([repo.id], 'missing');
+        addToast({
+          variant: 'warning',
+          title: 'Repository invalid',
+          message: `${repo.display_name} no longer points to a valid Git repository.`,
+        });
+      }
+    } catch (error) {
+      console.error('Failed to validate repository path:', error);
+      addToast({
+        variant: 'error',
+        title: 'Validation failed',
+        message: 'The repository path could not be validated right now.',
+      });
+    }
+  };
+
+  const handleRemoveRepository = async () => {
+    try {
+      await invoke('untrack_repository', { pathId: repo.id });
+      setIsConfirmingRemove(false);
+      onRefresh();
+    } catch (error) {
+      console.error('Failed to remove missing repository:', error);
+      addToast({
+        variant: 'error',
+        title: 'Remove failed',
+        message: 'The repository could not be removed from the workspace.',
+      });
+    }
+  };
+
   return (
     <div
-      className={`repo-card origin-${originType.toLowerCase()} ${(repo.is_favorite ?? 0) === 1 ? 'is-favorited' : ''} ${isSelected ? 'is-selected' : ''}`}
+      className={`repo-card origin-${originType.toLowerCase()} ${(repo.is_favorite ?? 0) === 1 ? 'is-favorited' : ''} ${isSelected ? 'is-selected' : ''} ${isMissing ? 'is-missing' : ''}`}
       style={{ borderColor: `${resolvedThemeColor}55` }}
     >
       {/* Top Header Information Stack */}
@@ -290,6 +372,9 @@ export function RepositoryCard({ repo, onRefresh, onOpenManagement, onOpenManage
           onToggleFavorite={() => {
             void handleFavoriteToggle();
           }}
+          onValidate={() => {
+            void handleValidateRepository();
+          }}
           onUntrack={handleUntrackProject}
           onThemeChange={handleThemeChange}
           isOriginInactive={originBadgeState.isInactiveByProfile}
@@ -297,32 +382,53 @@ export function RepositoryCard({ repo, onRefresh, onOpenManagement, onOpenManage
         />
       </div>
 
-      {/* Group + Tags share a single wrapping row to avoid excess vertical whitespace */}
-      <div className="repo-secondary-row">
-        <RepoGroupMenu
-          repo={repo}
-          availableGroups={availableGroups}
-          onGroupChange={(group) => {
-            void handleGroupChange(group);
-          }}
-          onCreateGroup={(groupName) => {
-            void handleCreateGroup(groupName);
-          }}
-          onOpenManagement={onOpenManagement}
-          onOpenManagementModal={onOpenManagementModal}
-        />
-        <RepoCardTags
-          tags={repo.tags ?? []}
-          isAnyLoading={isAnyLoading}
-          onOpenTagModal={() => {
-            setIsTagModalOpen(true);
-          }}
-          onRemoveTag={async (tagName) => {
-            await removeTag(repo.id, tagName);
-            await onRefresh();
-          }}
-        />
-      </div>
+      {isMissing ? (
+        <div className="repo-card-missing-state">
+          <div className="repo-card-missing-state__header">
+            <WarningCircle size={16} weight="fill" />
+            <span>We could not find this repository at its saved location.</span>
+          </div>
+          <div className="repo-card-missing-state__actions">
+            <Button type="button" className="repo-card-missing-state__button" onClick={() => { void handleLocateRepository(); }}>
+              Locate
+            </Button>
+            {originType !== 'LOCAL_ONLY' ? (
+              <Button type="button" className="repo-card-missing-state__button" onClick={handleCloneAgain}>
+                Clone Again
+              </Button>
+            ) : null}
+            <Button type="button" variant="danger" className="repo-card-missing-state__button" onClick={() => setIsConfirmingRemove(true)}>
+              Remove
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <div className="repo-secondary-row">
+          <RepoGroupMenu
+            repo={repo}
+            availableGroups={availableGroups}
+            onGroupChange={(group) => {
+              void handleGroupChange(group);
+            }}
+            onCreateGroup={(groupName) => {
+              void handleCreateGroup(groupName);
+            }}
+            onOpenManagement={onOpenManagement}
+            onOpenManagementModal={onOpenManagementModal}
+          />
+          <RepoCardTags
+            tags={repo.tags ?? []}
+            isAnyLoading={isAnyLoading}
+            onOpenTagModal={() => {
+              setIsTagModalOpen(true);
+            }}
+            onRemoveTag={async (tagName) => {
+              await removeTag(repo.id, tagName);
+              await onRefresh();
+            }}
+          />
+        </div>
+      )}
 
       <TagSelectionModal
         isOpen={isTagModalOpen}
@@ -353,6 +459,17 @@ export function RepositoryCard({ repo, onRefresh, onOpenManagement, onOpenManage
         }}
       />
 
+      <ConfirmationModal
+        isOpen={isConfirmingRemove}
+        title="Remove repository"
+        message={`Remove ${repo.display_name} from the workspace catalog?`}
+        confirmLabel="Remove"
+        cancelLabel="Cancel"
+        variant="danger"
+        onConfirm={() => { void handleRemoveRepository(); }}
+        onCancel={() => setIsConfirmingRemove(false)}
+      />
+
       <RepoThemeModal
         isOpen={isThemeModalOpen}
         isBusy={isAnyLoading}
@@ -362,64 +479,68 @@ export function RepositoryCard({ repo, onRefresh, onOpenManagement, onOpenManage
         onThemeChange={handleThemeChange}
       />
 
-      {/* Dynamic Embedded Branch Selector Dropper */}
-      <RepoBranchDropdown
-        branches={repo.available_branches && repo.available_branches.length > 0 ? repo.available_branches : [repo.current_branch ?? "main"]}
-        currentBranch={repo.current_branch ?? "main"}
-        defaultBranch={repo.default_branch_name}
-        isLoading={loadingAction === "checkout"}
-        disabled={isAnyLoading}
-        onSelect={handleBranchChange}
-      />
+      {!isMissing ? (
+        <>
+          {/* Dynamic Embedded Branch Selector Dropper */}
+          <RepoBranchDropdown
+            branches={repo.available_branches && repo.available_branches.length > 0 ? repo.available_branches : [repo.current_branch ?? "main"]}
+            currentBranch={repo.current_branch ?? "main"}
+            defaultBranch={repo.default_branch_name}
+            isLoading={loadingAction === "checkout"}
+            disabled={isAnyLoading}
+            onSelect={handleBranchChange}
+          />
 
-      {/* Sync Status Aggregator Metrics */}
-      <div className="repo-sync-actions-row">
-        <div className="status-indicator-pills">
-          {(repo.uncommitted_changes_count ?? 0) > 0 && (
-            <div className="status-pill changes-pending" title="Uncommitted items local stack">
-              <WarningCircle size={14} weight="fill" />
-              <span>{repo.uncommitted_changes_count} modified</span>
-            </div>
-          )}
-          {originType !== "LOCAL_ONLY" && (
-            <div className="status-pills-group">
-              {repo.has_upstream ? (
-                <>
-                  <div className="status-pill" title="Commits ahead of the upstream remote branch">
+          {/* Sync Status Aggregator Metrics */}
+          <div className="repo-sync-actions-row">
+            <div className="status-indicator-pills">
+              {(repo.uncommitted_changes_count ?? 0) > 0 && (
+                <div className="status-pill changes-pending" title="Uncommitted items local stack">
+                  <WarningCircle size={14} weight="fill" />
+                  <span>{repo.uncommitted_changes_count} modified</span>
+                </div>
+              )}
+              {originType !== "LOCAL_ONLY" && (
+                <div className="status-pills-group">
+                  {repo.has_upstream ? (
+                    <>
+                      <div className="status-pill" title="Commits ahead of the upstream remote branch">
+                        <ArrowUp size={14} />
+                        <span>{repo.ahead_count ?? 0}</span>
+                      </div>
+                      <div className="status-pill" title="Commits behind the upstream remote branch">
+                        <ArrowDown size={14} />
+                        <span>{repo.behind_count ?? 0}</span>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="status-pill no-upstream" title="No upstream remote-tracking branch configured for this branch">
+                      <span>No upstream</span>
+                    </div>
+                  )}
+                </div>
+              )}
+              {repo.default_branch_name && repo.current_branch !== repo.default_branch_name && (
+                <div className="status-pills-group">
+                  <div className="status-pill vs-default" title={`Commits ahead of ${repo.default_branch_name}`}>
                     <ArrowUp size={14} />
-                    <span>{repo.ahead_count ?? 0}</span>
+                    <span>{repo.ahead_of_default_count ?? 0}</span>
                   </div>
-                  <div className="status-pill" title="Commits behind the upstream remote branch">
+                  <div className="status-pill vs-default" title={`Commits behind ${repo.default_branch_name}`}>
                     <ArrowDown size={14} />
-                    <span>{repo.behind_count ?? 0}</span>
+                    <span>{repo.behind_default_count ?? 0}</span>
                   </div>
-                </>
-              ) : (
-                <div className="status-pill no-upstream" title="No upstream remote-tracking branch configured for this branch">
-                  <span>No upstream</span>
                 </div>
               )}
             </div>
-          )}
-          {repo.default_branch_name && repo.current_branch !== repo.default_branch_name && (
-            <div className="status-pills-group">
-              <div className="status-pill vs-default" title={`Commits ahead of ${repo.default_branch_name}`}>
-                <ArrowUp size={14} />
-                <span>{repo.ahead_of_default_count ?? 0}</span>
+            {isAnyLoading && (
+              <div className="sync-loading-indicator" title="A repository action is in progress">
+                <CircleNotch size={16} className="animate-spin-svg" />
               </div>
-              <div className="status-pill vs-default" title={`Commits behind ${repo.default_branch_name}`}>
-                <ArrowDown size={14} />
-                <span>{repo.behind_default_count ?? 0}</span>
-              </div>
-            </div>
-          )}
-        </div>
-        {isAnyLoading && (
-          <div className="sync-loading-indicator" title="A repository action is in progress">
-            <CircleNotch size={16} className="animate-spin-svg" />
+            )}
           </div>
-        )}
-      </div>
+        </>
+      ) : null}
 
     </div>
   );

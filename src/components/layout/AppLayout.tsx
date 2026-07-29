@@ -192,9 +192,18 @@ export function AppLayout({ children }: AppLayoutProps) {
       setActiveRepositoryModal('bulk-import');
     };
 
+    const handleOpenRepositoryModal = (event: Event) => {
+      const action = (event as CustomEvent<{ action?: RepositoryModalAction }>).detail?.action;
+      if (action) {
+        setActiveRepositoryModal(action);
+      }
+    };
+
     window.addEventListener('open-bulk-import-modal', handleOpenBulkImportModal);
+    window.addEventListener('open-repository-modal', handleOpenRepositoryModal);
     return () => {
       window.removeEventListener('open-bulk-import-modal', handleOpenBulkImportModal);
+      window.removeEventListener('open-repository-modal', handleOpenRepositoryModal);
     };
   }, []);
 

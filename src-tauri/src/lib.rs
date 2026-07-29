@@ -79,6 +79,71 @@ async fn watch_project_directory(
     Ok(())
 }
 
+#[cfg(test)]
+mod tests {
+    use super::is_repository_path_valid;
+
+    #[test]
+    fn validates_real_git_directories_and_rejects_missing_paths() {
+        let temp_dir = std::env::temp_dir().join(format!("branch-schematic-repo-check-{}", std::process::id()));
+        std::fs::create_dir_all(&temp_dir).unwrap();
+
+        let repo = git2::Repository::init(&temp_dir).unwrap();
+        let _ = repo; // keep the repository alive for the duration of the test
+
+        assert!(is_repository_path_valid(&temp_dir));
+
+        let missing_dir = temp_dir.join("missing-target");
+        assert!(!is_repository_path_valid(&missing_dir));
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+}
+
+fn is_repository_path_valid(path: impl AsRef<std::path::Path>) -> bool {
+    let path = path.as_ref();
+    let metadata = match std::fs::metadata(path) {
+        Ok(metadata) => metadata,
+        Err(_) => return false,
+    };
+
+    if !metadata.is_dir() {
+        return false;
+    }
+
+    git2::Repository::open(path).is_ok()
+}
+
+#[tauri::command]
+async fn verify_repo_paths(paths: Vec<String>) -> Result<Vec<String>, String> {
+    let mut checks = tokio::task::JoinSet::new();
+
+    for path in &paths {
+        let candidate = path.clone();
+        checks.spawn_blocking(move || {
+            let is_valid = is_repository_path_valid(&candidate);
+            (candidate, is_valid)
+        });
+    }
+
+    let mut missing_paths = Vec::new();
+    while let Some(result) = checks.join_next().await {
+        let (path, is_valid) = result.map_err(|error| format!("Failed to verify repository path: {error}"))?;
+        if !is_valid {
+            missing_paths.push(path);
+        }
+    }
+
+    Ok(missing_paths)
+}
+
+#[tauri::command]
+async fn validate_repository_path(path: String) -> Result<bool, String> {
+    Ok(tokio::task::spawn_blocking(move || is_repository_path_valid(&path))
+        .await
+        .map_err(|error| format!("Failed to verify repository path: {error}"))?)
+}
+
 #[tauri::command]
 async fn get_active_tracked_paths(
     state: tauri::State<'_, DbState>,
@@ -496,6 +561,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             greet,
             get_database_path,
+            verify_repo_paths,
+            validate_repository_path,
             watch_project_directory,
             get_active_tracked_paths,
             get_canvas_views,
@@ -525,6 +592,7 @@ pub fn run() {
             git::initialize_new_repository,
             git::crawl_repositories_command,
             git::add_new_tracked_path,
+            git::relink_repository_path,
             git::untrack_repository,
             git::get_tracked_workspaces,
             git::refresh_repository_git_status,

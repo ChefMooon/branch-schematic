@@ -1006,6 +1006,53 @@ pub async fn insert_tracked_path(
     Ok(())
 }
 
+pub async fn relink_tracked_path(
+    pool: &SqlitePool,
+    path_id: &str,
+    display_name: &str,
+    absolute_path: &str,
+    remote_url: Option<&str>,
+    repo_origin_type: &str,
+    github_owner_login: Option<&str>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "UPDATE tracked_paths
+         SET display_name = ?,
+             absolute_path = ?,
+             remote_url = ?,
+             repo_origin_type = ?,
+             github_owner_login = ?,
+             is_active = 1
+         WHERE id = ?;"
+    )
+    .bind(display_name)
+    .bind(absolute_path)
+    .bind(remote_url)
+    .bind(repo_origin_type)
+    .bind(github_owner_login)
+    .bind(path_id)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+pub async fn deactivate_duplicate_tracked_path(
+    pool: &SqlitePool,
+    absolute_path: &str,
+    exclude_path_id: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "UPDATE tracked_paths
+         SET is_active = 0
+         WHERE absolute_path = ? AND id != ?;"
+    )
+    .bind(absolute_path)
+    .bind(exclude_path_id)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
 pub async fn untrack_repository_path(
     pool: &SqlitePool,
     path_id: &str,

@@ -55,6 +55,9 @@ interface WorkspaceState {
   setRepositoryGroup: (repoId: string, groupId: string | null) => Promise<void>;
   updateRepositoryTheme: (id: string, colorHex: string | null, iconName: string | null) => Promise<void>;
   refreshRepositoryGitStatus: (repoId: string, absolutePath: string) => Promise<void>;
+  setRepositoriesStatus: (repoIds: string[], status: TrackedPath['status']) => void;
+  markRepositoriesMissing: (missingPaths: string[]) => void;
+  markRepositoryResolved: (repoId: string, nextAbsolutePath?: string) => void;
   addTag: (repoId: string, tagName: string, colorHex?: string) => Promise<void>;
   removeTag: (repoId: string, tagName: string) => Promise<void>;
   touchLastAccessed: (repoId: string) => Promise<void>;
@@ -233,6 +236,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
           repo.id === repoId
             ? {
                 ...repo,
+                absolute_path: absolutePath,
                 current_branch: snapshot.current_branch,
                 available_branches: snapshot.available_branches,
                 uncommitted_changes_count: snapshot.uncommitted_changes_count,
@@ -250,6 +254,48 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       console.error('Failed to refresh repository git status:', error);
       throw error;
     }
+  },
+
+  setRepositoriesStatus: (repoIds, status) => {
+    set({
+      repos: get().repos.map((repo) =>
+        repoIds.includes(repo.id) ? { ...repo, status } : repo
+      ),
+    });
+  },
+
+  markRepositoriesMissing: (missingPaths) => {
+    const normalizedPaths = new Set(missingPaths);
+    set({
+      repos: get().repos.map((repo) => {
+        if (!repo.absolute_path) {
+          return repo;
+        }
+
+        if (normalizedPaths.has(repo.absolute_path)) {
+          return { ...repo, status: 'missing' };
+        }
+
+        if (repo.status === 'missing') {
+          return { ...repo, status: 'active' };
+        }
+
+        return repo;
+      }),
+    });
+  },
+
+  markRepositoryResolved: (repoId, nextAbsolutePath) => {
+    set({
+      repos: get().repos.map((repo) => {
+        if (repo.id !== repoId) return repo;
+        return {
+          ...repo,
+          absolute_path: nextAbsolutePath ?? repo.absolute_path,
+          status: 'active',
+        };
+      }),
+    });
   },
 
   addTag: async (repoId, tagName, colorHex) => {

@@ -1443,6 +1443,33 @@
   width: 100%;
 }
 
+.repo-card-missing-state {
+  display: grid;
+  gap: 0.75rem;
+  padding: 0.85rem 0.2rem 0;
+  margin-top: 0.5rem;
+  border-top: 1px solid color-mix(in srgb, var(--dashboard-danger) 30%, var(--app-border));
+}
+
+.repo-card-missing-state__header {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  color: var(--dashboard-danger);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.repo-card-missing-state__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+}
+
+.repo-card-missing-state__button {
+  min-height: 2.15rem;
+}
+
 .repo-tags-section {
   display: flex;
   flex: 0 0 auto;

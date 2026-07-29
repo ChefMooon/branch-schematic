@@ -8,6 +8,7 @@ import { FilterDropdown } from "./common/FilterDropdown";
 import { useWorkspaceStore } from "../../../stores/workspace-store";
 import { useProfileStore } from "../../auth-profile/stores/profileStore";
 import { resolveRepoOrigin } from "../hooks/useResolveRepoOrigin";
+import { useVerifyRepositories } from "../hooks/useVerifyRepositories";
 import "./Dashboard.css";
 
 type DashboardMainProps = {
@@ -34,6 +35,7 @@ export function DashboardMain({ onOpenManagementModal, onCleanupDanglingTags }: 
     refreshRepositoryGitStatus,
     cleanupDanglingTags: cleanupDanglingTagsFromStore,
   } = useWorkspaceStore();
+  const { verifyRepositories } = useVerifyRepositories();
   const activeProfileId = useProfileStore((state) => state.activeProfileId);
   const activeGithubUsername = useProfileStore((state) => {
     const activeProfile = state.profiles.find((profile) => profile.id === state.activeProfileId) ?? null;
@@ -44,6 +46,11 @@ export function DashboardMain({ onOpenManagementModal, onCleanupDanglingTags }: 
     void fetchRepositoriesData();
     void hydrateQuickFilterMetadata();
   }, []);
+
+  useEffect(() => {
+    if (allRepos.length === 0) return;
+    void verifyRepositories(allRepos);
+  }, [allRepos, verifyRepositories]);
 
   const toggleTagFilter = (tagId: string) => {
     setSelectedTagIds((prev) =>
