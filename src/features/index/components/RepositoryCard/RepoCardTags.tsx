@@ -13,8 +13,6 @@ type RepoCardTagsProps = {
   onRemoveTag: (tagName: string) => Promise<void>;
 };
 
-const INLINE_LIMIT = 2;
-
 export function RepoCardTags({ tags, isAnyLoading, onOpenTagModal, onRemoveTag }: RepoCardTagsProps) {
   const orderedTags = useMemo(() => {
     return [...tags].sort((a, b) => a.tag_name.localeCompare(b.tag_name, undefined, { sensitivity: 'base' }));
