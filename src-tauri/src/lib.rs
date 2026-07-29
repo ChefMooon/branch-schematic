@@ -56,6 +56,12 @@ fn get_database_path() -> Result<String, String> {
 // Shared Tauri State container for our background SQLx Pool
 pub struct DbState(pub SqlitePool);
 
+impl DbState {
+    pub fn pool(&self) -> &SqlitePool {
+        &self.0
+    }
+}
+
 #[tauri::command]
 fn greet(name: &str) -> String {
     format!("Hello, {}! You've been greeted from Rust!", name)
@@ -68,7 +74,7 @@ async fn watch_project_directory(
     path_id: String,
     absolute_path: String,
 ) -> Result<(), String> {
-    let daemon = daemon::IndexerDaemon::new(app, state.0.clone());
+    let daemon = daemon::IndexerDaemon::new(app, state.inner().pool().clone());
     daemon.start_watching(path_id, absolute_path).await?;
     Ok(())
 }
@@ -77,7 +83,7 @@ async fn watch_project_directory(
 async fn get_active_tracked_paths(
     state: tauri::State<'_, DbState>,
 ) -> Result<Vec<db::TrackedPathRow>, String> {
-    db::fetch_active_tracked_paths(&state.0)
+    db::fetch_active_tracked_paths(state.inner().pool())
         .await
         .map_err(|error| error.to_string())
 }
@@ -86,7 +92,7 @@ async fn get_active_tracked_paths(
 async fn get_canvas_views(
     state: tauri::State<'_, DbState>,
 ) -> Result<Vec<db::CanvasViewRow>, String> {
-    db::fetch_all_canvas_views(&state.0)
+    db::fetch_all_canvas_views(state.inner().pool())
         .await
         .map_err(|error| error.to_string())
 }
@@ -100,7 +106,7 @@ async fn create_canvas_view(
     pan_x: f64,
     pan_y: f64,
 ) -> Result<(), String> {
-    db::create_new_environment_view(&state.0, &id, &name, zoom_level, pan_x, pan_y)
+    db::create_new_environment_view(state.inner().pool(), &id, &name, zoom_level, pan_x, pan_y)
         .await
         .map_err(|error| error.to_string())
 }
@@ -112,7 +118,7 @@ async fn clone_view(
     new_id: String,
     new_name: String,
 ) -> Result<(), String> {
-    db::clone_canvas_view(&state.0, &source_id, &new_id, &new_name)
+    db::clone_canvas_view(state.inner().pool(), &source_id, &new_id, &new_name)
         .await
         .map_err(|error| error.to_string())
 }
@@ -122,7 +128,7 @@ async fn delete_canvas_view(
     state: tauri::State<'_, DbState>,
     view_id: String,
 ) -> Result<(), String> {
-    db::delete_canvas_view(&state.0, &view_id)
+    db::delete_canvas_view(state.inner().pool(), &view_id)
         .await
         .map_err(|error| error.to_string())
 }
@@ -133,7 +139,7 @@ async fn rename_canvas_view(
     view_id: String,
     name: String,
 ) -> Result<(), String> {
-    db::rename_canvas_view(&state.0, &view_id, &name)
+    db::rename_canvas_view(state.inner().pool(), &view_id, &name)
         .await
         .map_err(|error| error.to_string())
 }
@@ -144,7 +150,7 @@ async fn set_canvas_view_favorite(
     view_id: String,
     is_favorite: bool,
 ) -> Result<(), String> {
-    db::set_canvas_view_favorite(&state.0, &view_id, is_favorite)
+    db::set_canvas_view_favorite(state.inner().pool(), &view_id, is_favorite)
         .await
         .map_err(|error| error.to_string())
 }
@@ -155,7 +161,7 @@ async fn move_canvas_view_display_order(
     view_id: String,
     direction: i64,
 ) -> Result<(), String> {
-    db::move_canvas_view_display_order(&state.0, &view_id, direction)
+    db::move_canvas_view_display_order(state.inner().pool(), &view_id, direction)
         .await
         .map_err(|error| error.to_string())
 }
@@ -168,7 +174,7 @@ async fn save_viewport_state(
     pan_x: f64,
     pan_y: f64,
 ) -> Result<(), String> {
-    db::update_canvas_viewport_state(&state.0, &view_id, zoom_level, pan_x, pan_y)
+    db::update_canvas_viewport_state(state.inner().pool(), &view_id, zoom_level, pan_x, pan_y)
         .await
         .map_err(|error| error.to_string())
 }
@@ -181,7 +187,7 @@ async fn snapshot_canvas_view_baseline_viewport(
     baseline_pan_x: f64,
     baseline_pan_y: f64,
 ) -> Result<(), String> {
-    db::snapshot_canvas_view_baseline_viewport(&state.0, &view_id, baseline_zoom, baseline_pan_x, baseline_pan_y)
+    db::snapshot_canvas_view_baseline_viewport(state.inner().pool(), &view_id, baseline_zoom, baseline_pan_x, baseline_pan_y)
         .await
         .map_err(|error| error.to_string())
 }
@@ -192,7 +198,7 @@ async fn save_canvas_view_card_state(
     view_id: String,
     card_state_json: String,
 ) -> Result<(), String> {
-    db::update_canvas_view_card_state(&state.0, &view_id, &card_state_json)
+    db::update_canvas_view_card_state(state.inner().pool(), &view_id, &card_state_json)
         .await
         .map_err(|error| error.to_string())
 }
@@ -204,7 +210,7 @@ async fn set_canvas_view_path_visibility(
     repo_path_id: String,
     visible: bool,
 ) -> Result<(), String> {
-    db::set_canvas_view_path_visibility(&state.0, &view_id, &repo_path_id, visible)
+    db::set_canvas_view_path_visibility(state.inner().pool(), &view_id, &repo_path_id, visible)
         .await
         .map_err(|error| error.to_string())
 }
@@ -216,7 +222,7 @@ async fn set_canvas_view_branch_visibility(
     branch_id: String,
     visible: bool,
 ) -> Result<(), String> {
-    db::set_canvas_view_branch_visibility(&state.0, &view_id, &branch_id, visible)
+    db::set_canvas_view_branch_visibility(state.inner().pool(), &view_id, &branch_id, visible)
         .await
         .map_err(|error| error.to_string())
 }
@@ -226,7 +232,7 @@ async fn get_canvas_view_scope(
     state: tauri::State<'_, DbState>,
     view_id: String,
 ) -> Result<db::CanvasViewScopeState, String> {
-    db::fetch_canvas_view_scope(&state.0, &view_id)
+    db::fetch_canvas_view_scope(state.inner().pool(), &view_id)
         .await
         .map_err(|error| error.to_string())
 }
@@ -236,7 +242,7 @@ async fn get_workspace_nodes(
     state: tauri::State<'_, DbState>,
     view_id: String,
 ) -> Result<Vec<db::WorkspaceNodeRow>, String> {
-    db::fetch_workspace_nodes(&state.0, &view_id)
+    db::fetch_workspace_nodes(state.inner().pool(), &view_id)
         .await
         .map_err(|error| error.to_string())
 }
@@ -249,7 +255,7 @@ async fn update_card_position(
     x: f64,
     y: f64,
 ) -> Result<(), String> {
-    db::update_canvas_card_position(&state.0, &view_id, &id, x, y)
+    db::update_canvas_card_position(state.inner().pool(), &view_id, &id, x, y)
         .await
         .map_err(|error| error.to_string())
 }
@@ -259,7 +265,7 @@ async fn get_manual_edges(
     state: tauri::State<'_, DbState>,
     view_id: String,
 ) -> Result<Vec<db::CanvasEdgeRow>, String> {
-    db::fetch_canvas_manual_edges(&state.0, &view_id)
+    db::fetch_canvas_manual_edges(state.inner().pool(), &view_id)
         .await
         .map_err(|error| error.to_string())
 }
@@ -272,7 +278,7 @@ async fn save_manual_edge(
     source: String,
     target: String,
 ) -> Result<(), String> {
-    db::insert_canvas_manual_edge(&state.0, &view_id, &id, &source, &target, "BEZIER")
+    db::insert_canvas_manual_edge(state.inner().pool(), &view_id, &id, &source, &target, "BEZIER")
         .await
         .map_err(|error| error.to_string())
 }
@@ -283,7 +289,7 @@ async fn delete_manual_edge(
     view_id: String,
     id: String,
 ) -> Result<(), String> {
-    db::delete_canvas_manual_edge(&state.0, &view_id, &id)
+    db::delete_canvas_manual_edge(state.inner().pool(), &view_id, &id)
         .await
         .map_err(|error| error.to_string())
 }
@@ -298,7 +304,7 @@ async fn update_branch_card_config(
     theme_color_hex: String,
     explode_branches: i64,
 ) -> Result<(), String> {
-    db::update_canvas_card_config(&state.0, &view_id, &repo_path_id, &view_mode, commit_density, &theme_color_hex, explode_branches)
+    db::update_canvas_card_config(state.inner().pool(), &view_id, &repo_path_id, &view_mode, commit_density, &theme_color_hex, explode_branches)
         .await
         .map_err(|error| error.to_string())
 }
@@ -327,7 +333,7 @@ async fn set_repository_theme(
         if trimmed.is_empty() { None } else { Some(trimmed.to_string()) }
     });
 
-    db::update_repository_theme(&state.0, &path_id, normalized_color.as_deref(), normalized_icon.as_deref())
+    db::update_repository_theme(state.inner().pool(), &path_id, normalized_color.as_deref(), normalized_icon.as_deref())
         .await
         .map_err(|error| format!("Failed to persist repository theme: {error}"))?;
 
@@ -340,56 +346,56 @@ async fn get_branch_commits(
     branch_id: String,
     limit: i64,
 ) -> Result<Vec<db::CachedCommitRow>, String> {
-    db::fetch_branch_commits(&state.0, &branch_id, limit)
+    db::fetch_branch_commits(state.inner().pool(), &branch_id, limit)
         .await
         .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
 async fn get_notifications(state: tauri::State<'_, DbState>) -> Result<Vec<db::NotificationRow>, String> {
-    db::fetch_notifications(&state.0)
+    db::fetch_notifications(state.inner().pool())
         .await
         .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
 async fn save_notification(state: tauri::State<'_, DbState>, notification: db::NotificationRow) -> Result<(), String> {
-    db::insert_notification(&state.0, &notification)
+    db::insert_notification(state.inner().pool(), &notification)
         .await
         .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
 async fn mark_notification_read(state: tauri::State<'_, DbState>, id: String) -> Result<(), String> {
-    db::mark_notification_read(&state.0, &id)
+    db::mark_notification_read(state.inner().pool(), &id)
         .await
         .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
 async fn toggle_notification_pin(state: tauri::State<'_, DbState>, id: String) -> Result<(), String> {
-    db::toggle_notification_pin(&state.0, &id)
+    db::toggle_notification_pin(state.inner().pool(), &id)
         .await
         .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
 async fn archive_notification(state: tauri::State<'_, DbState>, id: String) -> Result<(), String> {
-    db::archive_notification(&state.0, &id)
+    db::archive_notification(state.inner().pool(), &id)
         .await
         .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
 async fn mark_all_notifications_read(state: tauri::State<'_, DbState>) -> Result<(), String> {
-    db::mark_all_notifications_read(&state.0)
+    db::mark_all_notifications_read(state.inner().pool())
         .await
         .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
 async fn archive_all_notifications(state: tauri::State<'_, DbState>) -> Result<(), String> {
-    db::archive_all_notifications(&state.0)
+    db::archive_all_notifications(state.inner().pool())
         .await
         .map_err(|error| error.to_string())
 }

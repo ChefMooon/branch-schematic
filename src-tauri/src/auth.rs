@@ -547,7 +547,7 @@ async fn set_active_profile(pool: &SqlitePool, profile_id: &str) -> Result<(), S
 
 #[tauri::command]
 pub async fn get_profiles(state: tauri::State<'_, crate::DbState>) -> Result<Vec<AuthProfileRow>, String> {
-    let pool = &state.0;
+    let pool = state.inner().pool();
     ensure_seed_profile(pool).await?;
 
     let rows = sqlx::query(
@@ -592,7 +592,7 @@ pub async fn get_profiles(state: tauri::State<'_, crate::DbState>) -> Result<Vec
 
 #[tauri::command]
 pub async fn add_profile(state: tauri::State<'_, crate::DbState>, profile: AuthProfileInput) -> Result<AuthProfileRow, String> {
-    let pool = &state.0;
+    let pool = state.inner().pool();
     ensure_seed_profile(pool).await?;
 
     let profile_id = profile.id.unwrap_or_else(|| Uuid::new_v4().to_string());
@@ -641,7 +641,7 @@ pub async fn update_profile(
     profile_id: String,
     profile: AuthProfileInput,
 ) -> Result<AuthProfileRow, String> {
-    let pool = &state.0;
+    let pool = state.inner().pool();
     ensure_seed_profile(pool).await?;
 
     let should_activate = profile.is_active.unwrap_or(0) == 1;
@@ -688,7 +688,7 @@ pub async fn update_profile(
 
 #[tauri::command]
 pub async fn delete_profile(state: tauri::State<'_, crate::DbState>, profile_id: String) -> Result<(), String> {
-    let pool = &state.0;
+    let pool = state.inner().pool();
     ensure_seed_profile(pool).await?;
 
     let active_profile: Option<String> = sqlx::query_scalar::<_, String>("SELECT id FROM auth_profiles WHERE id = $1 AND is_active = 1")
@@ -726,7 +726,7 @@ pub async fn check_profile_tokens(
     state: tauri::State<'_, crate::DbState>,
     profile_ids: Vec<String>,
 ) -> Result<Vec<TokenHealthPayload>, String> {
-    let pool = &state.0;
+    let pool = state.inner().pool();
     ensure_seed_profile(pool).await?;
 
     let requested_ids = if profile_ids.is_empty() {
@@ -824,7 +824,7 @@ pub async fn exchange_code_for_token(
     state: tauri::State<'_, crate::DbState>,
     payload: OAuthExchangePayload,
 ) -> Result<OAuthExchangeResponse, String> {
-    let pool = &state.0;
+    let pool = state.inner().pool();
     let token = exchange_code_with_provider(&payload).await?;
 
     let github_profile = fetch_github_user_profile(&token, payload.provider_url.as_deref()).await.ok();

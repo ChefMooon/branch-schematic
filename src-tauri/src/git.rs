@@ -745,7 +745,7 @@ pub async fn list_remote_repositories(
     per_page: Option<u32>,
 ) -> Result<RemoteRepositoryPage, String> {
     let (page, per_page) = normalize_pagination(page, per_page);
-    let profile = auth::resolve_profile_for_remote(&state.0, profile_id.as_deref())
+    let profile = auth::resolve_profile_for_remote(state.inner().pool(), profile_id.as_deref())
         .await?
         .ok_or_else(|| "No active profile is available for remote repository access.".to_string())?;
 
@@ -761,7 +761,7 @@ pub async fn list_enterprise_repositories(
     page: Option<u32>,
     per_page: Option<u32>,
 ) -> Result<RemoteRepositoryPage, String> {
-    let profile = auth::resolve_profile_for_remote(&state.0, profile_id.as_deref())
+    let profile = auth::resolve_profile_for_remote(state.inner().pool(), profile_id.as_deref())
         .await?
         .ok_or_else(|| "No active profile is available for enterprise repository access.".to_string())?;
 
@@ -790,7 +790,7 @@ pub async fn list_remote_branches(
         return Err("Owner and repository name are required to list branches.".to_string());
     }
 
-    let profile = auth::resolve_profile_for_remote(&state.0, profile_id.as_deref())
+    let profile = auth::resolve_profile_for_remote(state.inner().pool(), profile_id.as_deref())
         .await?
         .ok_or_else(|| "No active profile is available for remote branch access.".to_string())?;
     let (page, per_page) = normalize_pagination(page, per_page);
@@ -817,7 +817,7 @@ pub async fn clone_remote_repository(
         return Err("The destination path must be an existing directory.".to_string());
     }
 
-    let profile = auth::resolve_profile_for_remote(&state.0, profile_id.as_deref()).await?;
+    let profile = auth::resolve_profile_for_remote(state.inner().pool(), profile_id.as_deref()).await?;
     let clone_url = resolve_clone_url(
         profile.as_ref(),
         owner.as_deref(),
@@ -887,8 +887,8 @@ pub async fn clone_remote_repository(
         .ok_or_else(|| "Failed to resolve cloned repository path.".to_string())?
         .to_string();
 
-    let track_result = track_repository_path(&state.0, &target_path_string, profile_id.as_deref()).await?;
-    let path_id = db::fetch_tracked_path_id_by_absolute_path(&state.0, &target_path_string)
+    let track_result = track_repository_path(state.inner().pool(), &target_path_string, profile_id.as_deref()).await?;
+    let path_id = db::fetch_tracked_path_id_by_absolute_path(state.inner().pool(), &target_path_string)
         .await
         .map_err(|error| format!("Failed to resolve tracked repository id: {}", error))?
         .ok_or_else(|| "The cloned repository could not be tracked.".to_string())?;
@@ -1163,7 +1163,7 @@ pub async fn initialize_new_repository(
 
     if remote_url.is_some() {
         let (derived_origin_type, derived_owner_login) =
-            resolve_repository_origin_metadata(&state.0, remote_url.as_deref(), None, false).await;
+            resolve_repository_origin_metadata(state.inner().pool(), remote_url.as_deref(), None, false).await;
         repo_origin_type = derived_origin_type;
         github_owner_login = derived_owner_login;
     }
@@ -1171,7 +1171,7 @@ pub async fn initialize_new_repository(
     let id = Uuid::new_v4().to_string();
 
     db::insert_tracked_path(
-        &state.0,
+        state.inner().pool(),
         &id,
         &display_name,
         &target_path.to_string_lossy(),
@@ -1335,7 +1335,7 @@ pub async fn add_new_tracked_path(
     state: tauri::State<'_, DbState>,
     absolute_path: String
 ) -> Result<RepositoryTrackResult, String> {
-    track_repository_path(&state.0, &absolute_path, None).await
+    track_repository_path(state.inner().pool(), &absolute_path, None).await
 }
 
 #[tauri::command]
@@ -1343,7 +1343,7 @@ pub async fn untrack_repository(
     state: tauri::State<'_, DbState>,
     path_id: String,
 ) -> Result<(), String> {
-    crate::db::untrack_repository_path(&state.0, &path_id)
+    crate::db::untrack_repository_path(state.inner().pool(), &path_id)
         .await
         .map_err(|err| format!("Failed to untrack target repository row: {}", err))?;
         
@@ -1399,7 +1399,7 @@ pub async fn get_tracked_workspaces(
                 AND cached_git_branches.is_head = 1
          WHERE tracked_paths.is_active = 1"
     )
-    .fetch_all(&state.0)
+    .fetch_all(state.inner().pool())
     .await
     .map_err(|e| format!("Failed to fetch tracked paths from DB: {}", e))?;
 
@@ -1496,7 +1496,7 @@ pub async fn set_repository_alias(
         other => other,
     };
 
-    db::update_repository_alias(&state.0, &path_id, target_alias.as_deref())
+    db::update_repository_alias(state.inner().pool(), &path_id, target_alias.as_deref())
         .await
         .map_err(|err| format!("Failed to record custom workspace name alteration: {}", err))?;
 
@@ -1509,7 +1509,7 @@ pub async fn set_repository_favorite(
     path_id: String,
     is_favorite: bool,
 ) -> Result<(), String> {
-    db::update_repository_favorite(&state.0, &path_id, is_favorite)
+    db::update_repository_favorite(state.inner().pool(), &path_id, is_favorite)
         .await
         .map_err(|err| format!("Failed to persist favorite state: {}", err))?;
 
@@ -1526,7 +1526,7 @@ pub async fn set_repository_origin_type(
         return Err("Invalid repository origin type provided.".to_string());
     }
 
-    crate::db::update_repository_origin_type(&state.0, &path_id, &origin_type)
+    crate::db::update_repository_origin_type(state.inner().pool(), &path_id, &origin_type)
         .await
         .map_err(|err| format!("Failed to update origin status: {}", err))?;
 
@@ -1548,7 +1548,7 @@ pub async fn set_repository_group(
         }
     });
 
-    db::update_repository_group(&state.0, &path_id, cleaned.as_deref())
+    db::update_repository_group(state.inner().pool(), &path_id, cleaned.as_deref())
         .await
         .map_err(|err| format!("Failed to persist custom group value: {}", err))?;
 
@@ -1566,21 +1566,21 @@ pub async fn create_custom_group(
         return Err("Group name cannot be empty.".to_string());
     }
 
-    let tag_conflict = db::tag_name_exists(&state.0, &trimmed_name, None)
+    let tag_conflict = db::tag_name_exists(state.inner().pool(), &trimmed_name, None)
         .await
         .map_err(|err| format!("Failed to validate tag name: {}", err))?;
     if tag_conflict {
         return Err("A tag with this name already exists. Tags and groups must have unique names.".to_string());
     }
 
-    let group_conflict = db::group_name_exists(&state.0, &trimmed_name, None)
+    let group_conflict = db::group_name_exists(state.inner().pool(), &trimmed_name, None)
         .await
         .map_err(|err| format!("Failed to validate group name: {}", err))?;
     if group_conflict {
         return Err("A group with this name already exists.".to_string());
     }
 
-    db::create_custom_group(&state.0, &trimmed_name, color_hex.as_deref())
+    db::create_custom_group(state.inner().pool(), &trimmed_name, color_hex.as_deref())
         .await
         .map_err(|err| format!("Failed to create custom group: {}", err))
 }
@@ -1597,21 +1597,21 @@ pub async fn update_custom_group(
         return Err("Group name cannot be empty.".to_string());
     }
 
-    let tag_conflict = db::tag_name_exists(&state.0, &trimmed_name, None)
+    let tag_conflict = db::tag_name_exists(state.inner().pool(), &trimmed_name, None)
         .await
         .map_err(|err| format!("Failed to validate tag name: {}", err))?;
     if tag_conflict {
         return Err("A tag with this name already exists. Tags and groups must have unique names.".to_string());
     }
 
-    let group_conflict = db::group_name_exists(&state.0, &trimmed_name, Some(&id))
+    let group_conflict = db::group_name_exists(state.inner().pool(), &trimmed_name, Some(&id))
         .await
         .map_err(|err| format!("Failed to validate group name: {}", err))?;
     if group_conflict {
         return Err("A group with this name already exists.".to_string());
     }
 
-    db::update_custom_group(&state.0, &id, &trimmed_name, &color_hex)
+    db::update_custom_group(state.inner().pool(), &id, &trimmed_name, &color_hex)
         .await
         .map_err(|err| format!("Failed to update custom group: {}", err))
 }
@@ -1621,7 +1621,7 @@ pub async fn delete_custom_group(
     state: tauri::State<'_, DbState>,
     id: String,
 ) -> Result<(), String> {
-    db::delete_custom_group(&state.0, &id)
+    db::delete_custom_group(state.inner().pool(), &id)
         .await
         .map_err(|err| format!("Failed to delete custom group: {}", err))
 }
@@ -1630,7 +1630,7 @@ pub async fn delete_custom_group(
 pub async fn get_custom_groups_with_usage(
     state: tauri::State<'_, DbState>,
 ) -> Result<Vec<db::GroupSummaryRow>, String> {
-    db::fetch_custom_groups_with_usage(&state.0)
+    db::fetch_custom_groups_with_usage(state.inner().pool())
         .await
         .map_err(|err| format!("Failed to fetch custom groups: {}", err))
 }
@@ -1646,21 +1646,21 @@ pub async fn create_global_tag(
         return Err("Tag name cannot be empty.".to_string());
     }
 
-    let tag_conflict = db::tag_name_exists(&state.0, &trimmed_name, None)
+    let tag_conflict = db::tag_name_exists(state.inner().pool(), &trimmed_name, None)
         .await
         .map_err(|err| format!("Failed to validate tag name: {}", err))?;
     if tag_conflict {
         return Err("A tag with this name already exists.".to_string());
     }
 
-    let group_conflict = db::group_name_exists(&state.0, &trimmed_name, None)
+    let group_conflict = db::group_name_exists(state.inner().pool(), &trimmed_name, None)
         .await
         .map_err(|err| format!("Failed to validate group name: {}", err))?;
     if group_conflict {
         return Err("A group with this name already exists. Tags and groups must have unique names.".to_string());
     }
 
-    db::create_global_tag(&state.0, &trimmed_name, color_hex.as_deref())
+    db::create_global_tag(state.inner().pool(), &trimmed_name, color_hex.as_deref())
         .await
         .map_err(|err| format!("Failed to create global tag: {}", err))
 }
@@ -1669,7 +1669,7 @@ pub async fn create_global_tag(
 pub async fn get_global_tags_with_usage(
     state: tauri::State<'_, DbState>,
 ) -> Result<Vec<db::TagFilterSummaryRow>, String> {
-    db::fetch_global_tags_with_usage(&state.0)
+    db::fetch_global_tags_with_usage(state.inner().pool())
         .await
         .map_err(|err| format!("Failed to fetch global tags: {}", err))
 }
@@ -1686,21 +1686,21 @@ pub async fn update_global_tag(
         return Err("Tag name cannot be empty.".to_string());
     }
 
-    let tag_conflict = db::tag_name_exists(&state.0, &trimmed_name, Some(&id))
+    let tag_conflict = db::tag_name_exists(state.inner().pool(), &trimmed_name, Some(&id))
         .await
         .map_err(|err| format!("Failed to validate tag name: {}", err))?;
     if tag_conflict {
         return Err("A tag with this name already exists.".to_string());
     }
 
-    let group_conflict = db::group_name_exists(&state.0, &trimmed_name, None)
+    let group_conflict = db::group_name_exists(state.inner().pool(), &trimmed_name, None)
         .await
         .map_err(|err| format!("Failed to validate group name: {}", err))?;
     if group_conflict {
         return Err("A group with this name already exists. Tags and groups must have unique names.".to_string());
     }
 
-    db::update_global_tag(&state.0, &id, &trimmed_name, &color_hex)
+    db::update_global_tag(state.inner().pool(), &id, &trimmed_name, &color_hex)
         .await
         .map_err(|err| format!("Failed to update global tag: {}", err))
 }
@@ -1710,7 +1710,7 @@ pub async fn delete_global_tag(
     state: tauri::State<'_, DbState>,
     id: String,
 ) -> Result<(), String> {
-    db::delete_global_tag(&state.0, &id)
+    db::delete_global_tag(state.inner().pool(), &id)
         .await
         .map_err(|err| format!("Failed to delete global tag: {}", err))
 }
@@ -1719,7 +1719,7 @@ pub async fn delete_global_tag(
 pub async fn cleanup_dangling_global_tags(
     state: tauri::State<'_, DbState>,
 ) -> Result<i64, String> {
-    db::cleanup_dangling_global_tags(&state.0)
+    db::cleanup_dangling_global_tags(state.inner().pool())
         .await
         .map_err(|err| format!("Failed to clean dangling tags: {}", err))
 }
@@ -1731,11 +1731,11 @@ pub async fn add_repository_tag(
     tag_name: String,
     color_hex: Option<String>,
 ) -> Result<Vec<db::RepoTagRow>, String> {
-    db::attach_repository_tag(&state.0, &path_id, &tag_name, color_hex.as_deref())
+    db::attach_repository_tag(state.inner().pool(), &path_id, &tag_name, color_hex.as_deref())
         .await
         .map_err(|err| format!("Failed to attach repository tag: {}", err))?;
 
-    db::fetch_repository_tags(&state.0, &path_id)
+    db::fetch_repository_tags(state.inner().pool(), &path_id)
         .await
         .map_err(|err| format!("Failed to reload repository tag list: {}", err))
 }
@@ -1746,11 +1746,11 @@ pub async fn remove_repository_tag(
     path_id: String,
     tag_name: String,
 ) -> Result<Vec<db::RepoTagRow>, String> {
-    db::detach_repository_tag(&state.0, &path_id, &tag_name)
+    db::detach_repository_tag(state.inner().pool(), &path_id, &tag_name)
         .await
         .map_err(|err| format!("Failed to detach repository tag: {}", err))?;
 
-    db::fetch_repository_tags(&state.0, &path_id)
+    db::fetch_repository_tags(state.inner().pool(), &path_id)
         .await
         .map_err(|err| format!("Failed to reload repository tag list: {}", err))
 }
@@ -1760,7 +1760,7 @@ pub async fn get_repository_tags(
     state: tauri::State<'_, DbState>,
     path_id: String,
 ) -> Result<Vec<db::RepoTagRow>, String> {
-    db::fetch_repository_tags(&state.0, &path_id)
+    db::fetch_repository_tags(state.inner().pool(), &path_id)
         .await
         .map_err(|err| format!("Failed to fetch repository tag list: {}", err))
 }
@@ -1770,7 +1770,7 @@ pub async fn touch_repository_last_accessed(
     state: tauri::State<'_, DbState>,
     path_id: String,
 ) -> Result<(), String> {
-    db::touch_repository_last_accessed(&state.0, &path_id)
+    db::touch_repository_last_accessed(state.inner().pool(), &path_id)
         .await
         .map_err(|err| format!("Failed to update repository last accessed timestamp: {}", err))?;
 
@@ -1781,7 +1781,7 @@ pub async fn touch_repository_last_accessed(
 pub async fn get_quick_filter_metadata(
     state: tauri::State<'_, DbState>,
 ) -> Result<db::QuickFilterMetadata, String> {
-    db::fetch_quick_filter_metadata(&state.0)
+    db::fetch_quick_filter_metadata(state.inner().pool())
         .await
         .map_err(|err| format!("Failed to fetch quick filter metadata: {}", err))
 }
@@ -2014,7 +2014,7 @@ pub async fn refresh_repository_git_status(
     path_id: String,
     absolute_path: String,
 ) -> Result<RepoGitStatusSnapshot, String> {
-    refresh_and_cache_git_status(&state.0, &path_id, &absolute_path).await
+    refresh_and_cache_git_status(state.inner().pool(), &path_id, &absolute_path).await
 }
 
 // ==========================================
@@ -2104,17 +2104,17 @@ pub async fn git_fetch_operation(
     state: tauri::State<'_, DbState>,
     path_id: String,
 ) -> Result<String, String> {
-    let absolute_path = db::get_absolute_path_for_id(&state.0, &path_id)
+    let absolute_path = db::get_absolute_path_for_id(state.inner().pool(), &path_id)
         .await
         .map_err(|e| format!("Failed to resolve repository path: {}", e))?;
 
     let repo = Repository::open(&absolute_path)
         .map_err(|e| format!("Failed to open Git repository: {}", e))?;
 
-    let _ = resolve_profile_for_repo(&state.0, &path_id).await;
+    let _ = resolve_profile_for_repo(state.inner().pool(), &path_id).await;
     let fetch_result = fetch_from_origin(&repo);
 
-    let _ = refresh_and_cache_git_status(&state.0, &path_id, &absolute_path).await;
+    let _ = refresh_and_cache_git_status(state.inner().pool(), &path_id, &absolute_path).await;
 
     fetch_result.map(|_| "Fetched the latest changes from origin.".to_string())
 }
@@ -2127,14 +2127,14 @@ pub async fn git_pull_operation(
     state: tauri::State<'_, DbState>,
     path_id: String,
 ) -> Result<String, String> {
-    let absolute_path = db::get_absolute_path_for_id(&state.0, &path_id)
+    let absolute_path = db::get_absolute_path_for_id(state.inner().pool(), &path_id)
         .await
         .map_err(|e| format!("Failed to resolve repository path: {}", e))?;
 
     let repo = Repository::open(&absolute_path)
         .map_err(|e| format!("Failed to open Git repository: {}", e))?;
 
-    let _ = resolve_profile_for_repo(&state.0, &path_id).await;
+    let _ = resolve_profile_for_repo(state.inner().pool(), &path_id).await;
     fetch_from_origin(&repo)?;
 
     let pull_result = (|| -> Result<String, String> {
@@ -2202,7 +2202,7 @@ pub async fn git_pull_operation(
         ))
     })();
 
-    let _ = refresh_and_cache_git_status(&state.0, &path_id, &absolute_path).await;
+    let _ = refresh_and_cache_git_status(state.inner().pool(), &path_id, &absolute_path).await;
 
     pull_result
 }
@@ -2215,14 +2215,14 @@ pub async fn git_push_operation(
     state: tauri::State<'_, DbState>,
     path_id: String,
 ) -> Result<String, String> {
-    let absolute_path = db::get_absolute_path_for_id(&state.0, &path_id)
+    let absolute_path = db::get_absolute_path_for_id(state.inner().pool(), &path_id)
         .await
         .map_err(|e| format!("Failed to resolve repository path: {}", e))?;
 
     let repo = Repository::open(&absolute_path)
         .map_err(|e| format!("Failed to open Git repository: {}", e))?;
 
-    let _ = resolve_profile_for_repo(&state.0, &path_id).await;
+    let _ = resolve_profile_for_repo(state.inner().pool(), &path_id).await;
     let push_result = (|| -> Result<String, String> {
         let head_ref = repo
             .head()
@@ -2249,7 +2249,7 @@ pub async fn git_push_operation(
         Ok(format!("Pushed '{}' to origin.", branch_name))
     })();
 
-    let _ = refresh_and_cache_git_status(&state.0, &path_id, &absolute_path).await;
+    let _ = refresh_and_cache_git_status(state.inner().pool(), &path_id, &absolute_path).await;
 
     push_result
 }
