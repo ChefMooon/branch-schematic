@@ -1,6 +1,7 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { CaretDown } from '@phosphor-icons/react';
 import styles from './FilterDropdown.module.css';
+import { useClickOutside } from '../../../../hooks/useClickOutside';
 
 export type FilterOption = {
   label: string;
@@ -82,23 +83,7 @@ export function FilterDropdown({
     };
   }, [fetchOptions, errorText]);
 
-  useEffect(() => {
-    if (!isOpen) return;
-
-    const handlePointerDown = (event: MouseEvent) => {
-      const container = containerRef.current;
-      if (!container || container.contains(event.target as Node)) {
-        return;
-      }
-
-      setIsOpen(false);
-    };
-
-    document.addEventListener('mousedown', handlePointerDown);
-    return () => {
-      document.removeEventListener('mousedown', handlePointerDown);
-    };
-  }, [isOpen]);
+  useClickOutside(containerRef, () => setIsOpen(false), isOpen);
 
   const handleSelectChange = (nextValue: string) => {
     if (!multi) {

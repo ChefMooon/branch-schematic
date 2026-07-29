@@ -3,6 +3,7 @@ import { ConfirmationModal } from '../../../components/Modal/ConfirmationModal';
 import type { CanvasViewRecord } from '../../../stores/canvas-store';
 import { useCanvasStore } from '../../../stores/canvas-store';
 import { Button } from '../../../components/button/Button';
+import { useClickOutside } from '../../../hooks/useClickOutside';
 
 type ViewActionsDropdownProps = {
   isDark?: boolean;
@@ -96,24 +97,17 @@ export function ViewActionsDropdown({
 
     updateMenuPosition();
 
-    const handleOutsideClick = (event: MouseEvent) => {
-      if (!menuRef.current) return;
-      if (!menuRef.current.contains(event.target as Node)) {
-        setIsOpen(false);
-      }
-    };
-
     const handleResize = () => {
       updateMenuPosition();
     };
 
-    document.addEventListener('mousedown', handleOutsideClick);
     window.addEventListener('resize', handleResize);
     return () => {
-      document.removeEventListener('mousedown', handleOutsideClick);
       window.removeEventListener('resize', handleResize);
     };
   }, [isOpen]);
+
+  useClickOutside(menuRef, () => setIsOpen(false), isOpen);
 
   useEffect(() => {
     const handleEscape = (event: KeyboardEvent) => {

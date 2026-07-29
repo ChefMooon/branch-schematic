@@ -6,6 +6,7 @@ import {
   GitBranch,
   House,
 } from '@phosphor-icons/react';
+import { useClickOutside } from '../../../../hooks/useClickOutside';
 
 type RepoBranchDropdownProps = {
   branches: string[];
@@ -33,6 +34,7 @@ export function RepoBranchDropdown({
 }: RepoBranchDropdownProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [menuPosition, setMenuPosition] = useState<MenuPosition | null>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
   const frameRef = useRef<number | null>(null);
@@ -119,27 +121,20 @@ export function RepoBranchDropdown({
   useEffect(() => {
     if (!isOpen) return;
 
-    const handlePointerDown = (event: MouseEvent) => {
-      const target = event.target as Node | null;
-      if (triggerRef.current?.contains(target)) return;
-      if (panelRef.current?.contains(target)) return;
-      setIsOpen(false);
-    };
-
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         setIsOpen(false);
       }
     };
 
-    document.addEventListener('mousedown', handlePointerDown);
     document.addEventListener('keydown', handleKeyDown);
 
     return () => {
-      document.removeEventListener('mousedown', handlePointerDown);
       document.removeEventListener('keydown', handleKeyDown);
     };
   }, [isOpen]);
+
+  useClickOutside(containerRef, () => setIsOpen(false), isOpen);
 
   const handleSelect = async (branch: string) => {
     if (branch === selectedBranch) {
@@ -152,7 +147,7 @@ export function RepoBranchDropdown({
   };
 
   return (
-    <div className="branch-dropdown-root" onClick={(event) => event.stopPropagation()}>
+    <div ref={containerRef} className="branch-dropdown-root" onClick={(event) => event.stopPropagation()}>
       <button
         ref={triggerRef}
         type="button"

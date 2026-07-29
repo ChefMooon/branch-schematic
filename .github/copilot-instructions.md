@@ -55,6 +55,7 @@ This is a desktop application providing a visual representation of Git repositor
 - Destructive actions (like deleting a repository) must always be confirmed via a modal dialog. Use the `ConfirmationModal` component for this purpose. Also color them appropriately (e.g., red for delete, yellow for archive) to indicate the severity of the action.
 - For button and interactive-control styling, follow the shared guidance in `docs/UI-Rules.md`: consistent hover, focus-visible, active, and disabled states; prefer shared CSS variables and theme tokens over one-off styles.
 - Search and filter inputs should include an inline clear control whenever they contain text. When auditing or improving components, treat this as a required accessibility and UX improvement for any search box.
+- For any dropdown, popover, menu, or context panel, use the shared outside-dismiss hook from `src/hooks/useClickOutside.ts` rather than adding one-off document click handlers. This should be the default pattern for future UI work, including canvas-based surfaces where clicks may not bubble normally.
 
 ---
 
