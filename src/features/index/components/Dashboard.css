@@ -668,15 +668,35 @@
   opacity: 0.92;
 }
 
-.origin-owned .badge-origin-type { background: color-mix(in srgb, var(--app-accent) 16%, transparent); color: var(--app-accent); }
-.origin-fork .badge-origin-type { background: color-mix(in srgb, var(--app-success) 16%, transparent); color: var(--app-success); }
-.origin-local_only .badge-origin-type { background: color-mix(in srgb, var(--app-warning) 16%, transparent); color: var(--app-warning); }
-.origin-contributor .badge-origin-type { background: color-mix(in srgb, var(--app-accent-strong) 16%, transparent); color: var(--app-accent-strong); }
+.origin-owned .badge-origin-type {
+  background: color-mix(in srgb, var(--app-accent) 16%, transparent);
+  color: var(--app-accent);
+}
+.origin-fork .badge-origin-type {
+  background: color-mix(in srgb, var(--app-success) 16%, transparent);
+  color: var(--app-success);
+}
+.origin-local_only .badge-origin-type {
+  background: color-mix(in srgb, var(--app-warning) 16%, transparent);
+  color: var(--app-warning);
+}
+.origin-contributor .badge-origin-type {
+  background: color-mix(in srgb, #8b5cf6 16%, transparent);
+  color: #8b5cf6;
+}
 
-.origin-owned .badge-origin-type-inline { border-color: color-mix(in srgb, var(--app-accent) 16%, transparent); }
-.origin-fork .badge-origin-type-inline { border-color: color-mix(in srgb, var(--app-success) 16%, transparent); }
-.origin-local_only .badge-origin-type-inline { border-color: color-mix(in srgb, var(--app-warning) 16%, transparent); }
-.origin-contributor .badge-origin-type-inline { border-color: color-mix(in srgb, var(--app-accent-strong) 16%, transparent); }
+.origin-owned .badge-origin-type-inline {
+  border-color: color-mix(in srgb, var(--app-accent) 28%, transparent);
+}
+.origin-fork .badge-origin-type-inline {
+  border-color: color-mix(in srgb, var(--app-success) 28%, transparent);
+}
+.origin-local_only .badge-origin-type-inline {
+  border-color: color-mix(in srgb, var(--app-warning) 28%, transparent);
+}
+.origin-contributor .badge-origin-type-inline {
+  border-color: color-mix(in srgb, #8b5cf6 28%, transparent);
+}
 
 .badge-origin-type-inline.is-inactive-by-profile {
   color: var(--text-muted) !important;

@@ -5,9 +5,14 @@ import type { TrackedPath } from '../../../types/git';
 export type RepoOriginType = NonNullable<TrackedPath['repo_origin_type']>;
 
 export function resolveRepoOrigin(repo: TrackedPath, githubUsername: string | null | undefined): RepoOriginType {
-  const fallbackOrigin = repo.repo_origin_type ?? 'LOCAL_ONLY';
+  const backendOrigin = repo.repo_origin_type;
+  const fallbackOrigin = backendOrigin ?? 'LOCAL_ONLY';
   const ownerLogin = repo.github_owner_login?.trim();
   const profileLogin = githubUsername?.trim();
+
+  if (backendOrigin === 'OWNED' || backendOrigin === 'FORK' || backendOrigin === 'CONTRIBUTOR' || backendOrigin === 'LOCAL_ONLY') {
+    return backendOrigin;
+  }
 
   if (!ownerLogin || !profileLogin) {
     return fallbackOrigin;

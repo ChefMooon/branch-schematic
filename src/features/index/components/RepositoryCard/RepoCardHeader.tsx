@@ -51,7 +51,20 @@ export function RepoCardHeader({
 }: RepoCardHeaderProps) {
   const isFavorite = (repo.is_favorite ?? 0) === 1;
   const primaryTitle = repo.alias_name || repo.display_name;
-  const formatOriginType = (value: string) => value === 'CONTRIBUTOR' ? 'Contributor' : value.replace('_', ' ');
+  const formatOriginType = (value: string) => {
+    switch (value) {
+      case 'OWNED':
+        return 'Owned';
+      case 'FORK':
+        return 'Fork';
+      case 'LOCAL_ONLY':
+        return 'Local Only';
+      case 'CONTRIBUTOR':
+        return 'Contributor';
+      default:
+        return value.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase());
+    }
+  };
 
   return (
     <div className="repo-meta-details">
