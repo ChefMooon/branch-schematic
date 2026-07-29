@@ -2,6 +2,10 @@ import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
 import type { CustomGroup, GroupSummary, QuickFilterMetadata, RepoGitStatusSnapshot, RepoTag, TagFilterSummary, TrackedPath } from '../types/git';
 
+function sortRepoTags(tags: RepoTag[]): RepoTag[] {
+  return [...tags].sort((a, b) => a.tag_name.localeCompare(b.tag_name, undefined, { sensitivity: 'base' }));
+}
+
 function parseRepoTags(tagsJson: unknown): RepoTag[] {
   if (typeof tagsJson !== 'string' || tagsJson.trim().length === 0) {
     return [];
@@ -10,20 +14,22 @@ function parseRepoTags(tagsJson: unknown): RepoTag[] {
   try {
     const parsed = JSON.parse(tagsJson);
     if (!Array.isArray(parsed)) return [];
-    return parsed
-      .filter((entry): entry is RepoTag => {
-        return Boolean(
-          entry &&
-            typeof entry.id === 'string' &&
-            typeof entry.tag_name === 'string' &&
-            typeof entry.color_hex === 'string'
-        );
-      })
-      .map((entry) => ({
-        id: entry.id,
-        tag_name: entry.tag_name,
-        color_hex: entry.color_hex,
-      }));
+    return sortRepoTags(
+      parsed
+        .filter((entry): entry is RepoTag => {
+          return Boolean(
+            entry &&
+              typeof entry.id === 'string' &&
+              typeof entry.tag_name === 'string' &&
+              typeof entry.color_hex === 'string'
+          );
+        })
+        .map((entry) => ({
+          id: entry.id,
+          tag_name: entry.tag_name,
+          color_hex: entry.color_hex,
+        }))
+    );
   } catch {
     return [];
   }
@@ -259,7 +265,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
 
       set({
         repos: get().repos.map((repo) =>
-          repo.id === repoId ? { ...repo, tags: nextTags } : repo
+          repo.id === repoId ? { ...repo, tags: sortRepoTags(nextTags) } : repo
         ),
       });
       await get().hydrateQuickFilterMetadata();
@@ -281,7 +287,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
 
       set({
         repos: get().repos.map((repo) =>
-          repo.id === repoId ? { ...repo, tags: nextTags } : repo
+          repo.id === repoId ? { ...repo, tags: sortRepoTags(nextTags) } : repo
         ),
       });
       await get().hydrateQuickFilterMetadata();

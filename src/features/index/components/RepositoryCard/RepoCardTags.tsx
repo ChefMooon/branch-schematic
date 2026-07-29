@@ -9,11 +9,12 @@ type RepoCardTagsProps = {
 };
 
 export function RepoCardTags({ tags, isAnyLoading, onOpenTagModal, onRemoveTag }: RepoCardTagsProps) {
+  const orderedTags = [...tags].sort((a, b) => a.tag_name.localeCompare(b.tag_name, undefined, { sensitivity: 'base' }));
 
   return (
     <div className="repo-tags-section">
       <div className="repo-tags-list">
-        {tags.map((tag) => (
+        {orderedTags.map((tag) => (
           <span key={tag.id} className="repo-tag-pill" style={{ borderColor: tag.color_hex, backgroundColor: `${tag.color_hex}1a` }}>
             <span className="repo-tag-dot" style={{ backgroundColor: tag.color_hex }} />
             {tag.tag_name}
