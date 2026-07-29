@@ -1666,7 +1666,7 @@
   border: 1px solid var(--badge-border);
   box-sizing: border-box;
   border-radius: 999px;
-  padding: 0.2rem 0.5rem 0.2rem 0.6rem;
+  padding: 0.24rem 0.6rem;
   font-size: 0.74rem;
   color: var(--text-main);
   cursor: pointer;
@@ -1676,6 +1676,7 @@
   min-width: 0;
   overflow: hidden;
   flex: 1 1 auto;
+  min-height: 26px;
 }
 
 .repo-group-badge:hover {
@@ -1690,7 +1691,8 @@
   min-width: 0;
   max-width: 100%;
   overflow: hidden;
-  line-height: 1.1;
+  line-height: 1.25;
+  padding-block: 0.02rem;
 }
 
 .repo-group-badge-label-text {
@@ -1700,6 +1702,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  line-height: inherit;
 }
 
 .repo-group-label-popover {
