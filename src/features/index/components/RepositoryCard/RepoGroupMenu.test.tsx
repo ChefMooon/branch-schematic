@@ -51,6 +51,43 @@ describe('RepoGroupMenu', () => {
     const computed = getComputedStyle(badgeLabel as HTMLElement);
     expect(parsedLineHeight(computed.lineHeight)).toBeGreaterThan(13.5);
   });
+
+  it('keeps the color dot from shrinking when a group name is long', () => {
+    const longGroupName = 'A very long group name that should stay readable inside the dropdown';
+
+    render(
+      <RepoGroupMenu
+        repo={{
+          id: 'repo-3',
+          display_name: 'Example repo',
+          absolute_path: '/tmp/example-repo',
+          custom_group: 'Custom Group',
+        } as never}
+        availableGroups={[
+          {
+            id: 'group-1',
+            group_name: longGroupName,
+            color_hex: '#38bdf8',
+          },
+        ] as never[]}
+        onGroupChange={() => {}}
+        onCreateGroup={() => {}}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /custom group/i }));
+
+    const content = screen.getByText(longGroupName).closest('.repo-group-menu-item-content');
+    const dot = content?.querySelector('.repo-tag-dot') as HTMLElement | null;
+    const label = content?.querySelector('.repo-group-menu-item-label') as HTMLElement | null;
+
+    expect(content).not.toBeNull();
+    expect(dot).not.toBeNull();
+    expect(label).not.toBeNull();
+    expect(getComputedStyle(dot as HTMLElement).flexShrink).toBe('0');
+    expect(getComputedStyle(content as HTMLElement).justifyContent).toBe('center');
+    expect(parseFloat(getComputedStyle(label as HTMLElement).minWidth)).toBe(0);
+  });
 });
 
 function parsedLineHeight(lineHeight: string): number {

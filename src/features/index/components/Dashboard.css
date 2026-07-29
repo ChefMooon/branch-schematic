@@ -1769,23 +1769,40 @@
 }
 
 .repo-group-menu-item-content {
+  display: inline-grid;
+  grid-template-columns: auto minmax(0, max-content);
+  align-items: center;
+  justify-content: center;
+  column-gap: 0.4rem;
+  min-width: 0;
+  max-width: 100%;
+  width: fit-content;
+  margin-inline: auto;
+  overflow: hidden;
+  flex: 1 1 auto;
+  line-height: 1;
+}
+
+.repo-group-menu-item-content .repo-tag-dot {
+  grid-column: 1;
+  flex: 0 0 auto;
+  flex-shrink: 0;
+  margin-top: 0;
+  align-self: center;
+  justify-self: center;
+}
+
+.repo-group-menu-item-label {
+  grid-column: 2;
+  position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 0.5rem;
+  justify-content: center;
   min-width: 0;
   max-width: 100%;
   overflow: hidden;
   flex: 1 1 auto;
-}
-
-.repo-group-menu-item-label {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  min-width: 0;
-  max-width: 100%;
-  overflow: visible;
-  flex: 1 1 auto;
+  line-height: 1.2;
 }
 
 .repo-group-menu-item-label-text {
@@ -1795,6 +1812,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  line-height: 1.35;
 }
 
 .repo-group-create-modal .app-modal {
