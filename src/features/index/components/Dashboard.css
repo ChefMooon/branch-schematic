@@ -1465,8 +1465,11 @@
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
-  padding: 0.15rem 0.5rem;
-  font-size: 0.72rem;
+  padding: 0.18rem 0.55rem;
+  font-size: 0.74rem;
+  line-height: 1.1;
+  min-height: 24px;
+  box-sizing: border-box;
   color: var(--text-main);
   background: var(--tag-item-bg);
 }
@@ -1479,24 +1482,29 @@
 
 .repo-tag-remove {
   border: none;
+  outline: none;
+  box-shadow: none;
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
-  font-size: 0.68rem;
-  line-height: 0.7;
   padding: 0;
-  margin-left: 0.15rem;
-  width: 14px;
-  height: 14px;
+  margin-left: 0.1rem;
+  width: 16px;
+  height: 16px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
   border-radius: 999px;
+  transition: background-color 0.15s ease, color 0.15s ease;
 }
 
-.repo-tag-remove:hover {
-  background: var(--item-hover);
+.repo-tag-remove:hover,
+.repo-tag-remove:focus,
+.repo-tag-remove:focus-visible {
+  outline: none;
+  box-shadow: none;
+  background: rgba(148, 163, 184, 0.2);
   color: var(--text-main);
 }
 
@@ -1505,8 +1513,10 @@
   border-radius: 999px;
   background: var(--bg-nested);
   color: var(--text-main);
-  font-size: 0.72rem;
-  padding: 0.15rem 0.55rem;
+  font-size: 0.74rem;
+  line-height: 1.1;
+  min-height: 24px;
+  padding: 0.18rem 0.55rem;
   cursor: pointer;
   transition: background-color 0.15s ease, border-color 0.15s ease;
 }

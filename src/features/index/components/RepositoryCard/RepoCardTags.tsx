@@ -1,3 +1,4 @@
+import { X } from '@phosphor-icons/react';
 import type { RepoTag } from '../../../../types/git';
 
 type RepoCardTagsProps = {
@@ -22,8 +23,9 @@ export function RepoCardTags({ tags, isAnyLoading, onOpenTagModal, onRemoveTag }
               onClick={() => void onRemoveTag(tag.tag_name)}
               disabled={isAnyLoading}
               title={`Remove ${tag.tag_name}`}
+              aria-label={`Remove ${tag.tag_name}`}
             >
-              ×
+              <X size={10} weight="bold" />
             </button>
           </span>
         ))}
