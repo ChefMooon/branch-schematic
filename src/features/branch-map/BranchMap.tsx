@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import {
   ReactFlow,
@@ -15,6 +15,7 @@ import type { BranchCardNode } from './components/BranchCard';
 import { MapToolbar } from './components/MapToolbar';
 import { ViewSelectorTabs } from './components/ViewSelectorTabs';
 import { useCanvasStore } from '../../stores/canvas-store';
+import { shouldApplyStoredViewport, type ViewportState } from './viewportSync';
 
 const nodeTypes = {
   branchCard: BranchCard,
@@ -46,6 +47,8 @@ function MapWorkspace() {
   const isDark = themeMode === 'dark';
   const [isViewManagerOpen, setIsViewManagerOpen] = useState(false);
   const { setViewport, zoomIn, zoomOut, fitView } = useReactFlow();
+  const lastAppliedViewportRef = useRef<ViewportState>({ zoom: 1, x: 0, y: 0 });
+  const lastAppliedViewIdRef = useRef<string | null>(null);
 
   const views = useCanvasStore((state) => state.views);
   const activeViewId = useCanvasStore((state) => state.activeViewId);
@@ -113,15 +116,26 @@ function MapWorkspace() {
   // 4. Sync the viewport only when the active view selection changes so metadata-only actions
   // do not reapply the stored camera state and cause a visible jump.
   useEffect(() => {
-    if (!activeViewId) return;
+    if (!activeViewId || !activeViewObj) return;
 
-    if (!activeViewObj) return;
-
-    setViewport({
+    const nextViewport: ViewportState = {
       zoom: activeViewObj.zoom_level || 1.0,
       x: activeViewObj.pan_x || 0.0,
       y: activeViewObj.pan_y || 0.0,
+    };
+
+    const shouldApply = shouldApplyStoredViewport({
+      activeViewId,
+      nextViewport,
+      lastAppliedViewId: lastAppliedViewIdRef.current,
+      lastAppliedViewport: lastAppliedViewportRef.current,
     });
+
+    if (!shouldApply) return;
+
+    setViewport(nextViewport);
+    lastAppliedViewportRef.current = nextViewport;
+    lastAppliedViewIdRef.current = activeViewId;
   }, [activeViewId, activeViewObj, setViewport]);
 
   const handleViewportReset = () => {
@@ -211,6 +225,8 @@ function MapWorkspace() {
             onNodeDragStop={handleNodeDragStop}
             onMoveEnd={(_event, viewport) => {
               if (activeViewId) {
+                lastAppliedViewportRef.current = viewport;
+                lastAppliedViewIdRef.current = activeViewId;
                 saveViewport(viewport.zoom, viewport.x, viewport.y);
               }
             }}
