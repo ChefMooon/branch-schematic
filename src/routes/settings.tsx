@@ -1,5 +1,7 @@
+import { invoke } from '@tauri-apps/api/core';
 import { createFileRoute } from '@tanstack/react-router';
 import { useState, useEffect } from 'react';
+import { Button } from '../components/button/Button';
 import { applyTheme, DEFAULT_THEME, loadThemePreference, saveThemePreference, type ThemePreference } from '../theme';
 import { openAppDatabase } from '../lib/db';
 
@@ -70,11 +72,11 @@ function RouteComponent() {
   async function updateSetting(columnName: string, value: any) {
     try {
       const db = await openAppDatabase();
-      // Execute standard SQL UPDATE command
       await db.execute(
         `UPDATE settings SET ${columnName} = ? WHERE id = 1`,
         [value]
       );
+      await invoke('sync_runtime_settings_command');
     } catch (err) {
       console.error(`Failed to save ${columnName}:`, err);
     }
@@ -93,7 +95,6 @@ function RouteComponent() {
 
     try {
       const db = await openAppDatabase();
-      // Overwrite row 1 back to original factory parameters
       await db.execute(
         `UPDATE settings SET 
           hide_to_tray = ?, 
@@ -103,34 +104,47 @@ function RouteComponent() {
           theme = ? 
          WHERE id = 1`,
         [
-          DEFAULT_SETTINGS.hideToTray ? 1 : 0, 
-          DEFAULT_SETTINGS.restoreWindow ? 1 : 0, 
-          DEFAULT_SETTINGS.launchAtLogin ? 1 : 0, 
-          DEFAULT_SETTINGS.startMinimized ? 1 : 0, 
+          DEFAULT_SETTINGS.hideToTray ? 1 : 0,
+          DEFAULT_SETTINGS.restoreWindow ? 1 : 0,
+          DEFAULT_SETTINGS.launchAtLogin ? 1 : 0,
+          DEFAULT_SETTINGS.startMinimized ? 1 : 0,
           DEFAULT_SETTINGS.theme
         ]
       );
+      await invoke('sync_runtime_settings_command');
     } catch (err) {
-      console.error("Failed to reset database settings:", err);
+      console.error('Failed to reset database settings:', err);
     }
   }
 
-  return (
-    <div className="settings-container">
-      <h2 className="settings-title">App Settings</h2>
+  function handleThemeChange(nextTheme: ThemePreference) {
+    setTheme(nextTheme);
+    applyTheme(nextTheme);
+    void updateSetting('theme', nextTheme);
+    void saveThemePreference(nextTheme);
+  }
 
-      {/* Group 1: General Settings */}
-      <div className="settings-group">
-        <h3 className="group-heading">General</h3>
+  return (
+    <div className="settings-shell">
+      <header className="settings-header">
+        <p className="settings-kicker">Preferences</p>
+        <h2 className="settings-title">App Settings</h2>
+        <p className="settings-subtitle">Fine-tune the app experience to match the way you work.</p>
+      </header>
+
+      <section className="settings-card" aria-labelledby="general-settings-heading">
+        <div className="settings-card-header">
+          <h3 id="general-settings-heading" className="group-heading">General</h3>
+        </div>
         <div className="settings-list">
           <label className="settings-item">
-            <input 
-              type="checkbox" 
-              checked={hideToTray} 
+            <input
+              type="checkbox"
+              checked={hideToTray}
               onChange={(e) => {
                 setHideToTray(e.target.checked);
-                updateSetting('hide_to_tray', e.target.checked ? 1 : 0);
-              }} 
+                void updateSetting('hide_to_tray', e.target.checked ? 1 : 0);
+              }}
             />
             <div className="settings-text">
               <span className="settings-label">Hide to tray when closing window</span>
@@ -139,13 +153,13 @@ function RouteComponent() {
           </label>
 
           <label className="settings-item">
-            <input 
-              type="checkbox" 
-              checked={restoreWindow} 
+            <input
+              type="checkbox"
+              checked={restoreWindow}
               onChange={(e) => {
                 setRestoreWindow(e.target.checked);
-                updateSetting('restore_window', e.target.checked ? 1 : 0);
-              }} 
+                void updateSetting('restore_window', e.target.checked ? 1 : 0);
+              }}
             />
             <div className="settings-text">
               <span className="settings-label">Restore last window size and position</span>
@@ -154,13 +168,13 @@ function RouteComponent() {
           </label>
 
           <label className="settings-item">
-            <input 
-              type="checkbox" 
-              checked={launchAtLogin} 
+            <input
+              type="checkbox"
+              checked={launchAtLogin}
               onChange={(e) => {
                 setLaunchAtLogin(e.target.checked);
-                updateSetting('launch_at_login', e.target.checked ? 1 : 0);
-              }} 
+                void updateSetting('launch_at_login', e.target.checked ? 1 : 0);
+              }}
             />
             <div className="settings-text">
               <span className="settings-label">Launch at login</span>
@@ -169,13 +183,13 @@ function RouteComponent() {
           </label>
 
           <label className="settings-item">
-            <input 
-              type="checkbox" 
-              checked={startMinimized} 
+            <input
+              type="checkbox"
+              checked={startMinimized}
               onChange={(e) => {
                 setStartMinimized(e.target.checked);
-                updateSetting('start_minimized', e.target.checked ? 1 : 0);
-              }} 
+                void updateSetting('start_minimized', e.target.checked ? 1 : 0);
+              }}
             />
             <div className="settings-text">
               <span className="settings-label">Start app minimized</span>
@@ -183,58 +197,36 @@ function RouteComponent() {
             </div>
           </label>
         </div>
-      </div>
+      </section>
 
-      {/* Group 2: Appearance Settings */}
-      <div className="settings-group">
-        <h3 className="group-heading">Appearance</h3>
+      <section className="settings-card" aria-labelledby="appearance-settings-heading">
+        <div className="settings-card-header">
+          <h3 id="appearance-settings-heading" className="group-heading">Appearance</h3>
+        </div>
         <div className="theme-row">
           <span className="settings-label">App Theme</span>
-          <div className="segmented-control">
-            {/* System */}
+          <div className="segmented-control" role="radiogroup" aria-label="App theme">
             <label className={`segment-button ${theme === 'system' ? 'active' : ''}`}>
-              <input type="radio" name="theme" checked={theme === 'system'} onChange={() => {
-                const nextTheme: ThemePreference = 'system';
-                setTheme(nextTheme);
-                applyTheme(nextTheme);
-                updateSetting('theme', nextTheme);
-                saveThemePreference(nextTheme);
-              }} />
-              System
+              <input type="radio" name="theme" checked={theme === 'system'} onChange={() => handleThemeChange('system')} />
+              <span>System</span>
             </label>
-            {/* Light */}
             <label className={`segment-button ${theme === 'light' ? 'active' : ''}`}>
-              <input type="radio" name="theme" checked={theme === 'light'} onChange={() => {
-                const nextTheme: ThemePreference = 'light';
-                setTheme(nextTheme);
-                applyTheme(nextTheme);
-                updateSetting('theme', nextTheme);
-                saveThemePreference(nextTheme);
-              }} />
-              Light
+              <input type="radio" name="theme" checked={theme === 'light'} onChange={() => handleThemeChange('light')} />
+              <span>Light</span>
             </label>
-            {/* Dark */}
             <label className={`segment-button ${theme === 'dark' ? 'active' : ''}`}>
-              <input type="radio" name="theme" checked={theme === 'dark'} onChange={() => {
-                const nextTheme: ThemePreference = 'dark';
-                setTheme(nextTheme);
-                applyTheme(nextTheme);
-                updateSetting('theme', nextTheme);
-                saveThemePreference(nextTheme);
-              }} />
-              Dark
+              <input type="radio" name="theme" checked={theme === 'dark'} onChange={() => handleThemeChange('dark')} />
+              <span>Dark</span>
             </label>
           </div>
         </div>
-      </div>
+      </section>
 
-      {/* NEW: Action Footer Container with Reset Button */}
       <div className="settings-footer">
-        <button className="btn-reset" onClick={handleReset}>
+        <Button type="button" variant="danger" onClick={handleReset}>
           Reset to Defaults
-        </button>
+        </Button>
       </div>
-
     </div>
   );
 }

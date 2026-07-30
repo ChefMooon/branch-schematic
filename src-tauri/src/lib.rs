@@ -1,5 +1,5 @@
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePool};
-use tauri::Manager;
+use tauri::{image::Image, menu::{MenuBuilder, MenuItem}, tray::TrayIconBuilder, Manager};
 use tauri_plugin_autostart::ManagerExt;
 use tauri_plugin_window_state::{AppHandleExt, WindowExt};
 
@@ -51,6 +51,155 @@ fn resolve_database_path() -> std::path::PathBuf {
 #[tauri::command]
 fn get_database_path() -> Result<String, String> {
     Ok(resolve_database_path().to_string_lossy().into_owned())
+}
+
+fn apply_autostart_preference(app: &tauri::AppHandle, launch_at_login: bool) {
+    let autostart_manager = app.autolaunch();
+    if launch_at_login {
+        let _ = autostart_manager.enable();
+    } else {
+        let _ = autostart_manager.disable();
+    }
+}
+
+fn apply_window_runtime_preferences(app: &tauri::AppHandle) {
+    if let Some(window_handle) = app.get_webview_window("main") {
+        let start_minimized = db::should_start_minimized(app);
+        if start_minimized {
+            let _ = window_handle.hide();
+        } else {
+            let _ = window_handle.show();
+            let _ = window_handle.set_focus();
+        }
+    }
+}
+
+fn sync_runtime_preferences(app: &tauri::AppHandle) -> Result<(), String> {
+    let launch_at_login = db::should_launch_at_login(app);
+    apply_autostart_preference(app, launch_at_login);
+    apply_window_runtime_preferences(app);
+    Ok(())
+}
+
+fn setup_tray_icon(app: &tauri::AppHandle) -> Result<(), String> {
+    let mut candidate_paths = vec![];
+
+    if let Ok(resource_dir) = app.path().resource_dir() {
+        candidate_paths.push(resource_dir.join("icons").join("32x32.png"));
+        candidate_paths.push(resource_dir.join("icons").join("64x64.png"));
+        candidate_paths.push(resource_dir.join("icons").join("icon.png"));
+        candidate_paths.push(resource_dir.join("icons").join("icon.ico"));
+        candidate_paths.push(resource_dir.join("32x32.png"));
+        candidate_paths.push(resource_dir.join("64x64.png"));
+        candidate_paths.push(resource_dir.join("icon.png"));
+        candidate_paths.push(resource_dir.join("icon.ico"));
+    }
+
+    for root in std::iter::once(std::env::current_dir().ok()).flatten() {
+        let mut current = root;
+        loop {
+            candidate_paths.push(current.join("src-tauri").join("icons").join("32x32.png"));
+            candidate_paths.push(current.join("src-tauri").join("icons").join("64x64.png"));
+            candidate_paths.push(current.join("src-tauri").join("icons").join("icon.png"));
+            candidate_paths.push(current.join("src-tauri").join("icons").join("icon.ico"));
+            candidate_paths.push(current.join("src-tauri").join("32x32.png"));
+            candidate_paths.push(current.join("src-tauri").join("64x64.png"));
+            candidate_paths.push(current.join("src-tauri").join("icon.png"));
+            candidate_paths.push(current.join("src-tauri").join("icon.ico"));
+            if !current.pop() {
+                break;
+            }
+        }
+    }
+
+    if let Ok(executable_path) = std::env::current_exe() {
+        if let Some(parent) = executable_path.parent() {
+            let mut current = parent.to_path_buf();
+            loop {
+                candidate_paths.push(current.join("src-tauri").join("icons").join("32x32.png"));
+                candidate_paths.push(current.join("src-tauri").join("icons").join("64x64.png"));
+                candidate_paths.push(current.join("src-tauri").join("icons").join("icon.png"));
+                candidate_paths.push(current.join("src-tauri").join("icons").join("icon.ico"));
+                candidate_paths.push(current.join("src-tauri").join("32x32.png"));
+                candidate_paths.push(current.join("src-tauri").join("64x64.png"));
+                candidate_paths.push(current.join("src-tauri").join("icon.png"));
+                candidate_paths.push(current.join("src-tauri").join("icon.ico"));
+                if !current.pop() {
+                    break;
+                }
+            }
+        }
+    }
+
+    let icon = candidate_paths
+        .into_iter()
+        .find(|path| path.exists())
+        .and_then(|icon_path| {
+            let icon_bytes = std::fs::read(&icon_path).ok()?;
+            let icon = image::load_from_memory(&icon_bytes).ok()?;
+            let rgba = icon.to_rgba8();
+            Some(Image::new_owned(rgba.into_vec(), icon.width(), icon.height()))
+        })
+        .or_else(|| app.default_window_icon().cloned())
+        .ok_or_else(|| "Unable to locate or decode a tray icon".to_string())?;
+
+    let menu = MenuBuilder::new(app)
+        .item(&MenuItem::with_id(app, "show-window", "Show window", true, None::<&str>).map_err(|error| format!("Failed to create tray menu item: {error}"))?)
+        .item(&MenuItem::with_id(app, "quit", "Quit", true, None::<&str>).map_err(|error| format!("Failed to create quit tray menu item: {error}"))?)
+        .build()
+        .map_err(|error| format!("Failed to build tray menu: {error}"))?;
+
+    let tray = TrayIconBuilder::new()
+        .icon(icon)
+        .tooltip("Branch Schematic")
+        .menu(&menu)
+        .on_menu_event({
+            move |app_handle, event| {
+                match event.id.as_ref() {
+                    "show-window" => {
+                        if let Some(window) = app_handle.get_webview_window("main") {
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                        }
+                    }
+                    "quit" => {
+                        let _ = app_handle.exit(0);
+                    }
+                    _ => {}
+                }
+            }
+        })
+        .on_tray_icon_event({
+            let app_handle = app.clone();
+            move |_tray, event| {
+                if let tauri::tray::TrayIconEvent::Click {
+                    button,
+                    button_state,
+                    ..
+                } = event
+                {
+                    if button == tauri::tray::MouseButton::Left
+                        && button_state == tauri::tray::MouseButtonState::Up
+                    {
+                        if let Some(window) = app_handle.get_webview_window("main") {
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                        }
+                    }
+                }
+            }
+        })
+        .build(app)
+        .map_err(|error| format!("Failed to create tray icon: {error}"))?;
+
+    let _ = tray.set_visible(true);
+
+    Ok(())
+}
+
+#[tauri::command]
+fn sync_runtime_settings_command(app: tauri::AppHandle) -> Result<(), String> {
+    sync_runtime_preferences(&app)
 }
 
 // Shared Tauri State container for our background SQLx Pool
@@ -496,15 +645,14 @@ pub fn run() {
             });
 
             let restore_window = db::should_restore_window(&handle);
-            let hide_to_tray = db::should_hide_to_tray(&handle);
-            let start_minimized = db::should_start_minimized(&handle);
-            let launch_at_login = db::should_launch_at_login(&handle);
+            let _hide_to_tray = db::should_hide_to_tray(&handle);
+            let _start_minimized = db::should_start_minimized(&handle);
 
-            let autostart_manager = app.autolaunch();
-            if launch_at_login {
-                let _ = autostart_manager.enable();
-            } else {
-                let _ = autostart_manager.disable();
+            let launch_at_login = db::should_launch_at_login(&handle);
+            apply_autostart_preference(&handle, launch_at_login);
+
+            if let Err(error) = setup_tray_icon(&handle) {
+                eprintln!("Failed to initialize tray icon: {error}");
             }
 
             if let Some(window_handle) = app.get_webview_window("main") {
@@ -512,18 +660,13 @@ pub fn run() {
                     let _ = window_handle.restore_state(tauri_plugin_window_state::StateFlags::all());
                 }
 
-                if start_minimized {
-                    let _ = window_handle.hide();
-                } else {
-                    let _ = window_handle.show();
-                    let _ = window_handle.set_focus();
-                }
-
                 let _ = window_handle.on_window_event({
                     let app_handle = app.handle().clone();
                     let window_handle = window_handle.clone();
                     move |event| {
                         if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                            let hide_to_tray = db::should_hide_to_tray(&app_handle);
+                            let restore_window = db::should_restore_window(&app_handle);
                             if hide_to_tray {
                                 api.prevent_close();
                                 let _ = window_handle.hide();
@@ -561,6 +704,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             greet,
             get_database_path,
+            sync_runtime_settings_command,
             verify_repo_paths,
             validate_repository_path,
             watch_project_directory,
