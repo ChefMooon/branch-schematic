@@ -5,7 +5,7 @@ layout: home
 hero:
   name: "Branch Schematic"
   text: "A desktop project management application"
-  tagline: My great project tagline
+  tagline: The schematic workspace
   actions:
     - theme: brand
       text: Github Releases
