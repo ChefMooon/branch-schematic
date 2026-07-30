@@ -1,9 +1,10 @@
-import type { CSSProperties } from 'react';
+import { useEffect, useMemo, useState, type CSSProperties } from 'react';
 import { useViewport } from '@xyflow/react';
 import { useCanvasStore } from '../../../stores/canvas-store';
 import { useWorkspaceStore } from '../../../stores/workspace-store';
-import { PlusIcon, MinusIcon, ArrowCounterClockwiseIcon, ArrowsOutSimpleIcon } from '@phosphor-icons/react';
+import { PlusIcon, MinusIcon, ArrowCounterClockwiseIcon, ArrowsOutSimpleIcon, TagIcon } from '@phosphor-icons/react';
 import { Button } from '../../../components/button/Button';
+import { TagFiltersPopover } from './TagFiltersPopover';
 
 type MapToolbarProps = {
   hidden?: boolean;
@@ -21,14 +22,33 @@ export function MapToolbar({
   onFitView,
 }: MapToolbarProps) {
   const { zoom } = useViewport();
+  const [isTagFiltersOpen, setIsTagFiltersOpen] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return window.sessionStorage.getItem('branch-schematic.tag-filters-open') === 'true';
+  });
   const activeTagFilters = useCanvasStore((state) => state.activeTagFilters);
   const toggleTagFilter = useCanvasStore((state) => state.toggleTagFilter);
   const clearTagFilters = useCanvasStore((state) => state.clearTagFilters);
+  const nodes = useCanvasStore((state) => state.nodes);
   const uniqueTags = useWorkspaceStore((state) => state.getUniqueTags());
 
   if (hidden) return null;
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.sessionStorage.setItem('branch-schematic.tag-filters-open', isTagFiltersOpen ? 'true' : 'false');
+  }, [isTagFiltersOpen]);
+
   const zoomPercentage = Math.round(zoom * 100);
+  const tagUsageCounts = useMemo(() => {
+    return nodes.reduce<Record<string, number>>((accumulator, node) => {
+      const tags = Array.isArray(node.data?.tags) ? node.data.tags : [];
+      tags.forEach((tag) => {
+        accumulator[tag.id] = (accumulator[tag.id] ?? 0) + 1;
+      });
+      return accumulator;
+    }, {});
+  }, [nodes]);
 
   const buttonStyle: CSSProperties = {
     width: '32px',
@@ -138,71 +158,31 @@ export function MapToolbar({
             }}
           />
 
-          <div
-            style={{
-              fontSize: '10px',
-              fontWeight: 700,
-              color: 'var(--app-muted)',
-              textTransform: 'uppercase',
-              letterSpacing: '0.04em',
-              marginTop: '4px',
-            }}
-          >
-            Tag Filters
-          </div>
-
-          <div
-            style={{
-              display: 'flex',
-              flexWrap: 'wrap',
-              gap: '4px',
-              justifyContent: 'center',
-              marginTop: '4px',
-            }}
-          >
-            {uniqueTags.map((tag) => {
-              const isActive = activeTagFilters.includes(tag.id);
-              return (
-                <button
-                  key={tag.id}
-                  onClick={() => toggleTagFilter(tag.id)}
-                  title={tag.tag_name}
-                  style={{
-                    border: `1px solid ${isActive ? tag.color_hex : 'var(--app-border)'}`,
-                    backgroundColor: isActive ? `${tag.color_hex}22` : 'transparent',
-                    color: 'var(--app-text)',
-                    borderRadius: '999px',
-                    padding: '2px 8px',
-                    fontSize: '10px',
-                    cursor: 'pointer',
-                    maxWidth: '110px',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  {tag.tag_name}
-                </button>
-              );
-            })}
-          </div>
-
-          {activeTagFilters.length > 0 && (
-            <button
-              style={{
-                marginTop: '6px',
-                border: 'none',
-                background: 'transparent',
-                color: 'var(--app-muted)',
-                fontSize: '10px',
-                cursor: 'pointer',
-                textDecoration: 'underline',
-              }}
-              onClick={() => clearTagFilters()}
+          <div style={{ position: 'relative' }}>
+            <Button
+              type="button"
+              variant="basic"
+              className={isTagFiltersOpen ? 'is-active' : ''}
+              style={{ ...buttonStyle, width: 'auto', minWidth: '32px', padding: '0 8px' }}
+              onClick={() => setIsTagFiltersOpen((prev) => !prev)}
+              title="Filter Tags"
+              aria-label="Filter tags"
+              aria-haspopup="dialog"
+              aria-expanded={isTagFiltersOpen}
             >
-              Clear tag filters
-            </button>
-          )}
+              <TagIcon size={14} weight="bold" />
+            </Button>
+
+            <TagFiltersPopover
+              isOpen={isTagFiltersOpen}
+              onClose={() => setIsTagFiltersOpen(false)}
+              tags={uniqueTags}
+              activeTagFilters={activeTagFilters}
+              onToggleTag={toggleTagFilter}
+              onClearAll={() => clearTagFilters()}
+              tagUsageCounts={tagUsageCounts}
+            />
+          </div>
         </>
       )}
     </div>
