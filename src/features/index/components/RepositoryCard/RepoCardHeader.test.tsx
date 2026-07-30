@@ -34,6 +34,7 @@ describe('RepoCardHeader', () => {
         onSaveAlias={async () => undefined}
         onResetAlias={() => undefined}
         onStopEditing={() => undefined}
+        onOpenDetails={() => undefined}
         onRefreshStatus={() => undefined}
         onFetch={() => undefined}
         onPull={() => undefined}

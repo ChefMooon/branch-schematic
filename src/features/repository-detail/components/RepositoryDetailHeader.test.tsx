@@ -22,7 +22,15 @@ describe('RepositoryDetailHeader', () => {
       tags: [],
     };
 
-    render(<RepositoryDetailHeader repo={repo} onClose={() => undefined} />);
+    render(
+      <RepositoryDetailHeader
+        repo={repo}
+        activeBranch="main"
+        previewBranch="main"
+        onSelectPreviewBranch={() => undefined}
+        onClose={() => undefined}
+      />
+    );
 
     expect(screen.getByRole('heading', { name: /branch schematic/i })).toBeInTheDocument();
     expect(screen.getByText('Repository details')).toBeInTheDocument();

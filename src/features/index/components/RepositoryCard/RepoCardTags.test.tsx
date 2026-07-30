@@ -56,7 +56,7 @@ describe('RepoCardTags', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /\+2 more/i }));
 
-    const renderedTags = screen.getAllByRole('dialog').at(0)?.textContent ?? '';
+    const renderedTags = screen.getAllByRole('dialog')[0]?.textContent ?? '';
     expect(renderedTags).toContain('delta');
     expect(renderedTags).toContain('zebra');
   });

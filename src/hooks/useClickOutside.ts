@@ -10,7 +10,7 @@ export function useClickOutside<T extends HTMLElement>(
       return;
     }
 
-    const handlePointerDown = (event: MouseEvent) => {
+    const handlePointerDown = (event: Event) => {
       const target = event.target;
       if (!(target instanceof Node)) {
         return;

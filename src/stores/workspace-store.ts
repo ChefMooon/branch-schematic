@@ -257,16 +257,16 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   },
 
   setRepositoriesStatus: (repoIds, status) => {
-    set({
-      repos: get().repos.map((repo) =>
-        repoIds.includes(repo.id) ? { ...repo, status } : repo
-      ),
-    });
+    const nextRepos: TrackedPath[] = get().repos.map((repo) =>
+      repoIds.includes(repo.id) ? { ...repo, status } : repo
+    );
+
+    set({ repos: nextRepos });
   },
 
   markRepositoriesMissing: (missingPaths) => {
     const normalizedPaths = new Set(missingPaths);
-    const nextRepos = get().repos.map((repo) => {
+    const nextRepos: TrackedPath[] = get().repos.map((repo) => {
       if (!repo.absolute_path) {
         return repo;
       }
@@ -292,7 +292,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
 
   markRepositoryResolved: (repoId, nextAbsolutePath) => {
     const currentRepos = get().repos;
-    const nextRepos = currentRepos.map((repo) => {
+    const nextRepos: TrackedPath[] = currentRepos.map((repo) => {
       if (repo.id !== repoId) return repo;
 
       const nextAbsolutePathValue = nextAbsolutePath ?? repo.absolute_path;

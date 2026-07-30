@@ -8,8 +8,9 @@ interface RepositoryDetailBodyProps {
   commits: CommitRecord[];
   selectedCommit: CommitRecord | null;
   isLoadingCommits: boolean;
-  activeBranch: string | null;
-  previewBranch: string | null;
+  activeBranch?: string | null;
+  previewBranch?: string | null;
+  currentBranch?: string | null;
   onSelectCommit: (commitHash: string) => void;
 }
 
@@ -32,8 +33,11 @@ export function RepositoryDetailBody({
   isLoadingCommits,
   activeBranch,
   previewBranch,
+  currentBranch,
   onSelectCommit,
 }: RepositoryDetailBodyProps) {
+  const branchLabel = previewBranch ?? activeBranch ?? currentBranch ?? 'main';
+
   return (
     <>
       <section className="repository-view-summary">
@@ -135,7 +139,7 @@ export function RepositoryDetailBody({
                 </div>
                 <div className="repository-view-detail-pill">
                   <GitBranch size={14} weight="fill" />
-                  {previewBranch ?? activeBranch ?? 'main'}
+                  {branchLabel}
                 </div>
               </div>
 

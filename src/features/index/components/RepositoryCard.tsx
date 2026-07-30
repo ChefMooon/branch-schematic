@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import {
@@ -11,7 +11,6 @@ import {
   WarningCircle,
   UsersThree,
   Star,
-  Info,
 } from "@phosphor-icons/react";
 import { repositoryIconRegistry } from "../../icon/utils/iconRegistry";
 import type { TrackedPath } from "../../../types/git";
