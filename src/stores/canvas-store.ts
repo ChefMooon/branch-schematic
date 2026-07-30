@@ -126,6 +126,11 @@ interface GitTopologyRelation {
   distance_from_ancestor: number;
 }
 
+interface ResolvedTopologyLookup {
+  branchPair: [string, string] | null;
+  relation: GitTopologyRelation | null;
+}
+
 function buildManualEdgeId(nodeA: string, nodeB: string) {
   const left = encodeURIComponent(nodeA);
   const right = encodeURIComponent(nodeB);
@@ -608,19 +613,49 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
 
     try {
       const paths = await invoke<{ absolute_path: string }[]>('get_active_tracked_paths');
-      let topology: GitTopologyRelation[] = [];
-      
-      if (paths && paths.length > 0) {
-        try {
-          topology = await invoke<GitTopologyRelation[]>('determine_branch_topology', {
-            absolutePath: paths[0].absolute_path
-          });
-        } catch (e) {
-          console.warn('Topology lookup skipped:', e);
-        }
-      }
-
+      const trackedWorkspaces = await invoke<{ absolute_path: string; current_branch?: string | null; default_branch_name?: string | null }[]>('get_tracked_workspaces');
       const dbNodes = await invoke<WorkspaceNodeRecord[]>('get_workspace_nodes', { viewId });
+      const topologyLookup = await (async (): Promise<ResolvedTopologyLookup> => {
+        if (!paths || paths.length === 0) return { branchPair: null, relation: null };
+
+        const targetPath = paths[0];
+        const branchNames = new Set<string>();
+        const headBranch = dbNodes.find((node) => node.is_head === 1 && node.branch_name)?.branch_name;
+
+        if (headBranch) {
+          branchNames.add(headBranch.replace('refs/heads/', '').trim());
+        }
+
+        const workspaceDetails = trackedWorkspaces.find((workspace) => workspace.absolute_path === targetPath.absolute_path);
+        const defaultBranchName = workspaceDetails?.default_branch_name?.replace('refs/heads/', '').trim();
+        if (defaultBranchName) {
+          branchNames.add(defaultBranchName);
+        }
+
+        if (workspaceDetails?.current_branch) {
+          branchNames.add(workspaceDetails.current_branch.replace('refs/heads/', '').trim());
+        }
+
+        const branchCandidates = Array.from(branchNames).filter(Boolean);
+        if (branchCandidates.length < 2) {
+          return { branchPair: null, relation: null };
+        }
+
+        const [branchA, branchB] = branchCandidates;
+        try {
+          const relation = await invoke<GitTopologyRelation>('determine_branch_topology', {
+            absolutePath: targetPath.absolute_path,
+            branchA,
+            branchB,
+          });
+
+          return { branchPair: [branchA, branchB], relation };
+        } catch (e) {
+          return { branchPair: [branchA, branchB], relation: null };
+        }
+      })();
+
+      const topology = topologyLookup.relation ? [topologyLookup.relation] : [];
       const currentInMemoryNodes = get().nodes;
       const activeTagFilters = get().activeTagFilters;
 
@@ -741,6 +776,8 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       };
 
       topology.forEach((relation) => {
+        if (!relation || !relation.source_branch || !relation.target_branch) return;
+
         const cleanSrc = relation.source_branch.replace('refs/heads/', '').trim();
         const cleanTgt = relation.target_branch.replace('refs/heads/', '').trim();
 

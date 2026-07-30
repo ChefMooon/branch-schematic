@@ -1859,31 +1859,39 @@ pub fn determine_branch_topology(
     branch_a: &str,
     branch_b: &str,
 ) -> Result<GitTopologyRelation, String> {
+    let normalized_branch_a = branch_a.trim();
+    let normalized_branch_b = branch_b.trim();
+
+    if normalized_branch_a.is_empty() || normalized_branch_b.is_empty() {
+        return Err("Topology lookup requires a non-empty branch pair".to_string());
+    }
+
+    if normalized_branch_a == normalized_branch_b {
+        return Err("Topology lookup requires two distinct branches".to_string());
+    }
+
     let repo = Repository::open(absolute_path)
         .map_err(|e| format!("Failed to open Git repository: {}", e))?;
 
-    // Resolve structural tips
-    let ref_a = repo.revparse_single(&format!("refs/heads/{}", branch_a))
-        .map_err(|e| format!("Branch '{}' not found: {}", branch_a, e))?;
-    let ref_b = repo.revparse_single(&format!("refs/heads/{}", branch_b))
-        .map_err(|e| format!("Branch '{}' not found: {}", branch_b, e))?;
+    let ref_a = repo.revparse_single(&format!("refs/heads/{}", normalized_branch_a))
+        .map_err(|e| format!("Branch '{}' not found: {}", normalized_branch_a, e))?;
+    let ref_b = repo.revparse_single(&format!("refs/heads/{}", normalized_branch_b))
+        .map_err(|e| format!("Branch '{}' not found: {}", normalized_branch_b, e))?;
 
     let oid_a = ref_a.id();
     let oid_b = ref_b.id();
 
-    // Find closest common ancestor commit (Merge Base)
     let merge_base_oid = repo.merge_base(oid_a, oid_b)
         .map_err(|e| format!("No common ancestor found between branches: {}", e))?;
 
-    // Simple graph walk to compute relative commit distance from ancestor to branch A tip
     let mut revwalk = repo.revwalk().map_err(|e| e.to_string())?;
     revwalk.push(oid_a).map_err(|e| e.to_string())?;
     revwalk.hide(merge_base_oid).map_err(|e| e.to_string())?;
     let distance = revwalk.count();
 
     Ok(GitTopologyRelation {
-        source_branch: branch_b.to_string(), // Convention: from older/common base or peer
-        target_branch: branch_a.to_string(),
+        source_branch: normalized_branch_b.to_string(),
+        target_branch: normalized_branch_a.to_string(),
         common_ancestor: merge_base_oid.to_string(),
         distance_from_ancestor: distance,
     })
@@ -2578,6 +2586,74 @@ mod tests {
         assert!(main_commit.timestamp > 0);
 
         // Clean up
+        fs::remove_dir_all(repo_path).unwrap();
+    }
+
+    #[test]
+    fn test_determine_branch_topology_requires_distinct_non_empty_branches() {
+        let (repo_path, _repo) = create_test_repo("test_topology_requires_distinct_branches");
+        let path_str = repo_path.to_str().unwrap();
+
+        let result = determine_branch_topology(path_str, "", "main");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("non-empty branch pair"));
+
+        let result = determine_branch_topology(path_str, "main", "main");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("distinct branches"));
+
+        fs::remove_dir_all(repo_path).unwrap();
+    }
+
+    #[test]
+    fn test_determine_branch_topology_returns_merge_base_distance() {
+        let (repo_path, repo) = create_test_repo("test_topology_merge_base_distance");
+        create_initial_commit(&repo, &repo_path);
+
+        let base_commit = repo.head().unwrap().peel_to_commit().unwrap();
+        repo.branch("feature", &base_commit, false).unwrap();
+        repo.set_head("refs/heads/feature").unwrap();
+        repo.checkout_head(None).unwrap();
+
+        let file_path = repo_path.join("feature.txt");
+        let mut file = File::create(file_path).unwrap();
+        writeln!(file, "feature work").unwrap();
+
+        let mut index = repo.index().unwrap();
+        index.add_path(std::path::Path::new("feature.txt")).unwrap();
+        index.write().unwrap();
+        let tree_oid = index.write_tree().unwrap();
+        let tree = repo.find_tree(tree_oid).unwrap();
+        let signature = repo.signature().unwrap();
+        let parent_commit = repo.head().unwrap().peel_to_commit().unwrap();
+
+        let _feature_oid = repo
+            .commit(
+                Some("HEAD"),
+                &signature,
+                &signature,
+                "Feature commit",
+                &tree,
+                &[&parent_commit],
+            )
+            .unwrap();
+
+        let branch_names: Vec<String> = repo
+            .branches(Some(BranchType::Local))
+            .unwrap()
+            .flatten()
+            .filter_map(|(branch, _)| branch.name().ok().flatten().map(|name| name.to_string()))
+            .collect();
+        let secondary_branch = branch_names.iter().find(|name| *name != "feature").unwrap().clone();
+
+        let result = determine_branch_topology(repo_path.to_str().unwrap(), &secondary_branch, "feature");
+        assert!(result.is_ok());
+
+        let topology = result.unwrap();
+        assert_eq!(topology.source_branch, "feature");
+        assert_eq!(topology.target_branch, secondary_branch);
+        assert!(topology.distance_from_ancestor >= 0);
+
         fs::remove_dir_all(repo_path).unwrap();
     }
 
