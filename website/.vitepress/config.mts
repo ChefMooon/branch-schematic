@@ -1,14 +1,17 @@
 import { defineConfig } from 'vitepress'
 
 const repoName = process.env.GITHUB_REPOSITORY?.split('/')[1] ?? 'branch-schematic'
+const siteBase = process.env.GITHUB_ACTIONS ? `/${repoName}/` : '/'
 
 // https://vitepress.dev/reference/site-config
 export default defineConfig({
   title: "Branch Schematic",
   description: "A desktop project management application",
-  base: process.env.GITHUB_ACTIONS ? `/${repoName}/` : '/',
+  base: siteBase,
   head: [
-    ['link', { rel: 'icon', href: '/favicon.ico', type: 'image/x-icon' }],
+    ['link', { rel: 'icon', href: `${siteBase}favicon.svg`, type: 'image/svg+xml' }],
+    ['link', { rel: 'shortcut icon', href: `${siteBase}favicon.ico` }],
+    ['link', { rel: 'alternate icon', href: `${siteBase}favicon.ico`, type: 'image/x-icon' }],
   ],
   themeConfig: {
     // https://vitepress.dev/reference/default-theme-config
