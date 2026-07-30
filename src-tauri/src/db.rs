@@ -997,6 +997,27 @@ pub async fn fetch_tracked_path_id_by_absolute_path(
     Ok(row)
 }
 
+pub async fn fetch_tracked_path_state_by_absolute_path(
+    pool: &SqlitePool,
+    absolute_path: &str,
+) -> Result<Option<(String, i64)>, sqlx::Error> {
+    let row = sqlx::query(
+        "SELECT id, is_active FROM tracked_paths WHERE absolute_path = ? LIMIT 1"
+    )
+    .bind(absolute_path)
+    .fetch_optional(pool)
+    .await?;
+
+    match row {
+        Some(row) => {
+            let id = row.get::<String, _>("id");
+            let is_active = row.get::<i64, _>("is_active");
+            Ok(Some((id, is_active)))
+        }
+        None => Ok(None),
+    }
+}
+
 pub async fn insert_tracked_path(
     pool: &SqlitePool,
     id: &str,

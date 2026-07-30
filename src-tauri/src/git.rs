@@ -1296,7 +1296,7 @@ async fn track_repository_path(
         github_owner_login = derived_owner_login;
     }
 
-    let existing_path_id = db::fetch_tracked_path_id_by_absolute_path(pool, absolute_path)
+    let existing_path_state = db::fetch_tracked_path_state_by_absolute_path(pool, absolute_path)
         .await
         .map_err(|err| format!("Database lookup failure: {}", err))?;
 
@@ -1313,7 +1313,7 @@ async fn track_repository_path(
     .await
     .map_err(|err| format!("Database indexing loop failure: {}", err))?;
 
-    if existing_path_id.is_some() {
+    if existing_path_state.as_ref().is_some_and(|(_, is_active)| *is_active == 1) {
         return Ok(RepositoryTrackResult {
             outcome: "already_tracked".to_string(),
             message: format!(
@@ -2421,6 +2421,57 @@ mod tests {
         });
 
         assert_eq!(count, 1);
+
+        fs::remove_dir_all(repo_path).unwrap();
+    }
+
+    #[test]
+    fn test_track_repository_path_reports_readded_inactive_repo_as_added() {
+        let (repo_path, _repo) = create_test_repo("test_track_readd_inactive_repo");
+        let path_str = repo_path.to_str().unwrap();
+
+        let pool = tauri::async_runtime::block_on(async {
+            let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
+            sqlx::query(
+                r#"
+                CREATE TABLE tracked_paths (
+                    id TEXT PRIMARY KEY,
+                    display_name TEXT NOT NULL,
+                    absolute_path TEXT NOT NULL UNIQUE,
+                    remote_url TEXT,
+                    repo_origin_type TEXT NOT NULL,
+                    uncommitted_changes_count INTEGER NOT NULL,
+                    is_active INTEGER NOT NULL
+                );
+                "#,
+            )
+            .execute(&pool)
+            .await
+            .unwrap();
+            pool
+        });
+
+        let first_result = tauri::async_runtime::block_on(track_repository_path(&pool, path_str, None)).unwrap();
+        tauri::async_runtime::block_on(async {
+            sqlx::query("UPDATE tracked_paths SET is_active = 0 WHERE absolute_path = ?")
+                .bind(path_str)
+                .execute(&pool)
+                .await
+                .unwrap();
+        });
+        let second_result = tauri::async_runtime::block_on(track_repository_path(&pool, path_str, None)).unwrap();
+
+        assert_eq!(first_result.outcome, "added");
+        assert_eq!(second_result.outcome, "added");
+
+        let active_count: i64 = tauri::async_runtime::block_on(async {
+            sqlx::query_scalar("SELECT COUNT(*) FROM tracked_paths WHERE is_active = 1")
+                .fetch_one(&pool)
+                .await
+                .unwrap()
+        });
+
+        assert_eq!(active_count, 1);
 
         fs::remove_dir_all(repo_path).unwrap();
     }
