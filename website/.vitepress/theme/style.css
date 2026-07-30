@@ -30,3 +30,23 @@
   --vp-c-text-2: #b0b0b0;      /* Maps to --app-muted (Dark) */
   --vp-c-divider: #444444;     /* Maps to --app-border (Dark) */
 }
+
+.VPNavBarTitle {
+  display: inline-flex;
+  align-items: center;
+}
+
+.site-header-logo {
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  object-fit: contain;
+  margin-right: 0.275rem;
+}
+
+@media (max-width: 768px) {
+  .site-header-logo {
+    width: 20px;
+    height: 20px;
+  }
+}
