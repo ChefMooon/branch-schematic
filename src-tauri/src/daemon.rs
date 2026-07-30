@@ -24,6 +24,28 @@ struct ExtractedCommit {
     timestamp: i64,
 }
 
+const MAX_HISTORY_COMMITS_PER_BRANCH: usize = 100;
+
+fn collect_recent_history_for_branch(repo: &Repository, tip_oid: Oid, limit: usize) -> Vec<ExtractedCommit> {
+    let mut local_commits = Vec::new();
+    if let Ok(mut revwalk) = repo.revwalk() {
+        let _ = revwalk.set_sorting(Sort::TIME);
+        if revwalk.push(tip_oid).is_ok() {
+            for commit_oid in revwalk.take(limit).flatten() {
+                if let Ok(commit) = repo.find_commit(commit_oid) {
+                    local_commits.push(ExtractedCommit {
+                        hash: commit.id().to_string(),
+                        author: commit.author().name().unwrap_or("Unknown").to_string(),
+                        summary: commit.summary().unwrap_or("No commit message").to_string(),
+                        timestamp: commit.time().seconds(),
+                    });
+                }
+            }
+        }
+    }
+    local_commits
+}
+
 pub struct IndexerDaemon {
     app_handle: AppHandle,
     pool: SqlitePool,
@@ -132,33 +154,21 @@ impl IndexerDaemon {
             .await
             .map_err(|e| format!("Failed caching branch row metadata: {}", e))?;
 
-            // 1. Isolate the git2 history traversal to a safe, synchronous scope.
-            // No .await occurs inside this block, so non-Send pointers are safely discarded.
-            let extracted_commits: Vec<ExtractedCommit> = {
-                let mut local_commits = Vec::new();
-                if let Ok(repo) = Repository::open(absolute_path) {
-                    if let Ok(oid) = Oid::from_str(&branch.latest_commit.hash) {
-                        if let Ok(mut revwalk) = repo.revwalk() {
-                            let _ = revwalk.set_sorting(Sort::TIME);
-                            if revwalk.push(oid).is_ok() {
-                                for commit_oid in revwalk.take(50).flatten() {
-                                    if let Ok(commit) = repo.find_commit(commit_oid) {
-                                        local_commits.push(ExtractedCommit {
-                                            hash: commit.id().to_string(),
-                                            author: commit.author().name().unwrap_or("Unknown").to_string(),
-                                            summary: commit.summary().unwrap_or("No commit message").to_string(),
-                                            timestamp: commit.time().seconds(),
-                                        });
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                local_commits
+            let extracted_commits: Vec<ExtractedCommit> = if let (Ok(repo), Ok(oid)) = (
+                Repository::open(absolute_path),
+                Oid::from_str(&branch.latest_commit.hash),
+            ) {
+                collect_recent_history_for_branch(&repo, oid, MAX_HISTORY_COMMITS_PER_BRANCH)
+            } else {
+                Vec::new()
             };
 
-            // 2. Safely perform database writes using plain strings/integers across await boundaries.
+            sqlx::query("DELETE FROM cached_git_commit_branches WHERE branch_id = ?1;")
+                .bind(&generated_branch_id)
+                .execute(&mut *tx)
+                .await
+                .map_err(|e| format!("Failed clearing stale branch commit mappings: {}", e))?;
+
             for c in extracted_commits {
                 sqlx::query(
                     "INSERT INTO cached_git_commits (commit_hash, branch_id, author_name, commit_message, committed_at) 
@@ -175,6 +185,15 @@ impl IndexerDaemon {
                 .execute(&mut *tx)
                 .await
                 .map_err(|e| format!("Failed caching historical commit record: {}", e))?;
+
+                sqlx::query(
+                    "INSERT INTO cached_git_commit_branches (commit_hash, branch_id) VALUES (?1, ?2) ON CONFLICT(commit_hash, branch_id) DO NOTHING;"
+                )
+                .bind(&c.hash)
+                .bind(&generated_branch_id)
+                .execute(&mut *tx)
+                .await
+                .map_err(|e| format!("Failed caching commit-to-branch mapping: {}", e))?;
             }
         }
 

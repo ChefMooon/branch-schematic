@@ -393,6 +393,22 @@ pub fn get_migrations() -> Vec<Migration> {
             );
             ",
             kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 3,
+            description: "create_commit_branch_mapping_table",
+            sql: "
+            CREATE TABLE IF NOT EXISTS cached_git_commit_branches (
+                commit_hash TEXT NOT NULL,
+                branch_id TEXT NOT NULL,
+                PRIMARY KEY (commit_hash, branch_id),
+                FOREIGN KEY(commit_hash) REFERENCES cached_git_commits(commit_hash) ON DELETE CASCADE,
+                FOREIGN KEY(branch_id) REFERENCES cached_git_branches(id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_cached_git_commit_branches_branch_id ON cached_git_commit_branches(branch_id);
+            CREATE INDEX IF NOT EXISTS idx_cached_git_commit_branches_commit_hash ON cached_git_commit_branches(commit_hash);
+            ",
+            kind: MigrationKind::Up,
         }
     ]
 }
@@ -866,11 +882,17 @@ pub async fn fetch_branch_commits(
     limit: i64,
 ) -> Result<Vec<CachedCommitRow>, sqlx::Error> {
     let query_str = if limit <= 0 {
-        "SELECT commit_hash, author_name, commit_message, strftime('%Y-%m-%d %H:%M:%S', committed_at) as committed_at, signature_status 
-         FROM cached_git_commits WHERE branch_id = ? ORDER BY committed_at DESC"
+        "SELECT c.commit_hash, c.author_name, c.commit_message, strftime('%Y-%m-%d %H:%M:%S', c.committed_at) as committed_at, c.signature_status 
+         FROM cached_git_commits c
+         JOIN cached_git_commit_branches m ON m.commit_hash = c.commit_hash
+         WHERE m.branch_id = ?
+         ORDER BY c.committed_at DESC"
     } else {
-        "SELECT commit_hash, author_name, commit_message, strftime('%Y-%m-%d %H:%M:%S', committed_at) as committed_at, signature_status 
-         FROM cached_git_commits WHERE branch_id = ? ORDER BY committed_at DESC LIMIT ?"
+        "SELECT c.commit_hash, c.author_name, c.commit_message, strftime('%Y-%m-%d %H:%M:%S', c.committed_at) as committed_at, c.signature_status 
+         FROM cached_git_commits c
+         JOIN cached_git_commit_branches m ON m.commit_hash = c.commit_hash
+         WHERE m.branch_id = ?
+         ORDER BY c.committed_at DESC LIMIT ?"
     };
 
     let mut query = sqlx::query_as::<_, CachedCommitRow>(query_str).bind(branch_id);
@@ -984,7 +1006,14 @@ pub async fn insert_tracked_path(
     repo_origin_type: &str,
     github_owner_login: Option<&str>,
 ) -> Result<(), sqlx::Error> {
-    sqlx::query(
+    let columns = sqlx::query("PRAGMA table_info(tracked_paths);")
+        .fetch_all(pool)
+        .await?;
+    let has_github_owner_login = columns.iter().any(|row| {
+        row.get::<String, _>("name").eq_ignore_ascii_case("github_owner_login")
+    });
+
+    let insert_sql = if has_github_owner_login {
         "INSERT INTO tracked_paths (
             id, display_name, absolute_path, remote_url, repo_origin_type, github_owner_login, uncommitted_changes_count, is_active
          ) VALUES (?, ?, ?, ?, ?, ?, 0, 1)
@@ -994,15 +1023,29 @@ pub async fn insert_tracked_path(
             remote_url = excluded.remote_url,
             repo_origin_type = excluded.repo_origin_type,
             github_owner_login = excluded.github_owner_login;"
-    )
-    .bind(id)
-    .bind(display_name)
-    .bind(absolute_path)
-    .bind(remote_url)
-    .bind(repo_origin_type)
-    .bind(github_owner_login)
-    .execute(pool)
-    .await?;
+    } else {
+        "INSERT INTO tracked_paths (
+            id, display_name, absolute_path, remote_url, repo_origin_type, uncommitted_changes_count, is_active
+         ) VALUES (?, ?, ?, ?, ?, 0, 1)
+         ON CONFLICT(absolute_path) DO UPDATE SET
+            is_active = 1,
+            display_name = excluded.display_name,
+            remote_url = excluded.remote_url,
+            repo_origin_type = excluded.repo_origin_type;"
+    };
+
+    let mut query = sqlx::query(insert_sql)
+        .bind(id)
+        .bind(display_name)
+        .bind(absolute_path)
+        .bind(remote_url)
+        .bind(repo_origin_type);
+
+    if has_github_owner_login {
+        query = query.bind(github_owner_login);
+    }
+
+    query.execute(pool).await?;
     Ok(())
 }
 
