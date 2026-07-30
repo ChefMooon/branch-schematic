@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { PencilSimple, Plus, Trash, Wrench, XIcon } from '@phosphor-icons/react';
 import { ConfirmationModal } from '../../../components/Modal/ConfirmationModal';
 import { useNotifications } from '../../../components/notifications/NotificationProvider';
@@ -48,6 +48,8 @@ export function SettingsManagementModal({
   onCleanupDanglingTags,
 }: SettingsManagementModalProps) {
   const { addToast } = useNotifications();
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+  const { handleMouseDown, handleMouseUp, handleMouseLeave, handleTouchStart, handleTouchEnd } = useBackdropDismiss(dialogRef, onClose, isOpen);
   const [tab, setTab] = useState<Tab>(initialTab);
   const [tagDrafts, setTagDrafts] = useState<Record<string, { name: string; color: string }>>({});
   const [groupDrafts, setGroupDrafts] = useState<Record<string, { name: string; color: string }>>({});
