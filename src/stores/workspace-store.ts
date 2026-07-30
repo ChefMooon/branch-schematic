@@ -266,36 +266,51 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
 
   markRepositoriesMissing: (missingPaths) => {
     const normalizedPaths = new Set(missingPaths);
-    set({
-      repos: get().repos.map((repo) => {
-        if (!repo.absolute_path) {
+    const nextRepos = get().repos.map((repo) => {
+      if (!repo.absolute_path) {
+        return repo;
+      }
+
+      if (normalizedPaths.has(repo.absolute_path)) {
+        if (repo.status === 'missing') {
           return repo;
         }
+        return { ...repo, status: 'missing' };
+      }
 
-        if (normalizedPaths.has(repo.absolute_path)) {
-          return { ...repo, status: 'missing' };
-        }
+      if (repo.status === 'missing') {
+        return { ...repo, status: 'active' };
+      }
 
-        if (repo.status === 'missing') {
-          return { ...repo, status: 'active' };
-        }
-
-        return repo;
-      }),
+      return repo;
     });
+
+    if (nextRepos.some((repo, index) => repo !== get().repos[index])) {
+      set({ repos: nextRepos });
+    }
   },
 
   markRepositoryResolved: (repoId, nextAbsolutePath) => {
-    set({
-      repos: get().repos.map((repo) => {
-        if (repo.id !== repoId) return repo;
-        return {
-          ...repo,
-          absolute_path: nextAbsolutePath ?? repo.absolute_path,
-          status: 'active',
-        };
-      }),
+    const currentRepos = get().repos;
+    const nextRepos = currentRepos.map((repo) => {
+      if (repo.id !== repoId) return repo;
+
+      const nextAbsolutePathValue = nextAbsolutePath ?? repo.absolute_path;
+      const alreadyResolved = repo.absolute_path === nextAbsolutePathValue && repo.status === 'active';
+      if (alreadyResolved) {
+        return repo;
+      }
+
+      return {
+        ...repo,
+        absolute_path: nextAbsolutePathValue,
+        status: 'active',
+      };
     });
+
+    if (nextRepos.some((repo, index) => repo !== currentRepos[index])) {
+      set({ repos: nextRepos });
+    }
   },
 
   addTag: async (repoId, tagName, colorHex) => {

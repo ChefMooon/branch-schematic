@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { RepositoryCard } from "./RepositoryCard";
 import { SearchBar } from "../../../components/search-bar/SearchBar";
@@ -26,6 +26,7 @@ export function DashboardMain({ onOpenManagementModal, onCleanupDanglingTags }: 
   const [selectedGroup, setSelectedGroup] = useState<string | null>(null);
   const [favoritesOnly, setFavoritesOnly] = useState(false);
   const [selectedRepoIds, setSelectedRepoIds] = useState<Set<string>>(new Set());
+  const lastVerifiedSignatureRef = useRef<string | null>(null);
   const {
     repos: allRepos,
     hydrateFromBackend: fetchRepositoriesData,
@@ -48,7 +49,21 @@ export function DashboardMain({ onOpenManagementModal, onCleanupDanglingTags }: 
   }, []);
 
   useEffect(() => {
-    if (allRepos.length === 0) return;
+    if (allRepos.length === 0) {
+      lastVerifiedSignatureRef.current = null;
+      return;
+    }
+
+    const repoSignature = allRepos
+      .map((repo) => `${repo.id}:${repo.absolute_path}:${repo.status ?? "unknown"}`)
+      .sort()
+      .join("|");
+
+    if (lastVerifiedSignatureRef.current === repoSignature) {
+      return;
+    }
+
+    lastVerifiedSignatureRef.current = repoSignature;
     void verifyRepositories(allRepos);
   }, [allRepos, verifyRepositories]);
 
@@ -134,16 +149,15 @@ export function DashboardMain({ onOpenManagementModal, onCleanupDanglingTags }: 
   }, [allRepos, activeGithubUsername]);
 
   useEffect(() => {
+    if (allRepos.length === 0) {
+      return;
+    }
+
     const ownedCount = allRepos.reduce((count, repo) => {
       return resolvedOriginByRepoId[repo.id] === "OWNED" ? count + 1 : count;
     }, 0);
 
-    console.info("[DashboardMain] profile origin recompute", {
-      activeProfileId,
-      activeGithubUsername,
-      repositoryCount: allRepos.length,
-      ownedCount,
-    });
+    void ownedCount;
   }, [activeProfileId, activeGithubUsername, allRepos, resolvedOriginByRepoId]);
 
   const processedRepositories = allRepos

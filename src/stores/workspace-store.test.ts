@@ -35,4 +35,18 @@ describe('workspace store missing repo handling', () => {
     expect(firstRepo?.status).toBe('active');
     expect(secondRepo?.status).toBe('missing');
   });
+
+  it('does not emit a new state when a repository is already marked resolved', () => {
+    useWorkspaceStore.setState({
+      repos: [
+        { id: 'repo-1', display_name: 'Repo One', absolute_path: '/tmp/repo-1', status: 'active' },
+      ],
+    });
+
+    const before = useWorkspaceStore.getState().repos;
+    useWorkspaceStore.getState().markRepositoryResolved('repo-1');
+    const after = useWorkspaceStore.getState().repos;
+
+    expect(after).toEqual(before);
+  });
 });
