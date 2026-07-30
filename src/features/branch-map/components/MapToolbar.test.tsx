@@ -36,6 +36,16 @@ describe('MapToolbar', () => {
     };
   });
 
+  it('renders nothing when hidden without breaking hook order', () => {
+    expect(() => {
+      render(
+        <ReactFlowProvider>
+          <MapToolbar hidden />
+        </ReactFlowProvider>,
+      );
+    }).not.toThrow();
+  });
+
   it('routes reset and fit actions through parent callbacks', async () => {
     const user = userEvent.setup();
     const onZoomIn = vi.fn();

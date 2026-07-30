@@ -32,8 +32,6 @@ export function MapToolbar({
   const nodes = useCanvasStore((state) => state.nodes);
   const uniqueTags = useWorkspaceStore((state) => state.getUniqueTags());
 
-  if (hidden) return null;
-
   useEffect(() => {
     if (typeof window === 'undefined') return;
     window.sessionStorage.setItem('branch-schematic.tag-filters-open', isTagFiltersOpen ? 'true' : 'false');
@@ -55,6 +53,8 @@ export function MapToolbar({
     height: '32px',
     padding: 0,
   };
+
+  if (hidden) return null;
 
   return (
     <div
