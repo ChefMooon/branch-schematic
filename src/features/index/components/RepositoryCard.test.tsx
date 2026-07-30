@@ -77,6 +77,10 @@ vi.mock('./RepositoryCard/RepoBranchDropdown', () => ({
   RepoBranchDropdown: () => <div data-testid="repo-branch-dropdown" />,
 }));
 
+vi.mock('../../repository-detail/components/RepositoryDetail', () => ({
+  RepositoryDetail: ({ isOpen }: { isOpen: boolean }) => (isOpen ? <div data-testid="repository-view" /> : null),
+}));
+
 describe('RepositoryCard', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -196,5 +200,77 @@ describe('RepositoryCard', () => {
 
     expect(screen.getByRole('button', { name: 'Locate' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Clone Again' })).not.toBeInTheDocument();
+  });
+
+  it('opens the details view when double-clicking empty card space', () => {
+    const repo = {
+      id: 'repo-5',
+      display_name: 'Double Click Repo',
+      absolute_path: 'C:/repos/double-click-repo',
+      status: 'ready',
+      is_favorite: 0,
+      tags: [],
+      available_branches: ['main'],
+      current_branch: 'main',
+      default_branch_name: 'main',
+      uncommitted_changes_count: 0,
+      has_upstream: false,
+      ahead_count: 0,
+      behind_count: 0,
+      ahead_of_default_count: 0,
+      behind_default_count: 0,
+      alias_name: '',
+      theme_color_hex: null,
+      icon_name: null,
+      group_id: null,
+      favorite: 0,
+      group_name: null,
+      origin_type: 'LOCAL_ONLY',
+    } as unknown as TrackedPath;
+
+    const { container } = render(<RepositoryCard repo={repo} onRefresh={() => {}} />);
+    const card = container.querySelector('.repo-card');
+
+    expect(card).not.toBeNull();
+
+    fireEvent.doubleClick(card!);
+
+    expect(screen.getByTestId('repository-view')).toBeInTheDocument();
+  });
+
+  it('does not open the details view when double-clicking the interactive icon area', () => {
+    const repo = {
+      id: 'repo-6',
+      display_name: 'Interactive Icon Repo',
+      absolute_path: 'C:/repos/interactive-icon-repo',
+      status: 'ready',
+      is_favorite: 0,
+      tags: [],
+      available_branches: ['main'],
+      current_branch: 'main',
+      default_branch_name: 'main',
+      uncommitted_changes_count: 0,
+      has_upstream: false,
+      ahead_count: 0,
+      behind_count: 0,
+      ahead_of_default_count: 0,
+      behind_default_count: 0,
+      alias_name: '',
+      theme_color_hex: null,
+      icon_name: null,
+      group_id: null,
+      favorite: 0,
+      group_name: null,
+      origin_type: 'LOCAL_ONLY',
+    } as unknown as TrackedPath;
+
+    const { container } = render(<RepositoryCard repo={repo} onRefresh={() => {}} />);
+    const icon = container.querySelector('.repo-icon-wrapper');
+
+    expect(icon).not.toBeNull();
+
+    fireEvent.doubleClick(icon!);
+
+    expect(screen.queryByTestId('repository-view')).not.toBeInTheDocument();
   });
 });

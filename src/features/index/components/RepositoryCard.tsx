@@ -11,6 +11,7 @@ import {
   WarningCircle,
   UsersThree,
   Star,
+  Info,
 } from "@phosphor-icons/react";
 import { repositoryIconRegistry } from "../../icon/utils/iconRegistry";
 import type { TrackedPath } from "../../../types/git";
@@ -27,6 +28,7 @@ import { Button } from "../../../components/button/Button";
 import { useResolveRepoOrigin } from "../hooks/useResolveRepoOrigin";
 import { useRepoOriginBadgeState } from "../hooks/useResolveRepoOrigin";
 import type { RepoOriginType } from "../hooks/useResolveRepoOrigin";
+import { RepositoryDetail } from "../../repository-detail/components/RepositoryDetail";
 
 interface RepositoryCardProps {
   repo: TrackedPath;
@@ -63,6 +65,7 @@ export function RepositoryCard({ repo, onRefresh, onOpenManagement, onOpenManage
   const [isTagModalOpen, setIsTagModalOpen] = useState(false);
   const [isThemeModalOpen, setIsThemeModalOpen] = useState(false);
   const [isConfirmingRemove, setIsConfirmingRemove] = useState(false);
+  const [isRepositoryDetailOpen, setIsRepositoryDetailOpen] = useState(false);
   const [aliasInput, setAliasInput] = useState("");
   const [loadingAction, setLoadingAction] = useState<"fetch" | "pull" | "push" | "checkout" | "alias" | "refresh" | null>(null);
 
@@ -248,6 +251,43 @@ export function RepositoryCard({ repo, onRefresh, onOpenManagement, onOpenManage
     setIsThemeModalOpen(true);
   };
 
+  const handleCardDoubleClick = (event: React.MouseEvent<HTMLDivElement>) => {
+    const target = event.target as HTMLElement | null;
+    if (!target) {
+      return;
+    }
+
+    const interactiveSelector = [
+      '.repo-icon-wrapper',
+      '.repo-title-row',
+      '.repo-title-shell',
+      '.repo-card-selection-control',
+      '.repo-card-overflow-menu',
+      '.repo-card-action-button',
+      '.repo-branch-section',
+      '.branch-dropdown-root',
+      '.branch-dropdown-trigger',
+      '.repo-secondary-row',
+      '.repo-card-missing-state__actions',
+      'button',
+      'input',
+      'select',
+      'textarea',
+      '[role="menu"]',
+      '[role="dialog"]',
+      '[aria-haspopup]'
+    ].join(', ');
+
+    const clickedInteractiveElement = target.closest(interactiveSelector);
+    if (clickedInteractiveElement) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    setIsRepositoryDetailOpen(true);
+  };
+
   const handleLocateRepository = async () => {
     try {
       const selectedPath = await open({
@@ -327,6 +367,7 @@ export function RepositoryCard({ repo, onRefresh, onOpenManagement, onOpenManage
     <div
       className={`repo-card origin-${originType.toLowerCase()} ${(repo.is_favorite ?? 0) === 1 ? 'is-favorited' : ''} ${isSelected ? 'is-selected' : ''} ${isMissing ? 'is-missing' : ''}`}
       style={{ borderColor: `${resolvedThemeColor}55` }}
+      onDoubleClick={handleCardDoubleClick}
     >
       {/* Top Header Information Stack */}
       <div className="repo-card-top">
@@ -359,6 +400,7 @@ export function RepositoryCard({ repo, onRefresh, onOpenManagement, onOpenManage
             void saveAlias("");
           }}
           onStopEditing={() => setIsEditingAlias(false)}
+          onOpenDetails={() => setIsRepositoryDetailOpen(true)}
           onRefreshStatus={handleRefreshGitStatus}
           onFetch={() => {
             void executeGitOperation("fetch");
@@ -477,6 +519,12 @@ export function RepositoryCard({ repo, onRefresh, onOpenManagement, onOpenManage
         currentIconName={repo.icon_name ?? null}
         onClose={() => setIsThemeModalOpen(false)}
         onThemeChange={handleThemeChange}
+      />
+
+      <RepositoryDetail
+        isOpen={isRepositoryDetailOpen}
+        repo={repo}
+        onClose={() => setIsRepositoryDetailOpen(false)}
       />
 
       {!isMissing ? (

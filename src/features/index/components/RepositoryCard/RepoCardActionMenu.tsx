@@ -8,6 +8,7 @@ import {
   PencilSimple,
   Star,
   Trash,
+  Info,
 } from "@phosphor-icons/react";
 import { ConfirmationModal } from "../../../../components/Modal/ConfirmationModal";
 import { RepoThemeModal } from "./RepoThemeModal.tsx";
@@ -17,6 +18,7 @@ type RepoCardOverflowMenuProps = {
   isFavorite: boolean;
   isBusy: boolean;
   canUseRemoteActions: boolean;
+  onOpenDetails: () => void;
   onRefreshStatus: () => void | Promise<void>;
   onFetch: () => void | Promise<void>;
   onPull: () => void | Promise<void>;
@@ -34,6 +36,7 @@ export function RepoCardOverflowMenu({
   isFavorite,
   isBusy,
   canUseRemoteActions,
+  onOpenDetails,
   onRefreshStatus,
   onFetch,
   onPull,
@@ -130,6 +133,11 @@ export function RepoCardOverflowMenu({
     setIsThemeModalOpen(true);
   };
 
+  const handleOpenDetails = () => {
+    setIsOpen(false);
+    onOpenDetails();
+  };
+
   const confirmUntrack = (event?: React.MouseEvent<HTMLButtonElement>) => {
     event?.preventDefault();
     setShowUntrackConfirmation(false);
@@ -213,6 +221,14 @@ export function RepoCardOverflowMenu({
 
           <div className="overflow-section">
             <div className="overflow-section-title">Workspace Management</div>
+            <button
+              type="button"
+              className="overflow-menu-item"
+              onClick={handleOpenDetails}
+            >
+              <Info size={16} />
+              <span>View details</span>
+            </button>
             <button
               type="button"
               className="overflow-menu-item"

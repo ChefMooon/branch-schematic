@@ -15,6 +15,7 @@ type RepoCardHeaderProps = {
   onSaveAlias: () => Promise<void>;
   onResetAlias: () => void;
   onStopEditing: () => void;
+  onOpenDetails: () => void;
   onRefreshStatus: () => void | Promise<void>;
   onFetch: () => void | Promise<void>;
   onPull: () => void | Promise<void>;
@@ -40,6 +41,7 @@ export function RepoCardHeader({
   onSaveAlias,
   onResetAlias,
   onStopEditing,
+  onOpenDetails,
   onRefreshStatus,
   onFetch,
   onPull,
@@ -103,6 +105,7 @@ export function RepoCardHeader({
             isFavorite={isFavorite}
             isBusy={isAnyLoading}
             canUseRemoteActions={originType !== 'LOCAL_ONLY'}
+            onOpenDetails={onOpenDetails}
             onRefreshStatus={onRefreshStatus}
             onFetch={onFetch}
             onPull={onPull}

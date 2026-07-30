@@ -1,9 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { Handle, Position, NodeProps, Node, useViewport } from '@xyflow/react';
+import { InfoIcon, XIcon } from '@phosphor-icons/react';
 import { useCanvasStore } from '../../../stores/canvas-store';
+import { useWorkspaceStore } from '../../../stores/workspace-store';
 import { CommitTimeline } from './CommitTimeline';
 import type { RepoTag } from '../../../types/git';
 import { Button } from '../../../components/button/Button';
+import { RepositoryDetail } from '../../repository-detail/components/RepositoryDetail';
 
 export type BranchCardNode = Node<{
   title: string;
@@ -51,8 +54,10 @@ export function BranchCard({ data }: NodeProps<BranchCardNode>) {
   const isDark = themeMode === 'dark';
   const { zoom } = useViewport();
   const updateNodeConfig = useCanvasStore((state) => state.updateNodeConfig);
+  const workspaceRepos = useWorkspaceStore((state) => state.repos);
 
   const [menuOpen, setMenuOpen] = useState(false);
+  const [isRepositoryDetailOpen, setIsRepositoryDetailOpen] = useState(false);
   const cardContainerRef = useRef<HTMLDivElement | null>(null);
   const menuContainerRef = useRef<HTMLDivElement | null>(null);
 
@@ -93,6 +98,7 @@ export function BranchCard({ data }: NodeProps<BranchCardNode>) {
   const isCompact = data.viewMode === 'COMPACT';
   const isScrollableTimeline = data.commitDensity === -1;
   const repositoryLabel = data.repositoryName?.trim() || data.repoPathId;
+  const selectedRepo = workspaceRepos.find((repo) => repo.id === data.repoPathId) ?? null;
 
   const cardStyle: React.CSSProperties = {
     backgroundColor: isDark ? '#121214' : '#ffffff',
@@ -190,7 +196,27 @@ export function BranchCard({ data }: NodeProps<BranchCardNode>) {
       {/* Inline Configuration Dropdown Menu */}
       {menuOpen && (
         <div ref={menuContainerRef} style={{ position: 'absolute', top: '40px', right: '12px', backgroundColor: isDark ? '#1c1c1f' : '#ffffff', border: `1px solid ${isDark ? '#2d2d30' : '#e5e7eb'}`, borderRadius: '6px', padding: '8px', zIndex: 10, display: 'flex', flexDirection: 'column', gap: '6px', boxShadow: '0 4px 12px rgba(0,0,0,0.2)', opacity: lodTier === 'BIRD' ? 0 : 1, visibility: lodTier === 'BIRD' ? 'hidden' : 'visible', pointerEvents: lodTier === 'BIRD' ? 'none' : 'auto' }}>
-          <div style={{ fontSize: '10px', fontWeight: 'bold', color: '#a1a1aa' }}>VIEW MODE</div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+            <div style={{ fontSize: '10px', fontWeight: 'bold', color: '#a1a1aa' }}>VIEW MODE</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <button
+                type="button"
+                onClick={() => setIsRepositoryDetailOpen(true)}
+                aria-label="Open details"
+                style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '20px', height: '20px', padding: 0, cursor: 'pointer', backgroundColor: 'transparent', color: isDark ? '#fff' : '#000', border: `1px solid ${isDark ? '#2d2d30' : '#e5e7eb'}`, borderRadius: '50%' }}
+              >
+                <InfoIcon size={12} weight="regular" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setMenuOpen(false)}
+                aria-label="Close menu"
+                style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '20px', height: '20px', padding: 0, cursor: 'pointer', backgroundColor: 'transparent', color: isDark ? '#fff' : '#000', border: `1px solid ${isDark ? '#2d2d30' : '#e5e7eb'}`, borderRadius: '4px' }}
+              >
+                <XIcon size={12} weight="regular" />
+              </button>
+            </div>
+          </div>
           <div style={{ display: 'flex', gap: '4px' }}>
             <button 
               onClick={() => updateNodeConfig(data.repoPathId, 'COMPACT', data.commitDensity, accentColor, data.explodeBranches)}
@@ -205,6 +231,8 @@ export function BranchCard({ data }: NodeProps<BranchCardNode>) {
               Expanded
             </button>
           </div>
+
+          <div style={{ fontSize: '10px', fontWeight: 'bold', color: '#a1a1aa', marginTop: '4px' }}>DETAILS</div>
 
           <div style={{ fontSize: '10px', fontWeight: 'bold', color: '#a1a1aa', marginTop: '4px' }}>STRUCTURE VIEW</div>
           <div style={{ display: 'flex', gap: '4px' }}>
@@ -269,6 +297,12 @@ export function BranchCard({ data }: NodeProps<BranchCardNode>) {
           />
         </div>
       )}
+
+      <RepositoryDetail
+        isOpen={isRepositoryDetailOpen}
+        repo={selectedRepo}
+        onClose={() => setIsRepositoryDetailOpen(false)}
+      />
 
       {/* Explicit Source Anchor Handle on Right Side */}
       <Handle 
