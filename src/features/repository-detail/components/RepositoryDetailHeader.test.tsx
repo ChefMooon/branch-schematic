@@ -29,6 +29,8 @@ describe('RepositoryDetailHeader', () => {
         previewBranch="main"
         onSelectPreviewBranch={() => undefined}
         onClose={() => undefined}
+        activeTab="commits"
+        onTabChange={() => undefined}
       />
     );
 

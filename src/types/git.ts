@@ -130,6 +130,36 @@ export interface QuickFilterMetadata {
   dangling_tags: TagFilterSummary[];
 }
 
+export type RepositoryChangeStatus = 'modified' | 'added' | 'deleted' | 'renamed' | 'untracked' | 'conflicted';
+
+export interface RepositoryChangeItem {
+  path: string;
+  oldPath?: string | null;
+  status: RepositoryChangeStatus;
+  staged: boolean;
+  isConflicted?: boolean;
+  isBinary?: boolean;
+  diffAvailable?: boolean;
+  diffSummary?: string | null;
+  canStage?: boolean;
+  canUnstage?: boolean;
+}
+
+export interface RepositoryChangesSnapshot {
+  entries: RepositoryChangeItem[];
+  isInProgressOperation: boolean;
+  operationMessage?: string | null;
+}
+
+export interface RepositoryFileDiff {
+  path: string;
+  oldPath?: string | null;
+  patch?: string | null;
+  isBinary: boolean;
+  isTruncated: boolean;
+  unavailableReason?: string | null;
+}
+
 export interface CustomGroup {
   id: string;
   group_name: string;

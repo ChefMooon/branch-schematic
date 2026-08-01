@@ -77,6 +77,36 @@ describe('RepositoryDetail', () => {
     expect(await screen.findByRole('heading', { name: /add repository detail modal/i })).toBeInTheDocument();
   });
 
+  it('renders the commits and changes tabs and opens the compact repository summary popover', async () => {
+    const repo: TrackedPath = {
+      id: 'repo-1',
+      display_name: 'Branch Schematic',
+      absolute_path: '/tmp/branch-schematic',
+      current_branch: 'main',
+      default_branch_name: 'main',
+      available_branches: ['main'],
+      ahead_count: 1,
+      behind_count: 0,
+      has_upstream: true,
+      uncommitted_changes_count: 2,
+      remote_url: 'https://github.com/example/branch-schematic',
+      github_owner_login: 'example',
+      repo_origin_type: 'OWNED',
+      tags: [],
+    };
+
+    render(<RepositoryDetail isOpen repo={repo} onClose={() => undefined} />);
+
+    expect(await screen.findByRole('tab', { name: /commits/i })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /changes/i })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: /show repository details/i }));
+
+    expect(screen.getByText(/path/i)).toBeInTheDocument();
+    expect(screen.getByText(/default branch/i)).toBeInTheDocument();
+    expect(screen.getByText(/remote/i)).toBeInTheDocument();
+  });
+
   it('renders the dialog in a portal outside the repository card container', async () => {
     const repo: TrackedPath = {
       id: 'repo-1',

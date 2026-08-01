@@ -1,4 +1,4 @@
-use std::{fs, path::Path};
+use std::{fs, path::{Component, Path, PathBuf}};
 use std::sync::{Arc, Mutex};
 use uuid::Uuid;
 use git2::{AutotagOption, Branch, BranchType, Cred, CredentialType, FetchOptions, Oid, PushOptions, RemoteCallbacks, Repository};
@@ -22,6 +22,40 @@ pub struct DiscoveredBranch {
     pub name: String,
     pub is_head: bool,
     pub latest_commit: CommitLog,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct RepositoryChangeItem {
+    pub path: String,
+    pub old_path: Option<String>,
+    pub status: String,
+    pub staged: bool,
+    pub is_conflicted: bool,
+    pub is_binary: bool,
+    pub diff_available: bool,
+    pub diff_summary: Option<String>,
+    pub can_stage: bool,
+    pub can_unstage: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct RepositoryChangesSnapshot {
+    pub entries: Vec<RepositoryChangeItem>,
+    pub is_in_progress_operation: bool,
+    pub operation_message: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct RepositoryFileDiff {
+    pub path: String,
+    pub old_path: Option<String>,
+    pub patch: Option<String>,
+    pub is_binary: bool,
+    pub is_truncated: bool,
+    pub unavailable_reason: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -2050,6 +2084,326 @@ pub(crate) fn analyze_repository_git_status(absolute_path: &str) -> Result<RepoG
 /// (default branch name + HEAD branch sync counts) into the SQLite cache so the
 /// dashboard reads fresh values on its next hydrate. Shared by the manual refresh
 /// command and the fetch/pull/push operations below.
+fn build_change_status_label(status: git2::Status) -> String {
+    if status.contains(git2::Status::CONFLICTED) {
+        "conflicted".to_string()
+    } else if status.contains(git2::Status::WT_RENAMED) || status.contains(git2::Status::INDEX_RENAMED) {
+        "renamed".to_string()
+    } else if status.contains(git2::Status::WT_NEW) || status.contains(git2::Status::INDEX_NEW) {
+        "added".to_string()
+    } else if status.contains(git2::Status::WT_DELETED) || status.contains(git2::Status::INDEX_DELETED) {
+        "deleted".to_string()
+    } else if status.contains(git2::Status::WT_MODIFIED) || status.contains(git2::Status::INDEX_MODIFIED) {
+        "modified".to_string()
+    } else {
+        "modified".to_string()
+    }
+}
+
+fn describe_change_entry(repo: &Repository, entry: &git2::StatusEntry<'_>) -> Result<RepositoryChangeItem, String> {
+    let path = entry.path().unwrap_or_default().to_string();
+    let status = entry.status();
+    let staged = status.contains(git2::Status::INDEX_NEW)
+        || status.contains(git2::Status::INDEX_MODIFIED)
+        || status.contains(git2::Status::INDEX_DELETED)
+        || status.contains(git2::Status::INDEX_RENAMED);
+    let is_conflicted = status.contains(git2::Status::CONFLICTED);
+    let is_binary = false;
+    let diff_available = repo.path().exists() && !path.is_empty();
+    let diff_summary = if diff_available {
+        Some(format!("{} ({})", path, build_change_status_label(status)))
+    } else {
+        None
+    };
+
+    Ok(RepositoryChangeItem {
+        path: path.clone(),
+        old_path: None,
+        status: build_change_status_label(status),
+        staged,
+        is_conflicted,
+        is_binary,
+        diff_available,
+        diff_summary,
+        can_stage: true,
+        can_unstage: staged,
+    })
+}
+
+const MAX_FILE_DIFF_BYTES: usize = 512 * 1024;
+
+fn repository_relative_path(repo: &Repository, relative_path: &str) -> Result<PathBuf, String> {
+    let path = Path::new(relative_path);
+    if path.as_os_str().is_empty() || path.is_absolute() || path.components().any(|component| matches!(component, Component::ParentDir)) {
+        return Err("The selected path must be a repository-relative file path.".to_string());
+    }
+
+    let workdir = repo.workdir().ok_or_else(|| "Bare repositories do not have a working tree to preview.".to_string())?;
+    Ok(workdir.join(path))
+}
+
+fn bounded_text_file_patch(repo: &Repository, relative_path: &str) -> Result<RepositoryFileDiff, String> {
+    let file_path = repository_relative_path(repo, relative_path)?;
+    let metadata = fs::metadata(&file_path)
+        .map_err(|error| format!("Failed to inspect '{}': {error}", relative_path))?;
+
+    if metadata.len() as usize > MAX_FILE_DIFF_BYTES {
+        return Ok(RepositoryFileDiff {
+            path: relative_path.to_string(),
+            old_path: None,
+            patch: None,
+            is_binary: false,
+            is_truncated: true,
+            unavailable_reason: Some("This untracked file is too large to preview.".to_string()),
+        });
+    }
+
+    let contents = fs::read(&file_path)
+        .map_err(|error| format!("Failed to read '{}': {error}", relative_path))?;
+    if contents.contains(&0) {
+        return Ok(RepositoryFileDiff {
+            path: relative_path.to_string(),
+            old_path: None,
+            patch: None,
+            is_binary: true,
+            is_truncated: false,
+            unavailable_reason: Some("Binary files cannot be previewed as text diffs.".to_string()),
+        });
+    }
+
+    let text = String::from_utf8(contents)
+        .map_err(|_| format!("'{}' is not valid UTF-8 text and cannot be previewed.", relative_path))?;
+    let mut patch = format!("--- /dev/null\n+++ b/{relative_path}\n");
+    for line in text.lines() {
+        patch.push('+');
+        patch.push_str(line);
+        patch.push('\n');
+    }
+
+    Ok(RepositoryFileDiff {
+        path: relative_path.to_string(),
+        old_path: None,
+        patch: Some(patch),
+        is_binary: false,
+        is_truncated: false,
+        unavailable_reason: None,
+    })
+}
+
+fn bounded_diff_patch(diff: &git2::Diff<'_>) -> Result<(String, bool), String> {
+    let mut patch = Vec::new();
+    let mut is_truncated = false;
+    diff.print(git2::DiffFormat::Patch, |_delta, _hunk, line| {
+        let origin = line.origin();
+        let prefix = matches!(origin, '+' | '-' | ' ').then_some(origin as u8);
+        let required_bytes = line.content().len() + usize::from(prefix.is_some());
+        if patch.len() + required_bytes > MAX_FILE_DIFF_BYTES {
+            is_truncated = true;
+            return true;
+        }
+
+        if let Some(prefix) = prefix {
+            patch.push(prefix);
+        }
+        patch.extend_from_slice(line.content());
+        true
+    })
+    .map_err(|error| format!("Failed to generate Git diff: {error}"))?;
+
+    Ok((String::from_utf8_lossy(&patch).into_owned(), is_truncated))
+}
+
+#[tauri::command]
+pub async fn get_repository_file_diff(
+    absolute_path: String,
+    path: String,
+    staged: bool,
+) -> Result<RepositoryFileDiff, String> {
+    let repo = Repository::open(&absolute_path)
+        .map_err(|error| format!("Failed to open Git repository: {error}"))?;
+    repository_relative_path(&repo, &path)?;
+    let status = repo.status_file(Path::new(&path))
+        .map_err(|error| format!("Failed to inspect '{}': {error}", path))?;
+
+    if status.contains(git2::Status::WT_NEW) && !staged {
+        return bounded_text_file_patch(&repo, &path);
+    }
+
+    let mut options = git2::DiffOptions::new();
+    options.pathspec(&path);
+    let diff = if staged {
+        let head_tree = repo.head().ok().and_then(|head| head.peel_to_tree().ok());
+        let index = repo.index().map_err(|error| format!("Failed to inspect Git index: {error}"))?;
+        repo.diff_tree_to_index(head_tree.as_ref(), Some(&index), Some(&mut options))
+    } else {
+        repo.diff_index_to_workdir(None, Some(&mut options))
+    }
+    .map_err(|error| format!("Failed to compare '{}': {error}", path))?;
+
+    if diff.deltas().next().is_none() {
+        return Ok(RepositoryFileDiff {
+            path,
+            old_path: None,
+            patch: None,
+            is_binary: false,
+            is_truncated: false,
+            unavailable_reason: Some("No text diff is available for the selected file.".to_string()),
+        });
+    }
+
+    let delta = diff.deltas().next().expect("checked that diff has a delta");
+    let old_path = delta.old_file().path().map(|value| value.to_string_lossy().into_owned());
+    let is_binary = delta.flags().contains(git2::DiffFlags::BINARY);
+    if is_binary {
+        return Ok(RepositoryFileDiff {
+            path,
+            old_path,
+            patch: None,
+            is_binary: true,
+            is_truncated: false,
+            unavailable_reason: Some("Binary files cannot be previewed as text diffs.".to_string()),
+        });
+    }
+
+    let (patch, is_truncated) = bounded_diff_patch(&diff)?;
+    Ok(RepositoryFileDiff {
+        path,
+        old_path,
+        patch: Some(patch),
+        is_binary: false,
+        is_truncated,
+        unavailable_reason: is_truncated.then(|| "The preview was truncated to keep the application responsive.".to_string()),
+    })
+}
+
+fn stage_path(repo: &Repository, relative_path: &str) -> Result<(), String> {
+    let mut index = repo.index().map_err(|error| format!("Failed to open Git index: {error}"))?;
+    index.add_path(Path::new(relative_path))
+        .map_err(|error| format!("Failed to stage '{}' in Git: {error}", relative_path))?;
+    index.write().map_err(|error| format!("Failed to write Git index: {error}"))?;
+    Ok(())
+}
+
+fn unstage_path(repo: &Repository, relative_path: &str) -> Result<(), String> {
+    let mut index = repo.index().map_err(|error| format!("Failed to open Git index: {error}"))?;
+    index.remove_path(Path::new(relative_path))
+        .map_err(|error| format!("Failed to unstage '{}' in Git: {error}", relative_path))?;
+    index.write().map_err(|error| format!("Failed to write Git index: {error}"))?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn get_repository_changes(
+    absolute_path: String,
+) -> Result<RepositoryChangesSnapshot, String> {
+    let repo = Repository::open(&absolute_path)
+        .map_err(|error| format!("Failed to open Git repository: {error}"))?;
+
+    let mut options = git2::StatusOptions::new();
+    options.include_untracked(true);
+    options.recurse_untracked_dirs(true);
+    options.include_ignored(false);
+
+    let statuses = repo
+        .statuses(Some(&mut options))
+        .map_err(|error| format!("Failed to inspect repository changes: {error}"))?;
+
+    let mut entries = Vec::new();
+    for entry in statuses.iter() {
+        if entry.status().contains(git2::Status::IGNORED) {
+            continue;
+        }
+        entries.push(describe_change_entry(&repo, &entry)?);
+    }
+
+    entries.sort_by(|left, right| left.path.cmp(&right.path));
+
+    Ok(RepositoryChangesSnapshot {
+        entries,
+        is_in_progress_operation: false,
+        operation_message: None,
+    })
+}
+
+#[tauri::command]
+pub async fn stage_repository_paths(
+    absolute_path: String,
+    paths: Vec<String>,
+) -> Result<RepositoryChangesSnapshot, String> {
+    let repo = Repository::open(&absolute_path)
+        .map_err(|error| format!("Failed to open Git repository: {error}"))?;
+
+    let normalized_paths = paths.into_iter().filter(|path| !path.trim().is_empty()).collect::<Vec<_>>();
+    if normalized_paths.is_empty() {
+        return Err("No paths were provided to stage.".to_string());
+    }
+
+    for relative_path in normalized_paths {
+        stage_path(&repo, &relative_path)?;
+    }
+
+    get_repository_changes(absolute_path).await
+}
+
+#[tauri::command]
+pub async fn unstage_repository_paths(
+    absolute_path: String,
+    paths: Vec<String>,
+) -> Result<RepositoryChangesSnapshot, String> {
+    let repo = Repository::open(&absolute_path)
+        .map_err(|error| format!("Failed to open Git repository: {error}"))?;
+
+    let normalized_paths = paths.into_iter().filter(|path| !path.trim().is_empty()).collect::<Vec<_>>();
+    if normalized_paths.is_empty() {
+        return Err("No paths were provided to unstage.".to_string());
+    }
+
+    for relative_path in normalized_paths {
+        unstage_path(&repo, &relative_path)?;
+    }
+
+    get_repository_changes(absolute_path).await
+}
+
+#[tauri::command]
+pub async fn create_commit(
+    absolute_path: String,
+    title: String,
+    body: Option<String>,
+) -> Result<RepositoryChangesSnapshot, String> {
+    let trimmed_title = title.trim();
+    if trimmed_title.is_empty() {
+        return Err("Commit title cannot be empty.".to_string());
+    }
+
+    {
+        let repo = Repository::open(&absolute_path)
+            .map_err(|error| format!("Failed to open Git repository: {error}"))?;
+        let mut index = repo.index().map_err(|error| format!("Failed to inspect Git index: {error}"))?;
+        let tree_oid = index.write_tree().map_err(|error| format!("Failed to build commit tree: {error}"))?;
+        let tree = repo.find_tree(tree_oid).map_err(|error| format!("Failed to resolve commit tree: {error}"))?;
+        let signature = repo.signature().map_err(|_| "Git identity is not configured. Set user.name and user.email before creating commits.".to_string())?;
+
+        let parent_refs = match repo.head() {
+            Ok(head) => match head.peel_to_commit() {
+                Ok(commit) => vec![commit],
+                Err(_) => Vec::new(),
+            },
+            Err(_) => Vec::new(),
+        };
+        let message = match body.as_deref().map(str::trim).filter(|value| !value.is_empty()) {
+            Some(body_text) => format!("{trimmed_title}\n\n{body_text}"),
+            None => trimmed_title.to_string(),
+        };
+
+        let parent_slice: Vec<&git2::Commit<'_>> = parent_refs.iter().collect();
+        repo.commit(Some("HEAD"), &signature, &signature, &message, &tree, parent_slice.as_slice())
+            .map_err(|error| format!("Failed to create commit: {error}"))?;
+    }
+
+    get_repository_changes(absolute_path).await
+}
+
 pub(crate) async fn refresh_and_cache_git_status(
     pool: &sqlx::SqlitePool,
     path_id: &str,
@@ -2535,6 +2889,65 @@ mod tests {
         );
 
         // Clean up
+        fs::remove_dir_all(repo_path).unwrap();
+    }
+
+    #[test]
+    fn test_get_repository_changes_excludes_ignored_untracked_files() {
+        let (repo_path, repo) = create_test_repo("test_changes_exclude_ignored_files");
+        create_initial_commit(&repo, &repo_path);
+
+        let gitignore_path = repo_path.join(".gitignore");
+        fs::write(&gitignore_path, "ignored.log\n").unwrap();
+
+        let tracked_path = repo_path.join("README.md");
+        fs::write(&tracked_path, "# Test Repo\nupdated\n").unwrap();
+        fs::write(repo_path.join("ignored.log"), "ignored\n").unwrap();
+        fs::write(repo_path.join("visible.txt"), "visible\n").unwrap();
+
+        let snapshot = tauri::async_runtime::block_on(get_repository_changes(
+            repo_path.to_str().unwrap().to_string(),
+        ))
+        .unwrap();
+        let paths = snapshot
+            .entries
+            .iter()
+            .map(|entry| entry.path.as_str())
+            .collect::<Vec<_>>();
+
+        assert!(paths.contains(&".gitignore"));
+        assert!(paths.contains(&"README.md"));
+        assert!(paths.contains(&"visible.txt"));
+        assert!(!paths.contains(&"ignored.log"));
+
+        fs::remove_dir_all(repo_path).unwrap();
+    }
+
+    #[test]
+    fn test_get_repository_file_diff_returns_changed_and_untracked_text() {
+        let (repo_path, repo) = create_test_repo("test_repository_file_diff");
+        create_initial_commit(&repo, &repo_path);
+        fs::write(repo_path.join("README.md"), "# Test Repo\nupdated\n").unwrap();
+        fs::write(repo_path.join("new-file.txt"), "new file\n").unwrap();
+
+        let changed_diff = tauri::async_runtime::block_on(get_repository_file_diff(
+            repo_path.to_str().unwrap().to_string(),
+            "README.md".to_string(),
+            false,
+        ))
+        .unwrap();
+        let untracked_diff = tauri::async_runtime::block_on(get_repository_file_diff(
+            repo_path.to_str().unwrap().to_string(),
+            "new-file.txt".to_string(),
+            false,
+        ))
+        .unwrap();
+
+        assert!(changed_diff.patch.as_deref().is_some_and(|patch| patch.contains("+updated")));
+        assert!(untracked_diff.patch.as_deref().is_some_and(|patch| patch.contains("+new file")));
+        assert!(!changed_diff.is_binary);
+        assert!(!untracked_diff.is_binary);
+
         fs::remove_dir_all(repo_path).unwrap();
     }
 

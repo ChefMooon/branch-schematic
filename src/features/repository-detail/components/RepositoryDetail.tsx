@@ -28,6 +28,7 @@ export function RepositoryDetail({ isOpen, repo, onClose }: RepositoryDetailProp
   const [selectedCommitHash, setSelectedCommitHash] = useState<string | null>(null);
   const [isLoadingCommits, setIsLoadingCommits] = useState(false);
   const [previewBranch, setPreviewBranch] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<'commits' | 'changes'>('commits');
 
   useEffect(() => {
     if (!isOpen || !repo) return;
@@ -35,6 +36,7 @@ export function RepositoryDetail({ isOpen, repo, onClose }: RepositoryDetailProp
     const nextBranch = repo.current_branch ?? 'main';
     setPreviewBranch(nextBranch);
     setSelectedCommitHash(null);
+    setActiveTab('commits');
   }, [isOpen, repo]);
 
   useEffect(() => {
@@ -84,14 +86,37 @@ export function RepositoryDetail({ isOpen, repo, onClose }: RepositoryDetailProp
       }
     };
 
+    const handleScrollLock = (event: Event) => {
+      const target = event.target as Node | null;
+      if (dialogRef.current?.contains(target)) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+    };
+
+    const previousHtmlOverflow = document.documentElement.style.overflow;
+    const previousBodyOverflow = document.body.style.overflow;
+    const previousHtmlOverscrollBehavior = document.documentElement.style.overscrollBehavior;
+    const previousBodyOverscrollBehavior = document.body.style.overscrollBehavior;
+
     document.addEventListener('keydown', handleKeyDown);
+    document.addEventListener('wheel', handleScrollLock, { passive: false });
+    document.addEventListener('touchmove', handleScrollLock, { passive: false });
     document.documentElement.style.overflow = 'hidden';
     document.body.style.overflow = 'hidden';
+    document.documentElement.style.overscrollBehavior = 'none';
+    document.body.style.overscrollBehavior = 'none';
 
     return () => {
       document.removeEventListener('keydown', handleKeyDown);
-      document.documentElement.style.overflow = '';
-      document.body.style.overflow = '';
+      document.removeEventListener('wheel', handleScrollLock);
+      document.removeEventListener('touchmove', handleScrollLock);
+      document.documentElement.style.overflow = previousHtmlOverflow;
+      document.body.style.overflow = previousBodyOverflow;
+      document.documentElement.style.overscrollBehavior = previousHtmlOverscrollBehavior;
+      document.body.style.overscrollBehavior = previousBodyOverscrollBehavior;
     };
   }, [isOpen, onClose]);
 
@@ -124,6 +149,8 @@ export function RepositoryDetail({ isOpen, repo, onClose }: RepositoryDetailProp
           previewBranch={previewBranch ?? repo.current_branch ?? 'main'}
           onSelectPreviewBranch={setPreviewBranch}
           onClose={onClose}
+          activeTab={activeTab}
+          onTabChange={setActiveTab}
         />
 
         <div className="repository-view-body">
@@ -135,6 +162,8 @@ export function RepositoryDetail({ isOpen, repo, onClose }: RepositoryDetailProp
             activeBranch={repo.current_branch ?? 'main'}
             previewBranch={previewBranch ?? repo.current_branch ?? 'main'}
             onSelectCommit={setSelectedCommitHash}
+            activeTab={activeTab}
+            onTabChange={setActiveTab}
           />
         </div>
       </div>
