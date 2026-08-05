@@ -18,7 +18,7 @@ The app uses a hybrid model:
 ### Backend: Git discovery and caching
 
 - Rust Git command entry points live in [src-tauri/src/git.rs](src-tauri/src/git.rs)
-- Background indexing runs from [src-tauri/src/daemon.rs](src-tauri/src/daemon.rs)
+- Background indexing and repository monitoring run from [src-tauri/src/manager.rs](src-tauri/src/manager.rs)
 - The cache schema for branch and commit snapshots is defined in [src-tauri/src/db.rs](src-tauri/src/db.rs)
 
 ### Frontend: repository actions and rendering
@@ -31,16 +31,16 @@ The app uses a hybrid model:
 
 ### 1. Repository registration and initial warm-up
 
-When a repository is added to the workspace, the frontend calls `watch_project_directory` from [src-tauri/src/lib.rs](src-tauri/src/lib.rs) and [src/features/branch-map/BranchMap.tsx](src/features/branch-map/BranchMap.tsx). The backend creates an `IndexerDaemon` and immediately runs an initial index pass so the cache is populated as soon as the repo is tracked.
+When a repository is added to the workspace, the frontend calls `ensure_repository_monitored_command` from [src-tauri/src/lib.rs](src-tauri/src/lib.rs). The `WatcherManager` registers the repository and immediately runs an initial refresh so the cache is populated as soon as the repo is tracked.
 
 ### 2. How the app notices new local commits
 
-The app does not rely on Git hooks or a UI-side polling loop for commit detection. Instead, the Rust daemon uses the `notify` crate to watch the repository directory for filesystem activity under `.git/`.
+The app does not rely on Git hooks or a UI-side polling loop for commit detection. Instead, the Rust `WatcherManager` uses the `notify` crate to watch layout-aware Git metadata targets.
 
 When Git writes new objects, refs, or other metadata, the watcher detects that change, waits briefly for the burst to settle, and then runs a fresh indexing pass. In practice, this means:
 
 - local commits are noticed through `.git` filesystem changes
-- the daemon uses a small debounce window before re-indexing
+- the manager uses a small debounce window before refreshing
 - the app reuses cached SQLite state instead of scanning the repository on every render
 
 This is the main mechanism that keeps the app responsive while still making recent local commit history available quickly.
@@ -71,7 +71,7 @@ This produces a lightweight branch snapshot with:
 
 ### 4. Why the UI stays fast
 
-The frontend reads from the SQLite cache rather than traversing the repo on every render. The branch map also uses a small refresh loop while an active view is open, polling approximately every 4 seconds to update visible node metadata without forcing a full backend scan on each UI interaction.
+The frontend reads from the SQLite cache rather than traversing the repo on every render. The shared workspace invalidation event triggers targeted hydration after a successful manager refresh, while the manager can use per-repository polling when filesystem watching is degraded.
 
 ## How Commit History Is Cached
 

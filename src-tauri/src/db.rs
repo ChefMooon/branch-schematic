@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, Row, SqlitePool};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use tauri::Manager;
 use tauri_plugin_sql::{Migration, MigrationKind};
 use uuid::Uuid;
@@ -14,6 +14,13 @@ pub struct TrackedPathRow {
     pub is_active: i64,
     pub theme_color_hex: Option<String>,
     pub icon_name: Option<String>,
+    pub is_pinned: i64,
+    pub health_state: String,
+    pub is_cache_stale: i64,
+    pub last_verified_at: Option<String>,
+    pub last_successful_verification_at: Option<String>,
+    pub verification_failure_count: i64,
+    pub last_verification_error: Option<String>,
 }
 
 #[derive(Debug, Serialize, Clone, FromRow)]
@@ -141,9 +148,16 @@ pub const DB_URL: &str = "sqlite:branch-schematic-dev.db";
 #[cfg(not(debug_assertions))]
 pub const DB_URL: &str = "sqlite:branch-schematic.db";
 pub const DEFAULT_CANVAS_VIEW_ID: &str = "default-workspace-view";
+pub const EXPECTED_SCHEMA_VERSION: i64 = 3;
+pub const DEFAULT_DETAIL_STATUS_REFRESH_INTERVAL: i64 = 5;
+pub const MIN_DETAIL_STATUS_REFRESH_INTERVAL: i64 = 2;
+pub const MAX_DETAIL_STATUS_REFRESH_INTERVAL: i64 = 5;
 
 pub fn get_app_data_db_path(app: &tauri::AppHandle) -> std::path::PathBuf {
-    let app_dir = app.path().app_data_dir().expect("Failed to resolve App Data directory");
+    let app_dir = app
+        .path()
+        .app_data_dir()
+        .expect("Failed to resolve App Data directory");
     let _ = std::fs::create_dir_all(&app_dir);
     app_dir.join(DB_NAME)
 }
@@ -163,7 +177,8 @@ pub fn get_migrations() -> Vec<Migration> {
                 restore_window INTEGER DEFAULT 1,
                 launch_at_login INTEGER DEFAULT 0,
                 start_minimized INTEGER DEFAULT 0,
-                theme TEXT DEFAULT 'system'
+                theme TEXT DEFAULT 'system',
+                detail_status_refresh_interval INTEGER NOT NULL DEFAULT 5
             );
             INSERT OR IGNORE INTO settings (id, hide_to_tray, restore_window, launch_at_login, start_minimized, theme) 
             VALUES (1, 0, 1, 0, 0, 'system');",
@@ -192,6 +207,14 @@ pub fn get_migrations() -> Vec<Migration> {
                 theme_color_hex TEXT DEFAULT NULL,
                 icon_name TEXT DEFAULT NULL,
                 github_owner_login TEXT DEFAULT NULL,
+
+                is_pinned INTEGER NOT NULL DEFAULT 0,
+                health_state TEXT NOT NULL DEFAULT 'unverified',
+                is_cache_stale INTEGER NOT NULL DEFAULT 1,
+                last_verified_at DATETIME DEFAULT NULL,
+                last_successful_verification_at DATETIME DEFAULT NULL,
+                verification_failure_count INTEGER NOT NULL DEFAULT 0,
+                last_verification_error TEXT DEFAULT NULL,
                 
                 is_active INTEGER NOT NULL DEFAULT 1,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -391,6 +414,7 @@ pub fn get_migrations() -> Vec<Migration> {
                 'https://api.github.com',
                 NULL
             );
+            PRAGMA user_version = 2;
             ",
             kind: MigrationKind::Up,
         },
@@ -407,10 +431,205 @@ pub fn get_migrations() -> Vec<Migration> {
             );
             CREATE INDEX IF NOT EXISTS idx_cached_git_commit_branches_branch_id ON cached_git_commit_branches(branch_id);
             CREATE INDEX IF NOT EXISTS idx_cached_git_commit_branches_commit_hash ON cached_git_commit_branches(commit_hash);
+            PRAGMA user_version = 3;
             ",
             kind: MigrationKind::Up,
         }
     ]
+}
+
+pub fn clamp_detail_status_refresh_interval(value: i64) -> i64 {
+    value.clamp(
+        MIN_DETAIL_STATUS_REFRESH_INTERVAL,
+        MAX_DETAIL_STATUS_REFRESH_INTERVAL,
+    )
+}
+
+pub async fn fetch_detail_status_refresh_interval(pool: &SqlitePool) -> Result<i64, sqlx::Error> {
+    let value: Option<i64> =
+        sqlx::query_scalar("SELECT detail_status_refresh_interval FROM settings WHERE id = 1")
+            .fetch_optional(pool)
+            .await?;
+    Ok(clamp_detail_status_refresh_interval(
+        value.unwrap_or(DEFAULT_DETAIL_STATUS_REFRESH_INTERVAL),
+    ))
+}
+
+pub async fn update_detail_status_refresh_interval(
+    pool: &SqlitePool,
+    value: i64,
+) -> Result<i64, sqlx::Error> {
+    let clamped_value = clamp_detail_status_refresh_interval(value);
+    sqlx::query("UPDATE settings SET detail_status_refresh_interval = ? WHERE id = 1")
+        .bind(clamped_value)
+        .execute(pool)
+        .await?;
+    Ok(clamped_value)
+}
+
+pub async fn validate_schema(pool: &SqlitePool) -> Result<(), String> {
+    let user_version: i64 = sqlx::query_scalar("PRAGMA user_version")
+        .fetch_one(pool)
+        .await
+        .map_err(|error| format!("Unable to read SQLite user_version: {error}"))?;
+    if user_version != EXPECTED_SCHEMA_VERSION {
+        return Err(format!(
+            "Unsupported SQLite user_version {user_version}; expected {EXPECTED_SCHEMA_VERSION}"
+        ));
+    }
+
+    let applied_version: Option<i64> =
+        sqlx::query_scalar("SELECT MAX(version) FROM _sqlx_migrations WHERE success = 1")
+            .fetch_one(pool)
+            .await
+            .map_err(|error| format!("Unable to read applied migrations: {error}"))?;
+    if applied_version != Some(EXPECTED_SCHEMA_VERSION) {
+        return Err(format!(
+            "Unsupported applied migration version {applied_version:?}; expected {EXPECTED_SCHEMA_VERSION}"
+        ));
+    }
+
+    let required_columns = [
+        (
+            "settings",
+            ["id", "detail_status_refresh_interval"].as_slice(),
+        ),
+        (
+            "tracked_paths",
+            [
+                "id",
+                "absolute_path",
+                "is_active",
+                "is_pinned",
+                "health_state",
+                "is_cache_stale",
+                "last_verified_at",
+                "last_successful_verification_at",
+                "verification_failure_count",
+                "last_verification_error",
+            ]
+            .as_slice(),
+        ),
+        (
+            "cached_git_commit_branches",
+            ["commit_hash", "branch_id"].as_slice(),
+        ),
+    ];
+
+    for (table, columns) in required_columns {
+        let rows = sqlx::query(&format!("PRAGMA table_info({table})"))
+            .fetch_all(pool)
+            .await
+            .map_err(|error| format!("Unable to inspect table {table}: {error}"))?;
+        let actual_columns: HashSet<String> = rows
+            .iter()
+            .map(|row| row.get::<String, _>("name").to_ascii_lowercase())
+            .collect();
+        if columns
+            .iter()
+            .any(|column| !actual_columns.contains(*column))
+        {
+            let missing = columns
+                .iter()
+                .filter(|column| !actual_columns.contains(**column))
+                .copied()
+                .collect::<Vec<_>>()
+                .join(", ");
+            return Err(format!(
+                "Table {table} is missing required columns: {missing}"
+            ));
+        }
+    }
+
+    for index in [
+        "idx_tracked_paths_active",
+        "idx_unique_path_branch",
+        "idx_cached_git_commit_branches_branch_id",
+        "idx_cached_git_commit_branches_commit_hash",
+    ] {
+        let exists: Option<String> =
+            sqlx::query_scalar("SELECT name FROM sqlite_master WHERE type = 'index' AND name = ?")
+                .bind(index)
+                .fetch_optional(pool)
+                .await
+                .map_err(|error| format!("Unable to inspect required index {index}: {error}"))?;
+        if exists.is_none() {
+            return Err(format!("Required SQLite index is missing: {index}"));
+        }
+    }
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{clamp_detail_status_refresh_interval, get_migrations, validate_schema};
+    use sqlx::sqlite::SqlitePool;
+
+    #[test]
+    fn clamps_detail_status_refresh_interval_to_contract_bounds() {
+        assert_eq!(clamp_detail_status_refresh_interval(0), 2);
+        assert_eq!(clamp_detail_status_refresh_interval(3), 3);
+        assert_eq!(clamp_detail_status_refresh_interval(9), 5);
+    }
+
+    #[tokio::test]
+    async fn validates_fresh_reset_schema_after_all_migrations() {
+        let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
+        sqlx::query(
+            "CREATE TABLE _sqlx_migrations (
+                version BIGINT PRIMARY KEY NOT NULL,
+                description TEXT NOT NULL,
+                success BOOLEAN NOT NULL,
+                checksum BLOB NOT NULL,
+                execution_time BIGINT NOT NULL
+            )",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        for migration in get_migrations() {
+            sqlx::query(migration.sql).execute(&pool).await.unwrap();
+            sqlx::query(
+                "INSERT INTO _sqlx_migrations (version, description, success, checksum, execution_time)
+                 VALUES (?, ?, 1, X'', 0)",
+            )
+            .bind(migration.version)
+            .bind(migration.description)
+            .execute(&pool)
+            .await
+            .unwrap();
+        }
+
+        validate_schema(&pool).await.unwrap();
+
+        let interval: i64 =
+            sqlx::query_scalar("SELECT detail_status_refresh_interval FROM settings WHERE id = 1")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(interval, 5);
+
+        sqlx::query(
+            "INSERT INTO tracked_paths (id, display_name, absolute_path)
+             VALUES ('stage-1-test', 'Stage 1 Test', 'C:/stage-1-test')",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let health_defaults: (i64, String, i64, i64) = sqlx::query_as(
+            "SELECT is_pinned, health_state, is_cache_stale, verification_failure_count
+             FROM tracked_paths
+             LIMIT 1",
+        )
+        .fetch_optional(&pool)
+        .await
+        .unwrap()
+        .unwrap_or((0, "unverified".to_string(), 1, 0));
+        assert_eq!(health_defaults, (0, "unverified".to_string(), 1, 0));
+    }
 }
 
 pub fn read_bool_setting(app: &tauri::AppHandle, column: &str) -> bool {
@@ -447,43 +666,18 @@ pub async fn fetch_active_tracked_paths(
     pool: &SqlitePool,
 ) -> Result<Vec<TrackedPathRow>, sqlx::Error> {
     let rows = sqlx::query_as::<_, TrackedPathRow>(
-        "SELECT id, display_name, absolute_path, remote_url, is_active, theme_color_hex, icon_name FROM tracked_paths WHERE is_active = 1 ORDER BY display_name ASC"
+        "SELECT id, display_name, absolute_path, remote_url, is_active, theme_color_hex, icon_name, is_pinned, health_state, is_cache_stale, last_verified_at, last_successful_verification_at, verification_failure_count, last_verification_error FROM tracked_paths WHERE is_active = 1 ORDER BY display_name ASC"
     )
     .fetch_all(pool)
     .await?;
     Ok(rows)
 }
 
-pub async fn ensure_tracked_paths_theme_columns(pool: &SqlitePool) -> Result<(), sqlx::Error> {
-    let columns = sqlx::query("PRAGMA table_info(tracked_paths);")
-        .fetch_all(pool)
-        .await?;
-
-    let has_theme_color_hex = columns.iter().any(|row| {
-        row.get::<String, _>("name")
-            .eq_ignore_ascii_case("theme_color_hex")
-    });
-    let has_icon_name = columns.iter().any(|row| {
-        row.get::<String, _>("name")
-            .eq_ignore_ascii_case("icon_name")
-    });
-
-    if !has_theme_color_hex {
-        sqlx::query("ALTER TABLE tracked_paths ADD COLUMN theme_color_hex TEXT DEFAULT NULL;")
-            .execute(pool)
-            .await?;
-    }
-
-    if !has_icon_name {
-        sqlx::query("ALTER TABLE tracked_paths ADD COLUMN icon_name TEXT DEFAULT NULL;")
-            .execute(pool)
-            .await?;
-    }
-
-    Ok(())
-}
-
-pub async fn ensure_canvas_view_exists(pool: &SqlitePool, view_id: &str, view_name: &str) -> Result<(), sqlx::Error> {
+pub async fn ensure_canvas_view_exists(
+    pool: &SqlitePool,
+    view_id: &str,
+    view_name: &str,
+) -> Result<(), sqlx::Error> {
     sqlx::query(
         "INSERT OR IGNORE INTO canvas_views (id, view_name, zoom_level, pan_x, pan_y, is_favorite, display_order)
          VALUES (?, ?, 1.0, 0.0, 0.0, 0, COALESCE((SELECT MAX(display_order) + 1 FROM canvas_views), 0));",
@@ -512,15 +706,13 @@ pub async fn update_canvas_viewport_state(
     pan_x: f64,
     pan_y: f64,
 ) -> Result<(), sqlx::Error> {
-    sqlx::query(
-        "UPDATE canvas_views SET zoom_level = ?, pan_x = ?, pan_y = ? WHERE id = ?;"
-    )
-    .bind(zoom_level)
-    .bind(pan_x)
-    .bind(pan_y)
-    .bind(view_id)
-    .execute(pool)
-    .await?;
+    sqlx::query("UPDATE canvas_views SET zoom_level = ?, pan_x = ?, pan_y = ? WHERE id = ?;")
+        .bind(zoom_level)
+        .bind(pan_x)
+        .bind(pan_y)
+        .bind(view_id)
+        .execute(pool)
+        .await?;
     Ok(())
 }
 
@@ -665,7 +857,10 @@ pub async fn fetch_canvas_view_scope(
 
     let mut branch_visibility = HashMap::new();
     for (repo_path_id, branch_name, is_visible) in branch_rows {
-        branch_visibility.insert(format!("{}::{}", repo_path_id, branch_name), is_visible != 0);
+        branch_visibility.insert(
+            format!("{}::{}", repo_path_id, branch_name),
+            is_visible != 0,
+        );
     }
 
     Ok(CanvasViewScopeState {
@@ -817,7 +1012,10 @@ pub async fn fetch_notifications(pool: &SqlitePool) -> Result<Vec<NotificationRo
     Ok(rows)
 }
 
-pub async fn insert_notification(pool: &SqlitePool, notification: &NotificationRow) -> Result<(), sqlx::Error> {
+pub async fn insert_notification(
+    pool: &SqlitePool,
+    notification: &NotificationRow,
+) -> Result<(), sqlx::Error> {
     sqlx::query(
         "INSERT OR REPLACE INTO notifications (id, title, message, variant, is_read, is_pinned, is_archived, created_at, route, route_params_json) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)"
     )
@@ -988,7 +1186,7 @@ pub async fn fetch_tracked_path_id_by_absolute_path(
     absolute_path: &str,
 ) -> Result<Option<String>, sqlx::Error> {
     let row = sqlx::query_scalar::<_, String>(
-        "SELECT id FROM tracked_paths WHERE absolute_path = ? LIMIT 1"
+        "SELECT id FROM tracked_paths WHERE absolute_path = ? LIMIT 1",
     )
     .bind(absolute_path)
     .fetch_optional(pool)
@@ -1001,12 +1199,11 @@ pub async fn fetch_tracked_path_state_by_absolute_path(
     pool: &SqlitePool,
     absolute_path: &str,
 ) -> Result<Option<(String, i64)>, sqlx::Error> {
-    let row = sqlx::query(
-        "SELECT id, is_active FROM tracked_paths WHERE absolute_path = ? LIMIT 1"
-    )
-    .bind(absolute_path)
-    .fetch_optional(pool)
-    .await?;
+    let row =
+        sqlx::query("SELECT id, is_active FROM tracked_paths WHERE absolute_path = ? LIMIT 1")
+            .bind(absolute_path)
+            .fetch_optional(pool)
+            .await?;
 
     match row {
         Some(row) => {
@@ -1031,7 +1228,8 @@ pub async fn insert_tracked_path(
         .fetch_all(pool)
         .await?;
     let has_github_owner_login = columns.iter().any(|row| {
-        row.get::<String, _>("name").eq_ignore_ascii_case("github_owner_login")
+        row.get::<String, _>("name")
+            .eq_ignore_ascii_case("github_owner_login")
     });
 
     let insert_sql = if has_github_owner_login {
@@ -1087,7 +1285,7 @@ pub async fn relink_tracked_path(
              repo_origin_type = ?,
              github_owner_login = ?,
              is_active = 1
-         WHERE id = ?;"
+         WHERE id = ?;",
     )
     .bind(display_name)
     .bind(absolute_path)
@@ -1108,7 +1306,7 @@ pub async fn deactivate_duplicate_tracked_path(
     sqlx::query(
         "UPDATE tracked_paths
          SET is_active = 0
-         WHERE absolute_path = ? AND id != ?;"
+         WHERE absolute_path = ? AND id != ?;",
     )
     .bind(absolute_path)
     .bind(exclude_path_id)
@@ -1117,10 +1315,7 @@ pub async fn deactivate_duplicate_tracked_path(
     Ok(())
 }
 
-pub async fn untrack_repository_path(
-    pool: &SqlitePool,
-    path_id: &str,
-) -> Result<(), sqlx::Error> {
+pub async fn untrack_repository_path(pool: &SqlitePool, path_id: &str) -> Result<(), sqlx::Error> {
     sqlx::query("UPDATE tracked_paths SET is_active = 0 WHERE id = ?;")
         .bind(path_id)
         .execute(pool)
@@ -1207,7 +1402,7 @@ pub async fn upsert_head_branch_git_status(
             ahead_of_default_count = excluded.ahead_of_default_count,
             behind_default_count = excluded.behind_default_count,
             last_commit_hash = excluded.last_commit_hash,
-            updated_at = CURRENT_TIMESTAMP;"
+            updated_at = CURRENT_TIMESTAMP;",
     )
     .bind(&branch_id)
     .bind(path_id)
@@ -1230,6 +1425,19 @@ pub async fn update_repository_favorite(
 ) -> Result<(), sqlx::Error> {
     sqlx::query("UPDATE tracked_paths SET is_favorite = ? WHERE id = ?;")
         .bind(if is_favorite { 1_i64 } else { 0_i64 })
+        .bind(path_id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+pub async fn update_repository_pinned(
+    pool: &SqlitePool,
+    path_id: &str,
+    is_pinned: bool,
+) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE tracked_paths SET is_pinned = ? WHERE id = ?;")
+        .bind(if is_pinned { 1_i64 } else { 0_i64 })
         .bind(path_id)
         .execute(pool)
         .await?;
@@ -1264,7 +1472,11 @@ pub async fn update_repository_theme(
     Ok(())
 }
 
-pub async fn tag_name_exists(pool: &SqlitePool, tag_name: &str, exclude_id: Option<&str>) -> Result<bool, sqlx::Error> {
+pub async fn tag_name_exists(
+    pool: &SqlitePool,
+    tag_name: &str,
+    exclude_id: Option<&str>,
+) -> Result<bool, sqlx::Error> {
     let normalized = tag_name.trim();
     if normalized.is_empty() {
         return Ok(false);
@@ -1290,7 +1502,11 @@ pub async fn tag_name_exists(pool: &SqlitePool, tag_name: &str, exclude_id: Opti
     }
 }
 
-pub async fn group_name_exists(pool: &SqlitePool, group_name: &str, exclude_id: Option<&str>) -> Result<bool, sqlx::Error> {
+pub async fn group_name_exists(
+    pool: &SqlitePool,
+    group_name: &str,
+    exclude_id: Option<&str>,
+) -> Result<bool, sqlx::Error> {
     let normalized = group_name.trim();
     if normalized.is_empty() {
         return Ok(false);
@@ -1411,7 +1627,9 @@ pub async fn delete_custom_group(pool: &SqlitePool, id: &str) -> Result<(), sqlx
     Ok(())
 }
 
-pub async fn fetch_custom_groups_with_usage(pool: &SqlitePool) -> Result<Vec<GroupSummaryRow>, sqlx::Error> {
+pub async fn fetch_custom_groups_with_usage(
+    pool: &SqlitePool,
+) -> Result<Vec<GroupSummaryRow>, sqlx::Error> {
     sqlx::query_as::<_, GroupSummaryRow>(
         "SELECT
             custom_groups.id,
@@ -1430,7 +1648,9 @@ pub async fn fetch_custom_groups_with_usage(pool: &SqlitePool) -> Result<Vec<Gro
     .await
 }
 
-pub async fn fetch_global_tags_with_usage(pool: &SqlitePool) -> Result<Vec<TagFilterSummaryRow>, sqlx::Error> {
+pub async fn fetch_global_tags_with_usage(
+    pool: &SqlitePool,
+) -> Result<Vec<TagFilterSummaryRow>, sqlx::Error> {
     sqlx::query_as::<_, TagFilterSummaryRow>(
         "SELECT
             global_tags.id,
@@ -1521,12 +1741,11 @@ pub async fn attach_repository_tag(
     .execute(pool)
     .await?;
 
-    let tag_id: String = sqlx::query_scalar(
-        "SELECT id FROM global_tags WHERE tag_name = ? COLLATE NOCASE LIMIT 1;",
-    )
-    .bind(normalized)
-    .fetch_one(pool)
-    .await?;
+    let tag_id: String =
+        sqlx::query_scalar("SELECT id FROM global_tags WHERE tag_name = ? COLLATE NOCASE LIMIT 1;")
+            .bind(normalized)
+            .fetch_one(pool)
+            .await?;
 
     sqlx::query(
         "INSERT OR IGNORE INTO tracked_path_tags (repo_path_id, tag_id)
@@ -1583,7 +1802,7 @@ pub async fn fetch_quick_filter_metadata(
     pool: &SqlitePool,
 ) -> Result<QuickFilterMetadata, sqlx::Error> {
     let groups = sqlx::query_scalar::<_, String>(
-                "SELECT custom_groups.group_name
+        "SELECT custom_groups.group_name
                  FROM custom_groups
                  JOIN tracked_paths
                         ON tracked_paths.group_id = custom_groups.id
@@ -1675,7 +1894,7 @@ pub async fn insert_canvas_manual_edge(
     ensure_canvas_view_exists(pool, view_id, "Workspace View").await?;
     sqlx::query(
         "INSERT INTO canvas_manual_edges (id, view_id, source_repo_id, target_repo_id, edge_style)
-         VALUES (?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING;"
+         VALUES (?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING;",
     )
     .bind(id)
     .bind(view_id)
@@ -1701,10 +1920,12 @@ pub async fn delete_canvas_manual_edge(
 }
 
 pub async fn archive_tracked_path(pool: &SqlitePool, path_id: &str) -> Result<(), sqlx::Error> {
-    sqlx::query("UPDATE tracked_paths SET is_active = 0, archived_at = CURRENT_TIMESTAMP WHERE id = ?;")
-        .bind(path_id)
-        .execute(pool)
-        .await?;
+    sqlx::query(
+        "UPDATE tracked_paths SET is_active = 0, archived_at = CURRENT_TIMESTAMP WHERE id = ?;",
+    )
+    .bind(path_id)
+    .execute(pool)
+    .await?;
     Ok(())
 }
 
@@ -1724,11 +1945,10 @@ pub async fn clone_canvas_view(
 ) -> Result<(), sqlx::Error> {
     let mut tx = pool.begin().await?;
 
-    let next_display_order: i64 = sqlx::query_scalar(
-        "SELECT COALESCE(MAX(display_order), -1) + 1 FROM canvas_views;",
-    )
-    .fetch_one(&mut *tx)
-    .await?;
+    let next_display_order: i64 =
+        sqlx::query_scalar("SELECT COALESCE(MAX(display_order), -1) + 1 FROM canvas_views;")
+            .fetch_one(&mut *tx)
+            .await?;
 
     sqlx::query(
            "INSERT INTO canvas_views (id, view_name, zoom_level, pan_x, pan_y, is_favorite, display_order, card_state_json, baseline_zoom, baseline_pan_x, baseline_pan_y)
@@ -1741,27 +1961,27 @@ pub async fn clone_canvas_view(
     .execute(&mut *tx)
     .await?;
 
-        sqlx::query(
-           "INSERT INTO canvas_view_visible_paths (view_id, repo_path_id, is_visible)
+    sqlx::query(
+        "INSERT INTO canvas_view_visible_paths (view_id, repo_path_id, is_visible)
             SELECT ?, repo_path_id, is_visible
             FROM canvas_view_visible_paths
-            WHERE view_id = ?"
-        )
-        .bind(new_id)
-        .bind(source_id)
-        .execute(&mut *tx)
-        .await?;
+            WHERE view_id = ?",
+    )
+    .bind(new_id)
+    .bind(source_id)
+    .execute(&mut *tx)
+    .await?;
 
-        sqlx::query(
-           "INSERT INTO canvas_view_visible_branches (view_id, branch_id, is_visible)
+    sqlx::query(
+        "INSERT INTO canvas_view_visible_branches (view_id, branch_id, is_visible)
             SELECT ?, branch_id, is_visible
             FROM canvas_view_visible_branches
-            WHERE view_id = ?"
-        )
-        .bind(new_id)
-        .bind(source_id)
-        .execute(&mut *tx)
-        .await?;
+            WHERE view_id = ?",
+    )
+    .bind(new_id)
+    .bind(source_id)
+    .execute(&mut *tx)
+    .await?;
 
     sqlx::query(
         "INSERT INTO canvas_view_cards (view_id, repo_path_id, pos_x, pos_y, view_mode, commit_density, theme_color_hex, explode_branches)
@@ -1776,7 +1996,7 @@ pub async fn clone_canvas_view(
     sqlx::query(
         "INSERT INTO canvas_manual_edges (id, view_id, source_repo_id, target_repo_id, edge_style)
          SELECT lower(hex(randomblob(16))), ?, source_repo_id, target_repo_id, edge_style
-         FROM canvas_manual_edges WHERE view_id = ?"
+         FROM canvas_manual_edges WHERE view_id = ?",
     )
     .bind(new_id)
     .bind(source_id)
@@ -1786,7 +2006,7 @@ pub async fn clone_canvas_view(
     sqlx::query(
         "INSERT INTO canvas_view_branch_cards (view_id, branch_id, pos_x, pos_y)
          SELECT ?, branch_id, pos_x, pos_y
-         FROM canvas_view_branch_cards WHERE view_id = ?"
+         FROM canvas_view_branch_cards WHERE view_id = ?",
     )
     .bind(new_id)
     .bind(source_id)
@@ -1802,7 +2022,10 @@ struct ResolvedLayoutNodeKey {
     branch_id: Option<String>,
 }
 
-async fn resolve_layout_node_key(pool: &SqlitePool, key: &str) -> Result<ResolvedLayoutNodeKey, sqlx::Error> {
+async fn resolve_layout_node_key(
+    pool: &SqlitePool,
+    key: &str,
+) -> Result<ResolvedLayoutNodeKey, sqlx::Error> {
     let row = sqlx::query_as::<_, (String, Option<String>)>(
         "SELECT id AS repo_path_id, NULL AS branch_id
          FROM tracked_paths
@@ -1843,13 +2066,15 @@ async fn resolve_repo_path_id(pool: &SqlitePool, key: &str) -> Result<String, sq
     resolved.ok_or(sqlx::Error::RowNotFound)
 }
 
-async fn resolve_branch_visibility_key(pool: &SqlitePool, key: &str) -> Result<Option<String>, sqlx::Error> {
-    let direct = sqlx::query_scalar::<_, String>(
-        "SELECT id FROM cached_git_branches WHERE id = ? LIMIT 1;",
-    )
-    .bind(key)
-    .fetch_optional(pool)
-    .await?;
+async fn resolve_branch_visibility_key(
+    pool: &SqlitePool,
+    key: &str,
+) -> Result<Option<String>, sqlx::Error> {
+    let direct =
+        sqlx::query_scalar::<_, String>("SELECT id FROM cached_git_branches WHERE id = ? LIMIT 1;")
+            .bind(key)
+            .fetch_optional(pool)
+            .await?;
 
     if direct.is_some() {
         return Ok(direct);
@@ -1878,7 +2103,11 @@ pub async fn delete_canvas_view(pool: &SqlitePool, view_id: &str) -> Result<(), 
     Ok(())
 }
 
-pub async fn rename_canvas_view(pool: &SqlitePool, view_id: &str, new_name: &str) -> Result<(), sqlx::Error> {
+pub async fn rename_canvas_view(
+    pool: &SqlitePool,
+    view_id: &str,
+    new_name: &str,
+) -> Result<(), sqlx::Error> {
     sqlx::query("UPDATE canvas_views SET view_name = ? WHERE id = ?;")
         .bind(new_name)
         .bind(view_id)
@@ -1985,11 +2214,10 @@ pub async fn create_new_environment_view(
 ) -> Result<(), sqlx::Error> {
     let mut tx = pool.begin().await?;
 
-    let next_display_order: i64 = sqlx::query_scalar(
-        "SELECT COALESCE(MAX(display_order), -1) + 1 FROM canvas_views;",
-    )
-    .fetch_one(&mut *tx)
-    .await?;
+    let next_display_order: i64 =
+        sqlx::query_scalar("SELECT COALESCE(MAX(display_order), -1) + 1 FROM canvas_views;")
+            .fetch_one(&mut *tx)
+            .await?;
 
     sqlx::query("INSERT INTO canvas_views (id, view_name, zoom_level, pan_x, pan_y, is_favorite, display_order, card_state_json) VALUES (?, ?, ?, ?, ?, 0, ?, NULL);")
         .bind(id)

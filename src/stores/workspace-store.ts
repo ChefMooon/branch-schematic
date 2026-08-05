@@ -1,6 +1,62 @@
 import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
+import { useCanvasStore } from './canvas-store';
 import type { CustomGroup, GroupSummary, QuickFilterMetadata, RepoGitStatusSnapshot, RepoTag, TagFilterSummary, TrackedPath } from '../types/git';
+
+const WORKSPACE_UPDATED_EVENT = 'workspace-updated';
+const MAX_EVENT_BATCH_SIZE = 250;
+const RECONCILIATION_DELAY_MS = 500;
+
+export interface WorkspaceUpdatedEvent {
+  version: number;
+  eventId: string;
+  revision: number;
+  repositoryIds: string[];
+  triggerReason: string;
+  batchIndex: number;
+  batchCount: number;
+  emittedAt: string;
+}
+
+let sharedUnlisten: (() => void) | undefined;
+let sharedListenPromise: Promise<() => void> | undefined;
+let sharedSubscriberCount = 0;
+let reconciliationTimer: ReturnType<typeof setTimeout> | undefined;
+let latestRevision = 0;
+const repositoryRevisions = new Map<string, number>();
+let hydrationGeneration = 0;
+
+export function parseWorkspaceUpdatedEvent(value: unknown): WorkspaceUpdatedEvent | null {
+  if (!value || typeof value !== 'object') return null;
+  const payload = value as Partial<WorkspaceUpdatedEvent>;
+  if (
+    payload.version !== 1 ||
+    typeof payload.eventId !== 'string' ||
+    typeof payload.revision !== 'number' ||
+    !Number.isInteger(payload.revision) ||
+    payload.revision < 1 ||
+    !Array.isArray(payload.repositoryIds) ||
+    payload.repositoryIds.length > MAX_EVENT_BATCH_SIZE ||
+    !payload.repositoryIds.every((id) => typeof id === 'string') ||
+    typeof payload.triggerReason !== 'string' ||
+    !Number.isInteger(payload.batchIndex) ||
+    !Number.isInteger(payload.batchCount) ||
+    typeof payload.emittedAt !== 'string'
+  ) {
+    return null;
+  }
+
+  return payload as WorkspaceUpdatedEvent;
+}
+
+function scheduleWorkspaceReconciliation() {
+  if (reconciliationTimer) return;
+  reconciliationTimer = setTimeout(() => {
+    reconciliationTimer = undefined;
+    void useWorkspaceStore.getState().hydrateFromBackend();
+  }, RECONCILIATION_DELAY_MS);
+}
 
 function sortRepoTags(tags: RepoTag[]): RepoTag[] {
   return [...tags].sort((a, b) => a.tag_name.localeCompare(b.tag_name, undefined, { sensitivity: 'base' }));
@@ -45,6 +101,7 @@ interface WorkspaceState {
   groupDirectory: GroupSummary[];
   tagDirectory: TagFilterSummary[];
   hydrateFromBackend: () => Promise<void>;
+  subscribeToWorkspaceUpdates: () => Promise<() => void>;
   hydrateQuickFilterMetadata: () => Promise<void>;
   hydrateManagementDirectory: () => Promise<void>;
   selectRepo: (repo: TrackedPath | null) => void;
@@ -52,6 +109,7 @@ interface WorkspaceState {
   addRepo: (repo: TrackedPath) => void;
   removeRepo: (repoId: string) => void;
   setRepositoryFavorite: (repoId: string, favorite: boolean) => Promise<void>;
+  setRepositoryPinned: (repoId: string, pinned: boolean) => Promise<void>;
   setRepositoryGroup: (repoId: string, groupId: string | null) => Promise<void>;
   updateRepositoryTheme: (id: string, colorHex: string | null, iconName: string | null) => Promise<void>;
   refreshRepositoryGitStatus: (repoId: string, absolutePath: string) => Promise<void>;
@@ -82,14 +140,72 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   groupDirectory: [],
   tagDirectory: [],
 
+  subscribeToWorkspaceUpdates: async () => {
+    sharedSubscriberCount += 1;
+    if (!sharedListenPromise) {
+      sharedListenPromise = listen<unknown>(WORKSPACE_UPDATED_EVENT, (event) => {
+        const payload = parseWorkspaceUpdatedEvent(event.payload);
+        if (!payload) {
+          scheduleWorkspaceReconciliation();
+          return;
+        }
+
+        const isNewRevision = payload.repositoryIds.some((repositoryId) => {
+          const previousRevision = repositoryRevisions.get(repositoryId) ?? 0;
+          return payload.revision > previousRevision;
+        });
+        if (!isNewRevision) return;
+
+        const expectedRevision = latestRevision + 1;
+        if (payload.revision > expectedRevision) {
+          scheduleWorkspaceReconciliation();
+        }
+        latestRevision = Math.max(latestRevision, payload.revision);
+        for (const repositoryId of payload.repositoryIds) {
+          repositoryRevisions.set(
+            repositoryId,
+            Math.max(repositoryRevisions.get(repositoryId) ?? 0, payload.revision),
+          );
+        }
+        void useWorkspaceStore.getState().hydrateFromBackend();
+        void useCanvasStore.getState().hydrateWorkspaceNodes();
+      }).then((unlisten) => {
+        if (sharedSubscriberCount === 0) {
+          unlisten();
+          sharedListenPromise = undefined;
+          return unlisten;
+        }
+        sharedUnlisten = unlisten;
+        return unlisten;
+      });
+    }
+
+    await sharedListenPromise;
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      sharedSubscriberCount = Math.max(0, sharedSubscriberCount - 1);
+      if (sharedSubscriberCount === 0) {
+        sharedUnlisten?.();
+        sharedUnlisten = undefined;
+        sharedListenPromise = undefined;
+      }
+    };
+  },
+
   hydrateFromBackend: async () => {
     if (get().isLoading) return;
+
+    const requestGeneration = hydrationGeneration + 1;
+    hydrationGeneration = requestGeneration;
 
     set({ isLoading: true, error: null });
 
     try {
       // 1. Fetch active data paths from Rust database
       const rows = await invoke<any[]>('get_tracked_workspaces');
+      if (requestGeneration !== hydrationGeneration) return;
       
       // 2. Map structural database fields safely to match runtime requirements
       const nextRepos: TrackedPath[] = rows.map((repo) => ({
@@ -110,6 +226,13 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         ahead_of_default_count: repo.ahead_of_default_count || 0,
         behind_default_count: repo.behind_default_count || 0,
         is_favorite: Number(repo.is_favorite || 0),
+        is_pinned: Number(repo.is_pinned || 0),
+        health_state: repo.health_state ?? 'unverified',
+        is_cache_stale: Number(repo.is_cache_stale ?? 1),
+        last_verified_at: repo.last_verified_at ?? null,
+        last_successful_verification_at: repo.last_successful_verification_at ?? null,
+        verification_failure_count: Number(repo.verification_failure_count || 0),
+        last_verification_error: repo.last_verification_error ?? null,
         group_id: repo.group_id ?? null,
         custom_group: repo.custom_group ?? null,
         last_accessed_at: repo.last_accessed_at ?? null,
@@ -196,6 +319,15 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     } catch (error) {
       console.error('Failed to set favorite state:', error);
     }
+  },
+
+  setRepositoryPinned: async (repoId, pinned) => {
+    await invoke('set_repository_pinned', { pathId: repoId, isPinned: pinned });
+    set({
+      repos: get().repos.map((repo) =>
+        repo.id === repoId ? { ...repo, is_pinned: pinned ? 1 : 0 } : repo
+      ),
+    });
   },
 
   setRepositoryGroup: async (repoId, groupId) => {

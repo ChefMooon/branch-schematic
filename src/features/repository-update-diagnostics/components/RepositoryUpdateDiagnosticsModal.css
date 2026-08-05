@@ -1,0 +1,211 @@
+.repository-update-diagnostics-modal {
+  width: min(1100px, 96vw);
+  max-height: min(760px, 88vh);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--app-surface);
+  border: 1px solid var(--app-border);
+  border-radius: 10px;
+  box-shadow: 0 30px 70px -30px var(--app-shadow);
+  color: var(--app-text);
+}
+
+.repository-update-diagnostics-modal__header,
+.repository-update-diagnostics-modal__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--app-border);
+}
+
+.repository-update-diagnostics-modal__footer {
+  justify-content: flex-start;
+  border-top: 1px solid var(--app-border);
+  border-bottom: 0;
+  color: var(--app-text-muted, var(--app-text));
+  font-size: 11px;
+}
+
+.repository-update-diagnostics-modal__heading {
+  min-width: 0;
+}
+
+.repository-update-diagnostics-modal__heading h2 {
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.2;
+}
+
+.repository-update-diagnostics-modal__heading p {
+  margin: 4px 0 0;
+  color: var(--app-text-muted, var(--app-text));
+  font-size: 11px;
+}
+
+.repository-update-diagnostics-modal__header-actions,
+.repository-update-diagnostics-modal__filters,
+.repository-update-diagnostics-modal__summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.repository-update-diagnostics-modal__summary {
+  flex-wrap: wrap;
+  padding: 10px 16px;
+  background: var(--app-surface-muted);
+  border-bottom: 1px solid var(--app-border);
+}
+
+.repository-update-diagnostics-modal__metric {
+  min-width: 76px;
+  padding-right: 10px;
+  border-right: 1px solid var(--app-border);
+}
+
+.repository-update-diagnostics-modal__metric:last-child {
+  border-right: 0;
+}
+
+.repository-update-diagnostics-modal__metric-label {
+  display: block;
+  color: var(--app-text-muted, var(--app-text));
+  font-size: 10px;
+  text-transform: uppercase;
+}
+
+.repository-update-diagnostics-modal__metric-value {
+  display: block;
+  margin-top: 2px;
+  font-family: monospace;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.repository-update-diagnostics-modal__filters {
+  flex-wrap: wrap;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--app-border);
+}
+
+.repository-update-diagnostics-modal__search,
+.repository-update-diagnostics-modal__select {
+  min-height: 30px;
+  padding: 0 8px;
+  color: var(--app-text);
+  background: var(--app-surface);
+  border: 1px solid var(--app-border);
+  border-radius: 5px;
+  font: inherit;
+  font-size: 12px;
+}
+
+.repository-update-diagnostics-modal__search {
+  flex: 1 1 220px;
+  min-width: 150px;
+}
+
+.repository-update-diagnostics-modal__table-wrap {
+  min-height: 0;
+  overflow: auto;
+}
+
+.repository-update-diagnostics-modal__table {
+  width: 100%;
+  min-width: 760px;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.repository-update-diagnostics-modal__table th,
+.repository-update-diagnostics-modal__table td {
+  height: 38px;
+  padding: 0 10px;
+  text-align: left;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--app-border);
+}
+
+.repository-update-diagnostics-modal__table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  color: var(--app-text-muted, var(--app-text));
+  background: var(--app-surface);
+  font-size: 10px;
+  text-transform: uppercase;
+}
+
+.repository-update-diagnostics-modal__table tbody tr:hover {
+  background: var(--app-surface-muted);
+}
+
+.repository-update-diagnostics-modal__repository {
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 600;
+}
+
+.repository-update-diagnostics-modal__repository-id,
+.repository-update-diagnostics-modal__muted {
+  color: var(--app-text-muted, var(--app-text));
+  font-family: monospace;
+  font-size: 10px;
+}
+
+.repository-update-diagnostics-modal__status,
+.repository-update-diagnostics-modal__priority {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 0 7px;
+  border: 1px solid var(--app-border);
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.repository-update-diagnostics-modal__priority--foreground {
+  color: #dc2626;
+  border-color: color-mix(in srgb, #dc2626 45%, var(--app-border));
+}
+
+.repository-update-diagnostics-modal__priority--visible {
+  color: #d97706;
+  border-color: color-mix(in srgb, #d97706 45%, var(--app-border));
+}
+
+.repository-update-diagnostics-modal__priority--background {
+  color: #2563eb;
+  border-color: color-mix(in srgb, #2563eb 45%, var(--app-border));
+}
+
+.repository-update-diagnostics-modal__status--degraded {
+  color: #dc2626;
+}
+
+.repository-update-diagnostics-modal__status--running {
+  color: #059669;
+}
+
+.repository-update-diagnostics-modal__message {
+  padding: 28px 16px;
+  color: var(--app-text-muted, var(--app-text));
+  text-align: center;
+  font-size: 12px;
+}
+
+@media (max-width: 720px) {
+  .repository-update-diagnostics-modal__header {
+    align-items: flex-start;
+  }
+
+  .repository-update-diagnostics-modal__header-actions {
+    flex-shrink: 0;
+  }
+}

@@ -70,26 +70,14 @@ function MapWorkspace() {
   );
   const isCanvasReady = views.length === 0 || Boolean(activeViewObj);
 
-  // 1. Initial workspace registration and views initialization
+  // 1. Initial workspace views initialization
   useEffect(() => {
     async function initializeAndHydrate() {
       try {
-        const activePaths = await invoke<any[]>('get_active_tracked_paths');
-        for (const path of activePaths) {
-          try {
-            await invoke('watch_project_directory', {
-              pathId: path.id,
-              absolutePath: path.absolute_path,
-            });
-          } catch (watchError) {
-            console.error(`Failed starting watcher loop for ${path.absolute_path}:`, watchError);
-          }
-        }
-      } catch (err) {
-        console.error('Failed to look up active tracked paths:', err);
-      } finally {
         await hydrateViewsList();
         await initializeBranchMapSession();
+      } catch (err) {
+        console.error('Failed to initialize branch map:', err);
       }
     }
     initializeAndHydrate();
@@ -102,18 +90,7 @@ function MapWorkspace() {
     }
   }, [activeViewId, hydrateWorkspaceNodes]);
 
-  // 3. Background background synchronization loop to update commit metadata without fighting card movement
-  useEffect(() => {
-    if (!activeViewId) return;
-    
-    const pollInterval = setInterval(() => {
-      hydrateWorkspaceNodes();
-    }, 4000); // Poll branch updates smoothly every 4 seconds
-
-    return () => clearInterval(pollInterval);
-  }, [activeViewId, hydrateWorkspaceNodes]);
-
-  // 4. Sync the viewport only when the active view selection changes so metadata-only actions
+  // 3. Sync the viewport only when the active view selection changes so metadata-only actions
   // do not reapply the stored camera state and cause a visible jump.
   useEffect(() => {
     if (!activeViewId || !activeViewObj) return;

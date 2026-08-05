@@ -20,11 +20,11 @@ export function useRepositoryFileDiff(absolutePath: string | undefined, selected
     setDiffError(null);
     setIsDiffLoading(true);
 
-    void invoke<RepositoryFileDiff>('get_repository_file_diff', {
+    void Promise.resolve(invoke<RepositoryFileDiff>('get_repository_file_diff', {
       absolutePath,
       path: selectedEntry.path,
       staged: selectedEntry.staged,
-    })
+    }))
       .then((nextDiff) => {
         if (isCurrent) setFileDiff(nextDiff);
       })

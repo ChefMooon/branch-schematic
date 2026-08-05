@@ -72,7 +72,7 @@ function DatabasePage() {
         [pathUuid, newDisplayName, newPath]
       );
 
-      await invoke("watch_project_directory", {
+      await invoke("ensure_repository_monitored_command", {
         pathId: pathUuid,
         absolutePath: newPath,
       });

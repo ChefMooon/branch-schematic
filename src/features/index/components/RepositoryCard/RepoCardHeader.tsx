@@ -21,6 +21,7 @@ type RepoCardHeaderProps = {
   onPull: () => void | Promise<void>;
   onPush: () => void | Promise<void>;
   onToggleFavorite: () => void | Promise<void>;
+  onTogglePinned?: () => void | Promise<void>;
   onValidate?: () => void | Promise<void>;
   onUntrack: (event: React.MouseEvent<HTMLButtonElement>) => void;
   onThemeChange: (colorHex: string | null, iconName: string | null) => void | Promise<void>;
@@ -47,6 +48,7 @@ export function RepoCardHeader({
   onPull,
   onPush,
   onToggleFavorite,
+  onTogglePinned,
   onValidate,
   onUntrack,
   onThemeChange,
@@ -103,6 +105,7 @@ export function RepoCardHeader({
           </label>
           <RepoCardOverflowMenu
             isFavorite={isFavorite}
+            isPinned={(repo.is_pinned ?? 0) === 1}
             isBusy={isAnyLoading}
             canUseRemoteActions={originType !== 'LOCAL_ONLY'}
             onOpenDetails={onOpenDetails}
@@ -112,6 +115,7 @@ export function RepoCardHeader({
             onPush={onPush}
             onRenameAlias={onStartEditing}
             onToggleFavorite={onToggleFavorite}
+            onTogglePinned={onTogglePinned ?? (() => undefined)}
             onValidate={onValidate}
             onUntrack={onUntrack}
             currentThemeColor={repo.theme_color_hex ?? null}

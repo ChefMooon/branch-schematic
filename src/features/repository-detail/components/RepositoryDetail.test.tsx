@@ -77,6 +77,49 @@ describe('RepositoryDetail', () => {
     expect(await screen.findByRole('heading', { name: /add repository detail modal/i })).toBeInTheDocument();
   });
 
+  it('does not reload commits when workspace hydration replaces the repository object', async () => {
+    const commits = [
+      {
+        commit_hash: 'abc123',
+        author_name: 'Ada Lovelace',
+        commit_message: 'Initial commit',
+        committed_at: '2024-01-01 10:00:00',
+        signature_status: 'verified',
+      },
+    ];
+    invokeMock.mockResolvedValue(commits);
+
+    const repo: TrackedPath = {
+      id: 'repo-stable',
+      display_name: 'Stable Repository',
+      absolute_path: '/tmp/stable-repository',
+      current_branch: 'main',
+      default_branch_name: 'main',
+      available_branches: ['main'],
+      ahead_count: 0,
+      behind_count: 0,
+      has_upstream: false,
+      uncommitted_changes_count: 0,
+      remote_url: null,
+      github_owner_login: null,
+      repo_origin_type: 'LOCAL_ONLY',
+      tags: [],
+    };
+
+    const { rerender } = render(<RepositoryDetail isOpen repo={repo} onClose={() => undefined} />);
+
+    expect(await screen.findByRole('button', { name: /initial commit/i })).toBeInTheDocument();
+    const initialCommitLoadCount = invokeMock.mock.calls.filter(([command]) => command === 'get_branch_commits').length;
+
+    rerender(<RepositoryDetail isOpen repo={{ ...repo }} onClose={() => undefined} />);
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /initial commit/i })).toBeInTheDocument();
+    });
+    expect(invokeMock.mock.calls.filter(([command]) => command === 'get_branch_commits')).toHaveLength(initialCommitLoadCount);
+    expect(screen.queryByText('Loading commits…')).not.toBeInTheDocument();
+  });
+
   it('renders the commits and changes tabs and opens the compact repository summary popover', async () => {
     const repo: TrackedPath = {
       id: 'repo-1',

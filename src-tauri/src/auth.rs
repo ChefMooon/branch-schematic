@@ -132,7 +132,11 @@ fn resolve_provider_name(provider_url: Option<&str>, provider_override: Option<&
     "github".to_string()
 }
 
-async fn persist_token_in_keyring(profile_id: &str, provider: &str, token: &str) -> Result<(), String> {
+async fn persist_token_in_keyring(
+    profile_id: &str,
+    provider: &str,
+    token: &str,
+) -> Result<(), String> {
     let entry_name = build_keyring_entry_name(profile_id, provider);
     let entry = keyring::Entry::new("branch-schematic", &entry_name)
         .map_err(|error| format!("Unable to access keyring: {error}"))?;
@@ -142,7 +146,10 @@ async fn persist_token_in_keyring(profile_id: &str, provider: &str, token: &str)
     Ok(())
 }
 
-async fn load_token_from_keyring(profile_id: &str, provider: &str) -> Result<Option<String>, String> {
+async fn load_token_from_keyring(
+    profile_id: &str,
+    provider: &str,
+) -> Result<Option<String>, String> {
     let entry_name = build_keyring_entry_name(profile_id, provider);
     let entry = keyring::Entry::new("branch-schematic", &entry_name)
         .map_err(|error| format!("Unable to access keyring: {error}"))?;
@@ -194,7 +201,10 @@ fn determine_token_status(token_value: Option<&str>, token_expires_at: Option<&s
     "healthy".to_string()
 }
 
-fn select_access_token(keyring_token: Option<String>, database_token: Option<String>) -> Option<String> {
+fn select_access_token(
+    keyring_token: Option<String>,
+    database_token: Option<String>,
+) -> Option<String> {
     let keyring_token = keyring_token.and_then(|value| {
         let trimmed = value.trim();
         (!trimmed.is_empty()).then(|| trimmed.to_string())
@@ -256,7 +266,9 @@ fn resolve_oauth_client_id(explicit_client_id: Option<&str>) -> String {
         .unwrap_or_else(|| "branch-schematic".to_string())
 }
 
-fn resolve_oauth_redirect_uri(explicit_redirect_uri: Option<&str>) -> Result<(String, Option<Vec<u16>>), String> {
+fn resolve_oauth_redirect_uri(
+    explicit_redirect_uri: Option<&str>,
+) -> Result<(String, Option<Vec<u16>>), String> {
     ensure_env_loaded();
     let fallback_redirect_uri = "http://127.0.0.1:3000/callback";
     let configured_redirect_uri = explicit_redirect_uri
@@ -272,10 +284,14 @@ fn resolve_oauth_redirect_uri(explicit_redirect_uri: Option<&str>) -> Result<(St
         .map_err(|_| format!("Invalid redirect URI: {redirect_uri}"))?;
     let host = parsed.host_str().unwrap_or_default();
     if !matches!(host, "127.0.0.1" | "localhost") {
-        return Err(format!("OAuth redirect URI must use localhost: {redirect_uri}"));
+        return Err(format!(
+            "OAuth redirect URI must use localhost: {redirect_uri}"
+        ));
     }
 
-    let port = parsed.port().ok_or_else(|| format!("OAuth redirect URI must include a port: {redirect_uri}"))?;
+    let port = parsed
+        .port()
+        .ok_or_else(|| format!("OAuth redirect URI must include a port: {redirect_uri}"))?;
     Ok((redirect_uri.to_string(), Some(vec![port])))
 }
 
@@ -290,7 +306,10 @@ fn resolve_oauth_client_secret(explicit_client_secret: Option<&str>) -> Option<S
 
 fn parse_access_token(body: &str) -> Option<String> {
     if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(body) {
-        if let Some(token) = parsed.get("access_token").and_then(serde_json::Value::as_str) {
+        if let Some(token) = parsed
+            .get("access_token")
+            .and_then(serde_json::Value::as_str)
+        {
             return Some(token.to_string());
         }
     }
@@ -347,7 +366,9 @@ fn parse_github_user_profile(body: &str) -> Result<GitHubUserProfilePayload, Str
 fn resolve_github_user_info_url(provider_url: Option<&str>) -> String {
     if let Some(provider_url) = provider_url.filter(|value| !value.trim().is_empty()) {
         let trimmed = provider_url.trim();
-        if trimmed.contains("api.github.com") || trimmed.contains("github.com/login/oauth/access_token") {
+        if trimmed.contains("api.github.com")
+            || trimmed.contains("github.com/login/oauth/access_token")
+        {
             return "https://api.github.com/user".to_string();
         }
 
@@ -361,7 +382,10 @@ fn resolve_github_user_info_url(provider_url: Option<&str>) -> String {
     "https://api.github.com/user".to_string()
 }
 
-async fn fetch_github_user_profile(access_token: &str, provider_url: Option<&str>) -> Result<GitHubUserProfilePayload, String> {
+async fn fetch_github_user_profile(
+    access_token: &str,
+    provider_url: Option<&str>,
+) -> Result<GitHubUserProfilePayload, String> {
     let user_url = resolve_github_user_info_url(provider_url);
     let response = reqwest::Client::new()
         .get(&user_url)
@@ -396,7 +420,11 @@ async fn exchange_code_with_provider(payload: &OAuthExchangePayload) -> Result<S
         ("redirect_uri", payload.redirect_uri.clone()),
     ];
 
-    if let Some(code_verifier) = payload.code_verifier.as_deref().filter(|value| !value.trim().is_empty()) {
+    if let Some(code_verifier) = payload
+        .code_verifier
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+    {
         params.push(("code_verifier", code_verifier.to_string()));
     }
 
@@ -416,8 +444,7 @@ async fn exchange_code_with_provider(payload: &OAuthExchangePayload) -> Result<S
         let body = response.text().await.unwrap_or_default();
         return Err(format!(
             "OAuth token exchange failed ({}): {}",
-            status,
-            body
+            status, body
         ));
     }
 
@@ -426,15 +453,19 @@ async fn exchange_code_with_provider(payload: &OAuthExchangePayload) -> Result<S
         return Ok(token);
     }
 
-    Err("OAuth token exchange succeeded but access_token was missing from the response.".to_string())
+    Err(
+        "OAuth token exchange succeeded but access_token was missing from the response."
+            .to_string(),
+    )
 }
 
 async fn ensure_seed_profile(pool: &SqlitePool) -> Result<(), String> {
-    let existing: Option<String> = sqlx::query_scalar::<_, String>("SELECT id FROM auth_profiles WHERE id = $1")
-        .bind("local-basic-profile")
-        .fetch_optional(pool)
-        .await
-        .map_err(|error| error.to_string())?;
+    let existing: Option<String> =
+        sqlx::query_scalar::<_, String>("SELECT id FROM auth_profiles WHERE id = $1")
+            .bind("local-basic-profile")
+            .fetch_optional(pool)
+            .await
+            .map_err(|error| error.to_string())?;
 
     if existing.is_some() {
         return Ok(());
@@ -461,7 +492,10 @@ async fn ensure_seed_profile(pool: &SqlitePool) -> Result<(), String> {
     Ok(())
 }
 
-async fn fetch_profile_row(pool: &SqlitePool, profile_id: &str) -> Result<Option<AuthProfileRow>, String> {
+async fn fetch_profile_row(
+    pool: &SqlitePool,
+    profile_id: &str,
+) -> Result<Option<AuthProfileRow>, String> {
     let row = sqlx::query(
         "SELECT id, profile_name AS display_name, is_active, is_favorite, auth_level, commit_name, commit_email, github_username, github_avatar_url, api_base_url, oauth_token FROM auth_profiles WHERE id = $1"
     )
@@ -475,7 +509,10 @@ async fn fetch_profile_row(pool: &SqlitePool, profile_id: &str) -> Result<Option
     };
 
     let scopes = load_repo_scopes(pool, profile_id).await?;
-    let provider_name = resolve_provider_name(row.get::<Option<String>, _>("api_base_url").as_deref(), None);
+    let provider_name = resolve_provider_name(
+        row.get::<Option<String>, _>("api_base_url").as_deref(),
+        None,
+    );
     let keyring_token = load_token_from_keyring(&profile_id, &provider_name).await;
     let database_token = row.get::<Option<String>, _>("oauth_token");
     let token_value = select_access_token_with_keyring_fallback(keyring_token, database_token);
@@ -503,11 +540,13 @@ async fn fetch_profile_row(pool: &SqlitePool, profile_id: &str) -> Result<Option
 }
 
 async fn load_repo_scopes(pool: &SqlitePool, profile_id: &str) -> Result<Vec<String>, String> {
-    let rows = sqlx::query("SELECT repo_path_id FROM profile_repo_scopes WHERE profile_id = $1 ORDER BY repo_path_id")
-        .bind(profile_id)
-        .fetch_all(pool)
-        .await
-        .map_err(|error| error.to_string())?;
+    let rows = sqlx::query(
+        "SELECT repo_path_id FROM profile_repo_scopes WHERE profile_id = $1 ORDER BY repo_path_id",
+    )
+    .bind(profile_id)
+    .fetch_all(pool)
+    .await
+    .map_err(|error| error.to_string())?;
 
     let mut scopes = Vec::new();
     for row in rows {
@@ -516,7 +555,11 @@ async fn load_repo_scopes(pool: &SqlitePool, profile_id: &str) -> Result<Vec<Str
     Ok(scopes)
 }
 
-async fn save_repo_scopes(pool: &SqlitePool, profile_id: &str, scopes: &[String]) -> Result<(), String> {
+async fn save_repo_scopes(
+    pool: &SqlitePool,
+    profile_id: &str,
+    scopes: &[String],
+) -> Result<(), String> {
     sqlx::query("DELETE FROM profile_repo_scopes WHERE profile_id = $1")
         .bind(profile_id)
         .execute(pool)
@@ -524,12 +567,14 @@ async fn save_repo_scopes(pool: &SqlitePool, profile_id: &str, scopes: &[String]
         .map_err(|error| error.to_string())?;
 
     for scope in scopes.iter().filter(|entry| !entry.trim().is_empty()) {
-        sqlx::query("INSERT OR IGNORE INTO profile_repo_scopes (repo_path_id, profile_id) VALUES ($1, $2)")
-            .bind(scope)
-            .bind(profile_id)
-            .execute(pool)
-            .await
-            .map_err(|error| error.to_string())?;
+        sqlx::query(
+            "INSERT OR IGNORE INTO profile_repo_scopes (repo_path_id, profile_id) VALUES ($1, $2)",
+        )
+        .bind(scope)
+        .bind(profile_id)
+        .execute(pool)
+        .await
+        .map_err(|error| error.to_string())?;
     }
 
     Ok(())
@@ -546,7 +591,9 @@ async fn set_active_profile(pool: &SqlitePool, profile_id: &str) -> Result<(), S
 }
 
 #[tauri::command]
-pub async fn get_profiles(state: tauri::State<'_, crate::DbState>) -> Result<Vec<AuthProfileRow>, String> {
+pub async fn get_profiles(
+    state: tauri::State<'_, crate::DbState>,
+) -> Result<Vec<AuthProfileRow>, String> {
     let pool = state.inner().pool();
     ensure_seed_profile(pool).await?;
 
@@ -560,7 +607,10 @@ pub async fn get_profiles(state: tauri::State<'_, crate::DbState>) -> Result<Vec
     let mut profiles = Vec::new();
     for row in rows {
         let profile_id: String = row.get("id");
-        let provider_name = resolve_provider_name(row.get::<Option<String>, _>("api_base_url").as_deref(), None);
+        let provider_name = resolve_provider_name(
+            row.get::<Option<String>, _>("api_base_url").as_deref(),
+            None,
+        );
         let keyring_token = load_token_from_keyring(&profile_id, &provider_name).await;
         let database_token = row.get::<Option<String>, _>("oauth_token");
         let token_value = select_access_token_with_keyring_fallback(keyring_token, database_token);
@@ -591,17 +641,26 @@ pub async fn get_profiles(state: tauri::State<'_, crate::DbState>) -> Result<Vec
 }
 
 #[tauri::command]
-pub async fn add_profile(state: tauri::State<'_, crate::DbState>, profile: AuthProfileInput) -> Result<AuthProfileRow, String> {
+pub async fn add_profile(
+    state: tauri::State<'_, crate::DbState>,
+    profile: AuthProfileInput,
+) -> Result<AuthProfileRow, String> {
     let pool = state.inner().pool();
     ensure_seed_profile(pool).await?;
 
     let profile_id = profile.id.unwrap_or_else(|| Uuid::new_v4().to_string());
     let provider_name = resolve_provider_name(profile.api_base_url.as_deref(), None);
-    let should_activate = profile.is_active.unwrap_or(0) == 1 || sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM auth_profiles WHERE is_active = 1")
-        .fetch_one(pool)
-        .await
-        .map_err(|error| error.to_string())? == 0;
-    let persist_token = profile.token_value.as_deref().filter(|value| !value.trim().is_empty()).map(str::to_string);
+    let should_activate = profile.is_active.unwrap_or(0) == 1
+        || sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM auth_profiles WHERE is_active = 1")
+            .fetch_one(pool)
+            .await
+            .map_err(|error| error.to_string())?
+            == 0;
+    let persist_token = profile
+        .token_value
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+        .map(str::to_string);
 
     if let Some(token_value) = persist_token.as_deref() {
         persist_token_in_keyring(&profile_id, &provider_name, token_value).await?;
@@ -632,7 +691,9 @@ pub async fn add_profile(state: tauri::State<'_, crate::DbState>, profile: AuthP
     let scopes = normalize_scope_values(profile.repository_scope);
     save_repo_scopes(pool, &profile_id, &scopes).await?;
 
-    fetch_profile_row(pool, &profile_id).await?.ok_or_else(|| "Unable to reload newly created profile".to_string())
+    fetch_profile_row(pool, &profile_id)
+        .await?
+        .ok_or_else(|| "Unable to reload newly created profile".to_string())
 }
 
 #[tauri::command]
@@ -646,7 +707,11 @@ pub async fn update_profile(
 
     let should_activate = profile.is_active.unwrap_or(0) == 1;
     let provider_name = resolve_provider_name(profile.api_base_url.as_deref(), None);
-    let persist_token = profile.token_value.as_deref().filter(|value| !value.trim().is_empty()).map(str::to_string);
+    let persist_token = profile
+        .token_value
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+        .map(str::to_string);
     if should_activate {
         set_active_profile(pool, &profile_id).await?;
     }
@@ -683,19 +748,26 @@ pub async fn update_profile(
     let scopes = normalize_scope_values(profile.repository_scope);
     save_repo_scopes(pool, &profile_id, &scopes).await?;
 
-    fetch_profile_row(pool, &profile_id).await?.ok_or_else(|| "Unable to reload updated profile".to_string())
+    fetch_profile_row(pool, &profile_id)
+        .await?
+        .ok_or_else(|| "Unable to reload updated profile".to_string())
 }
 
 #[tauri::command]
-pub async fn delete_profile(state: tauri::State<'_, crate::DbState>, profile_id: String) -> Result<(), String> {
+pub async fn delete_profile(
+    state: tauri::State<'_, crate::DbState>,
+    profile_id: String,
+) -> Result<(), String> {
     let pool = state.inner().pool();
     ensure_seed_profile(pool).await?;
 
-    let active_profile: Option<String> = sqlx::query_scalar::<_, String>("SELECT id FROM auth_profiles WHERE id = $1 AND is_active = 1")
-        .bind(&profile_id)
-        .fetch_optional(pool)
-        .await
-        .map_err(|error| error.to_string())?;
+    let active_profile: Option<String> = sqlx::query_scalar::<_, String>(
+        "SELECT id FROM auth_profiles WHERE id = $1 AND is_active = 1",
+    )
+    .bind(&profile_id)
+    .fetch_optional(pool)
+    .await
+    .map_err(|error| error.to_string())?;
 
     sqlx::query("DELETE FROM auth_profiles WHERE id = $1")
         .bind(&profile_id)
@@ -730,10 +802,12 @@ pub async fn check_profile_tokens(
     ensure_seed_profile(pool).await?;
 
     let requested_ids = if profile_ids.is_empty() {
-        let rows = sqlx::query_scalar::<_, String>("SELECT id FROM auth_profiles ORDER BY is_favorite DESC, is_active DESC, profile_name")
-            .fetch_all(pool)
-            .await
-            .map_err(|error| error.to_string())?;
+        let rows = sqlx::query_scalar::<_, String>(
+            "SELECT id FROM auth_profiles ORDER BY is_favorite DESC, is_active DESC, profile_name",
+        )
+        .fetch_all(pool)
+        .await
+        .map_err(|error| error.to_string())?;
         rows
     } else {
         profile_ids
@@ -747,7 +821,10 @@ pub async fn check_profile_tokens(
         };
         payloads.push(TokenHealthPayload {
             profile_id: profile.id,
-            status: determine_token_status(profile.token_value.as_deref(), profile.token_expires_at.as_deref()),
+            status: determine_token_status(
+                profile.token_value.as_deref(),
+                profile.token_expires_at.as_deref(),
+            ),
         });
     }
 
@@ -760,31 +837,38 @@ pub async fn begin_oauth_loopback_listener(
     profile_id: String,
     redirect_uri: Option<String>,
 ) -> Result<String, String> {
-    let (configured_redirect_uri, configured_ports) = resolve_oauth_redirect_uri(redirect_uri.as_deref())?;
+    let (configured_redirect_uri, configured_ports) =
+        resolve_oauth_redirect_uri(redirect_uri.as_deref())?;
     let selected_port = configured_ports
         .as_ref()
         .and_then(|ports| ports.first())
         .copied();
     let listener = if let Some(port) = selected_port {
-        std::net::TcpListener::bind(("127.0.0.1", port))
-            .map_err(|error| format!("Unable to start local OAuth listener on port {port}: {error}"))?
+        std::net::TcpListener::bind(("127.0.0.1", port)).map_err(|error| {
+            format!("Unable to start local OAuth listener on port {port}: {error}")
+        })?
     } else {
-        std::net::TcpListener::bind(("127.0.0.1", 0))
-            .map_err(|error| format!("Unable to start local OAuth listener on an ephemeral port: {error}"))?
+        std::net::TcpListener::bind(("127.0.0.1", 0)).map_err(|error| {
+            format!("Unable to start local OAuth listener on an ephemeral port: {error}")
+        })?
     };
-    let actual_port = listener.local_addr().map(|address| address.port()).unwrap_or_else(|_| selected_port.unwrap_or(3000));
+    let actual_port = listener
+        .local_addr()
+        .map(|address| address.port())
+        .unwrap_or_else(|_| selected_port.unwrap_or(3000));
 
     let window_handle = window.clone();
     std::thread::spawn(move || {
         if let Ok((mut stream, _)) = listener.accept() {
-            let mut reader = BufReader::new(stream.try_clone().unwrap_or_else(|_| stream.try_clone().unwrap()));
+            let mut reader = BufReader::new(
+                stream
+                    .try_clone()
+                    .unwrap_or_else(|_| stream.try_clone().unwrap()),
+            );
             let mut request_line = String::new();
             let _ = reader.read_line(&mut request_line);
 
-            let callback_target = request_line
-                .split_whitespace()
-                .nth(1)
-                .unwrap_or("/");
+            let callback_target = request_line.split_whitespace().nth(1).unwrap_or("/");
             let callback_url = if let Some((path, query)) = callback_target.split_once('?') {
                 format!("http://127.0.0.1:{actual_port}{path}?{query}")
             } else {
@@ -816,7 +900,10 @@ pub async fn begin_oauth_loopback_listener(
     let code_verifier = generate_random_secret(64);
     let code_challenge = generate_code_challenge(&code_verifier);
 
-    Ok(format!("{}|{}|{}|{}|{}", profile_id, redirect_uri, state, code_verifier, code_challenge))
+    Ok(format!(
+        "{}|{}|{}|{}|{}",
+        profile_id, redirect_uri, state, code_verifier, code_challenge
+    ))
 }
 
 #[tauri::command]
@@ -827,11 +914,26 @@ pub async fn exchange_code_for_token(
     let pool = state.inner().pool();
     let token = exchange_code_with_provider(&payload).await?;
 
-    let github_profile = fetch_github_user_profile(&token, payload.provider_url.as_deref()).await.ok();
-    let resolved_display_name = github_profile.as_ref().and_then(|profile| profile.display_name.clone()).or_else(|| github_profile.as_ref().and_then(|profile| profile.username.clone()));
-    let resolved_username = github_profile.as_ref().and_then(|profile| profile.username.clone());
-    let resolved_email = github_profile.as_ref().and_then(|profile| profile.email.clone());
-    let resolved_avatar_url = github_profile.as_ref().and_then(|profile| profile.avatar_url.clone());
+    let github_profile = fetch_github_user_profile(&token, payload.provider_url.as_deref())
+        .await
+        .ok();
+    let resolved_display_name = github_profile
+        .as_ref()
+        .and_then(|profile| profile.display_name.clone())
+        .or_else(|| {
+            github_profile
+                .as_ref()
+                .and_then(|profile| profile.username.clone())
+        });
+    let resolved_username = github_profile
+        .as_ref()
+        .and_then(|profile| profile.username.clone());
+    let resolved_email = github_profile
+        .as_ref()
+        .and_then(|profile| profile.email.clone());
+    let resolved_avatar_url = github_profile
+        .as_ref()
+        .and_then(|profile| profile.avatar_url.clone());
 
     if !payload.profile_id.trim().is_empty() {
         let provider_name = resolve_provider_name(payload.provider_url.as_deref(), None);
@@ -878,7 +980,7 @@ pub async fn resolve_profile_for_repository(
     }
 
     let active_profile_id: Option<String> = sqlx::query_scalar::<_, String>(
-        "SELECT id FROM auth_profiles WHERE is_active = 1 ORDER BY profile_name ASC LIMIT 1"
+        "SELECT id FROM auth_profiles WHERE is_active = 1 ORDER BY profile_name ASC LIMIT 1",
     )
     .fetch_optional(pool)
     .await
@@ -888,13 +990,12 @@ pub async fn resolve_profile_for_repository(
         return fetch_profile_row(pool, &profile_id).await;
     }
 
-    let fallback_profile_id: Option<String> = sqlx::query_scalar::<_, String>(
-        "SELECT id FROM auth_profiles WHERE id = $1 LIMIT 1"
-    )
-    .bind("local-basic-profile")
-    .fetch_optional(pool)
-    .await
-    .map_err(|error| error.to_string())?;
+    let fallback_profile_id: Option<String> =
+        sqlx::query_scalar::<_, String>("SELECT id FROM auth_profiles WHERE id = $1 LIMIT 1")
+            .bind("local-basic-profile")
+            .fetch_optional(pool)
+            .await
+            .map_err(|error| error.to_string())?;
 
     if let Some(profile_id) = fallback_profile_id {
         return fetch_profile_row(pool, &profile_id).await;
@@ -912,7 +1013,7 @@ pub async fn resolve_profile_for_remote(
     }
 
     let active_profile_id: Option<String> = sqlx::query_scalar::<_, String>(
-        "SELECT id FROM auth_profiles WHERE is_active = 1 ORDER BY profile_name ASC LIMIT 1"
+        "SELECT id FROM auth_profiles WHERE is_active = 1 ORDER BY profile_name ASC LIMIT 1",
     )
     .fetch_optional(pool)
     .await
@@ -922,13 +1023,12 @@ pub async fn resolve_profile_for_remote(
         return fetch_profile_row(pool, &active_id).await;
     }
 
-    let fallback_profile_id: Option<String> = sqlx::query_scalar::<_, String>(
-        "SELECT id FROM auth_profiles WHERE id = $1 LIMIT 1"
-    )
-    .bind("local-basic-profile")
-    .fetch_optional(pool)
-    .await
-    .map_err(|error| error.to_string())?;
+    let fallback_profile_id: Option<String> =
+        sqlx::query_scalar::<_, String>("SELECT id FROM auth_profiles WHERE id = $1 LIMIT 1")
+            .bind("local-basic-profile")
+            .fetch_optional(pool)
+            .await
+            .map_err(|error| error.to_string())?;
 
     if let Some(fallback_id) = fallback_profile_id {
         return fetch_profile_row(pool, &fallback_id).await;
@@ -939,7 +1039,11 @@ pub async fn resolve_profile_for_remote(
 
 #[cfg(test)]
 mod tests {
-    use super::{determine_token_status, generate_code_challenge, parse_access_token, parse_github_user_profile, resolve_oauth_redirect_uri, resolve_oauth_token_url, select_access_token, select_access_token_with_keyring_fallback};
+    use super::{
+        determine_token_status, generate_code_challenge, parse_access_token,
+        parse_github_user_profile, resolve_oauth_redirect_uri, resolve_oauth_token_url,
+        select_access_token, select_access_token_with_keyring_fallback,
+    };
 
     #[test]
     fn reports_token_as_none_when_missing() {
@@ -949,30 +1053,54 @@ mod tests {
     #[test]
     fn reports_expired_when_expiration_has_passed() {
         let expired = (chrono::Utc::now() - chrono::Duration::minutes(5)).to_rfc3339();
-        assert_eq!(determine_token_status(Some("token"), Some(&expired)), "expired");
+        assert_eq!(
+            determine_token_status(Some("token"), Some(&expired)),
+            "expired"
+        );
     }
 
     #[test]
     fn resolves_github_token_endpoint_from_api_base_url() {
-        assert_eq!(resolve_oauth_token_url(None, Some("https://api.github.com")), "https://github.com/login/oauth/access_token");
+        assert_eq!(
+            resolve_oauth_token_url(None, Some("https://api.github.com")),
+            "https://github.com/login/oauth/access_token"
+        );
     }
 
     #[test]
     fn prefers_keyring_token_and_falls_back_to_database_token() {
-        assert_eq!(select_access_token(Some("from-keyring".to_string()), Some("from-db".to_string())), Some("from-keyring".to_string()));
-        assert_eq!(select_access_token(None, Some("from-db".to_string())), Some("from-db".to_string()));
-        assert_eq!(select_access_token(Some("   ".to_string()), Some("from-db".to_string())), Some("from-db".to_string()));
+        assert_eq!(
+            select_access_token(
+                Some("from-keyring".to_string()),
+                Some("from-db".to_string())
+            ),
+            Some("from-keyring".to_string())
+        );
+        assert_eq!(
+            select_access_token(None, Some("from-db".to_string())),
+            Some("from-db".to_string())
+        );
+        assert_eq!(
+            select_access_token(Some("   ".to_string()), Some("from-db".to_string())),
+            Some("from-db".to_string())
+        );
         assert_eq!(select_access_token(None, None), None);
     }
 
     #[test]
     fn falls_back_to_database_token_when_keyring_lookup_errors() {
         assert_eq!(
-            select_access_token_with_keyring_fallback(Ok(Some("from-keyring".to_string())), Some("from-db".to_string())),
+            select_access_token_with_keyring_fallback(
+                Ok(Some("from-keyring".to_string())),
+                Some("from-db".to_string())
+            ),
             Some("from-keyring".to_string())
         );
         assert_eq!(
-            select_access_token_with_keyring_fallback(Err("boom".to_string()), Some("from-db".to_string())),
+            select_access_token_with_keyring_fallback(
+                Err("boom".to_string()),
+                Some("from-db".to_string())
+            ),
             Some("from-db".to_string())
         );
         assert_eq!(
@@ -983,18 +1111,25 @@ mod tests {
 
     #[test]
     fn parses_access_token_from_form_response() {
-        assert_eq!(parse_access_token("access_token=abc123&scope=repo"), Some("abc123".to_string()));
+        assert_eq!(
+            parse_access_token("access_token=abc123&scope=repo"),
+            Some("abc123".to_string())
+        );
     }
 
     #[test]
     fn derives_expected_pkce_challenge_for_known_verifier() {
         let verifier = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk";
-        assert_eq!(generate_code_challenge(verifier), "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM");
+        assert_eq!(
+            generate_code_challenge(verifier),
+            "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"
+        );
     }
 
     #[test]
     fn resolves_fixed_loopback_redirect_uri_with_port() {
-        let (redirect_uri, ports) = resolve_oauth_redirect_uri(Some("http://127.0.0.1:3000/callback")).unwrap();
+        let (redirect_uri, ports) =
+            resolve_oauth_redirect_uri(Some("http://127.0.0.1:3000/callback")).unwrap();
         assert_eq!(redirect_uri, "http://127.0.0.1:3000/callback");
         assert_eq!(ports, Some(vec![3000]));
     }
@@ -1019,7 +1154,10 @@ mod tests {
         assert_eq!(profile.username.as_deref(), Some("octocat"));
         assert_eq!(profile.email.as_deref(), Some("octocat@example.com"));
         assert_eq!(profile.display_name.as_deref(), Some("The Octocat"));
-        assert_eq!(profile.avatar_url.as_deref(), Some("https://avatars.githubusercontent.com/u/583231?v=4"));
+        assert_eq!(
+            profile.avatar_url.as_deref(),
+            Some("https://avatars.githubusercontent.com/u/583231?v=4")
+        );
     }
 
     #[test]
@@ -1042,6 +1180,9 @@ mod tests {
         assert_eq!(profile.auth_level, "full_oauth");
         assert_eq!(profile.username.as_deref(), Some("octocat"));
         assert_eq!(profile.email.as_deref(), Some("octocat@example.com"));
-        assert_eq!(profile.api_base_url.as_deref(), Some("https://api.github.com"));
+        assert_eq!(
+            profile.api_base_url.as_deref(),
+            Some("https://api.github.com")
+        );
     }
 }

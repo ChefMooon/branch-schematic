@@ -6,6 +6,7 @@ import {
   CircleHalfIcon,
   ListIcon,
   XIcon,
+  ActivityIcon,
 } from '@phosphor-icons/react';
 import { useWorkspaceStore } from '../../stores/workspace-store';
 import { useOS } from '../../hooks/useOS';
@@ -27,6 +28,7 @@ import { ProfileDropdown } from '../../features/auth-profile/components/ProfileD
 import { ProfileManagementModal } from '../../features/auth-profile/components/ProfileManagementModal';
 import { useProfileContext } from '../../features/auth-profile/hooks/useProfileContext';
 import { Button } from '../button/Button';
+import { RepositoryUpdateDiagnosticsModal } from '../../features/repository-update-diagnostics/components/RepositoryUpdateDiagnosticsModal';
 import type { RepositoryModalAction } from '../../features/repository/types';
 import type { UserProfile } from '../../features/auth-profile/types';
 
@@ -64,6 +66,7 @@ export function AppLayout({ children }: AppLayoutProps) {
   const [isRepositoryDropdownOpen, setIsRepositoryDropdownOpen] = useState(false);
   const [repositoryDropdownAnchor, setRepositoryDropdownAnchor] = useState<HTMLElement | null>(null);
   const [isNotificationDropdownOpen, setIsNotificationDropdownOpen] = useState(false);
+  const [isDiagnosticsOpen, setIsDiagnosticsOpen] = useState(false);
   const [activeRepositoryModal, setActiveRepositoryModal] = useState<RepositoryModalAction | null>(null);
   const [isManagementModalOpen, setIsManagementModalOpen] = useState(false);
   const [managementInitialTab, setManagementInitialTab] = useState<'tags' | 'groups'>('tags');
@@ -88,6 +91,7 @@ export function AppLayout({ children }: AppLayoutProps) {
   const { isMac } = useOS();
   const {
     hydrateFromBackend,
+    subscribeToWorkspaceUpdates,
     quickFilterMetadata,
     hydrateQuickFilterMetadata,
     groupDirectory,
@@ -178,6 +182,23 @@ export function AppLayout({ children }: AppLayoutProps) {
   useEffect(() => {
     void hydrateFromBackend();
   }, [hydrateFromBackend]);
+
+  useEffect(() => {
+    let disposed = false;
+    let unsubscribe: (() => void) | undefined;
+    void subscribeToWorkspaceUpdates().then((release) => {
+      if (disposed) {
+        release();
+      } else {
+        unsubscribe = release;
+      }
+    });
+
+    return () => {
+      disposed = true;
+      unsubscribe?.();
+    };
+  }, [subscribeToWorkspaceUpdates]);
 
   useEffect(() => {
     void hydrateQuickFilterMetadata();
@@ -306,6 +327,18 @@ export function AppLayout({ children }: AppLayoutProps) {
 
         {/* Right: actions */}
         <div style={styles.headerRight}>
+          <Button
+            type="button"
+            variant="basic"
+            style={styles.iconBtn}
+            title="Repository Update Diagnostics"
+            aria-label="Open repository update diagnostics"
+            onMouseDown={(event) => event.stopPropagation()}
+            onClick={() => setIsDiagnosticsOpen(true)}
+          >
+            <ActivityIcon size={18} color="var(--app-text)" style={{ display: 'block' }} />
+          </Button>
+
           <div style={{ position: 'relative' }}>
             <Button
               type="button"
@@ -419,6 +452,11 @@ export function AppLayout({ children }: AppLayoutProps) {
           {!isMac && <WindowControls />}
         </div>
       </header>
+
+      <RepositoryUpdateDiagnosticsModal
+        isOpen={isDiagnosticsOpen}
+        onClose={() => setIsDiagnosticsOpen(false)}
+      />
 
       <AddLocalRepositoryModal
         isOpen={activeRepositoryModal === 'add-local'}

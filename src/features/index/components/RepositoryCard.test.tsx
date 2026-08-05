@@ -8,9 +8,11 @@ const addToast = vi.fn();
 const refreshRepositoryGitStatus = vi.fn();
 const markRepositoryResolved = vi.fn();
 const setRepositoriesStatus = vi.fn();
+const setRepositoryPinned = vi.fn();
 
 const mockStore = {
   setRepositoryFavorite: vi.fn(),
+  setRepositoryPinned,
   setRepositoryGroup: vi.fn(),
   updateRepositoryTheme: vi.fn(),
   refreshRepositoryGitStatus,
@@ -87,6 +89,7 @@ describe('RepositoryCard', () => {
     refreshRepositoryGitStatus.mockReset();
     markRepositoryResolved.mockReset();
     setRepositoriesStatus.mockReset();
+    setRepositoryPinned.mockReset();
   });
 
   it('resets the locate button label when the repository changes', async () => {
@@ -200,6 +203,39 @@ describe('RepositoryCard', () => {
 
     expect(screen.getByRole('button', { name: 'Locate' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Clone Again' })).not.toBeInTheDocument();
+  });
+
+  it('renders the pinned card state from hydrated repository data', () => {
+    const repo = {
+      id: 'repo-pinned',
+      display_name: 'Pinned Repo',
+      absolute_path: 'C:/repos/pinned-repo',
+      status: 'ready',
+      is_favorite: 0,
+      is_pinned: 1,
+      tags: [],
+      available_branches: ['main'],
+      current_branch: 'main',
+      default_branch_name: 'main',
+      uncommitted_changes_count: 0,
+      has_upstream: false,
+      ahead_count: 0,
+      behind_count: 0,
+      ahead_of_default_count: 0,
+      behind_default_count: 0,
+      alias_name: '',
+      theme_color_hex: null,
+      icon_name: null,
+      group_id: null,
+      favorite: 0,
+      group_name: null,
+      origin_type: 'LOCAL_ONLY',
+    } as unknown as TrackedPath;
+
+    const { container } = render(<RepositoryCard repo={repo} onRefresh={() => {}} />);
+
+    expect(container.querySelector('.repo-card')).toHaveClass('is-pinned');
+    expect(screen.getByLabelText('Pinned repository')).toBeInTheDocument();
   });
 
   it('opens the details view when double-clicking empty card space', () => {

@@ -21,6 +21,7 @@ export function RepositoryDetailChangesTab({ repo }: RepositoryDetailChangesTabP
     isBusy,
     error,
     statusMessage,
+    lastVerifiedAt,
     loadChanges,
     runAction,
   } = useRepositoryChanges(repo);
@@ -73,6 +74,7 @@ export function RepositoryDetailChangesTab({ repo }: RepositoryDetailChangesTabP
           error={error}
           snapshot={snapshot}
           statusMessage={statusMessage}
+          lastVerifiedAt={lastVerifiedAt}
           groupedChanges={groupedChanges}
           expandedGroups={expandedGroups}
           selectedEntry={selectedEntry}

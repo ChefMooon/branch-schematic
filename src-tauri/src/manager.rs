@@ -1,0 +1,969 @@
+use crate::db::TrackedPathRow;
+use crate::health;
+use crate::layout::{classify_watch_trigger, resolve_repository_layout, watch_targets};
+use crate::refresh::{refresh_repository_full, RefreshOutcome, RepositoryCacheWriter};
+use notify::{Event, RecommendedWatcher, Watcher};
+use serde::Serialize;
+use sqlx::SqlitePool;
+use std::collections::{HashMap, VecDeque};
+use std::path::Path;
+use std::sync::{
+    atomic::{AtomicBool, AtomicU64, Ordering},
+    mpsc, Arc,
+};
+use std::time::{Duration, Instant};
+use tauri::Emitter;
+use tokio::sync::{Mutex, Semaphore};
+use uuid::Uuid;
+
+pub const WORKSPACE_UPDATED_EVENT: &str = "workspace-updated";
+const MAX_WORKSPACE_UPDATED_BATCH_SIZE: usize = 250;
+const STARTUP_REGISTRATION_CONCURRENCY: usize = 8;
+const POLLING_INTERVAL: Duration = Duration::from_secs(30);
+const WORKSPACE_UPDATE_FLUSH_DELAY: Duration = Duration::from_millis(50);
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceUpdatedEvent {
+    pub version: u32,
+    pub event_id: String,
+    pub revision: u64,
+    pub repository_ids: Vec<String>,
+    pub trigger_reason: String,
+    pub batch_index: usize,
+    pub batch_count: usize,
+    pub emitted_at: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum RefreshPriority {
+    Background,
+    Visible,
+    Foreground,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ManagerDiagnostics {
+    pub active_entries: usize,
+    pub running_refreshes: usize,
+    pub registration_attempts: u64,
+    pub coalesced_requests: u64,
+    pub cancellations: u64,
+    pub terminal_failures: u64,
+    pub shutting_down: bool,
+    pub watcher_count: usize,
+    pub polling_count: usize,
+    pub degraded_entries: usize,
+    pub wake_recoveries: u64,
+    pub refresh_attempts: u64,
+    pub refresh_successes: u64,
+    pub refresh_failures: u64,
+    pub refresh_duration_ms_total: u64,
+    pub watcher_registrations: u64,
+    pub watcher_registration_failures: u64,
+    pub watcher_starts: u64,
+    pub watcher_stops: u64,
+    pub event_batches: u64,
+    pub stale_state_rate_15m: f64,
+    pub registration_failure_rate_10m: f64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RepositoryDebugEntry {
+    pub repository_id: String,
+    pub priority: String,
+    pub detail_active: bool,
+    pub running: bool,
+    pub follow_up: bool,
+    pub failure_count: u32,
+    pub trigger_reason: String,
+    pub monitor_mode: String,
+    pub generation: u64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WatcherDebugSnapshot {
+    pub captured_at: String,
+    pub diagnostics: ManagerDiagnostics,
+    pub repositories: Vec<RepositoryDebugEntry>,
+}
+
+struct MetricSample {
+    recorded_at: Instant,
+    registration_attempt: bool,
+    registration_failure: bool,
+    stale_state: Option<bool>,
+}
+
+#[derive(Default)]
+struct ObservabilityState {
+    refresh_attempts: u64,
+    refresh_successes: u64,
+    refresh_failures: u64,
+    refresh_duration_ms_total: u64,
+    watcher_registrations: u64,
+    watcher_registration_failures: u64,
+    watcher_starts: u64,
+    watcher_stops: u64,
+    samples: VecDeque<MetricSample>,
+}
+
+struct RuntimeEntry {
+    absolute_path: String,
+    generation: u64,
+    priority: RefreshPriority,
+    detail_active: bool,
+    running: bool,
+    follow_up: bool,
+    failure_count: u32,
+    trigger_reason: String,
+}
+
+struct ManagerState {
+    entries: Mutex<HashMap<String, RuntimeEntry>>,
+    watcher_tasks: Mutex<HashMap<String, tauri::async_runtime::JoinHandle<()>>>,
+    polling_tasks: Mutex<HashMap<String, tauri::async_runtime::JoinHandle<()>>>,
+    shutting_down: AtomicBool,
+    registration_attempts: AtomicU64,
+    coalesced_requests: AtomicU64,
+    cancellations: AtomicU64,
+    terminal_failures: AtomicU64,
+    wake_recoveries: AtomicU64,
+    revision: AtomicU64,
+    event_batches: AtomicU64,
+    pending_workspace_updates: Mutex<HashMap<String, String>>,
+    observability: Mutex<ObservabilityState>,
+}
+
+#[derive(Clone)]
+pub struct WatcherManager {
+    pool: SqlitePool,
+    writer: RepositoryCacheWriter,
+    app_handle: Option<tauri::AppHandle>,
+    state: Arc<ManagerState>,
+}
+
+impl WatcherManager {
+    pub fn new(pool: SqlitePool, writer: RepositoryCacheWriter) -> Self {
+        Self {
+            pool,
+            writer,
+            app_handle: None,
+            state: Arc::new(ManagerState {
+                entries: Mutex::new(HashMap::new()),
+                watcher_tasks: Mutex::new(HashMap::new()),
+                polling_tasks: Mutex::new(HashMap::new()),
+                shutting_down: AtomicBool::new(false),
+                registration_attempts: AtomicU64::new(0),
+                coalesced_requests: AtomicU64::new(0),
+                cancellations: AtomicU64::new(0),
+                terminal_failures: AtomicU64::new(0),
+                wake_recoveries: AtomicU64::new(0),
+                revision: AtomicU64::new(0),
+                event_batches: AtomicU64::new(0),
+                pending_workspace_updates: Mutex::new(HashMap::new()),
+                observability: Mutex::new(ObservabilityState::default()),
+            }),
+        }
+    }
+
+    pub fn with_app_handle(mut self, app_handle: tauri::AppHandle) -> Self {
+        self.app_handle = Some(app_handle);
+        self
+    }
+
+    pub fn is_shutting_down(&self) -> bool {
+        self.state.shutting_down.load(Ordering::Acquire)
+    }
+
+    pub async fn ensure_monitored(
+        &self,
+        path_id: String,
+        absolute_path: String,
+        priority: RefreshPriority,
+    ) -> Result<(), String> {
+        if self.state.shutting_down.load(Ordering::Acquire) {
+            return Err("Watcher manager is shutting down".to_string());
+        }
+        self.state
+            .registration_attempts
+            .fetch_add(1, Ordering::Relaxed);
+
+        let mut entries = self.state.entries.lock().await;
+        if let Some(entry) = entries.get_mut(&path_id) {
+            entry.priority = entry.priority.max(priority);
+            if entry.running {
+                entry.follow_up = true;
+                self.state
+                    .coalesced_requests
+                    .fetch_add(1, Ordering::Relaxed);
+                return Ok(());
+            }
+            entry.running = true;
+            entry.generation = entry.generation.wrapping_add(1);
+            let generation = entry.generation;
+            drop(entries);
+            if !self.ensure_watcher(&path_id).await {
+                self.ensure_polling_fallback(&path_id).await;
+            }
+            self.spawn_refresh(path_id, generation);
+            return Ok(());
+        }
+
+        entries.insert(
+            path_id.clone(),
+            RuntimeEntry {
+                absolute_path,
+                generation: 1,
+                priority,
+                detail_active: false,
+                running: true,
+                follow_up: false,
+                failure_count: 0,
+                trigger_reason: "startup".to_string(),
+            },
+        );
+        drop(entries);
+        if !self.ensure_watcher(&path_id).await {
+            self.ensure_polling_fallback(&path_id).await;
+        }
+        self.spawn_refresh(path_id, 1);
+        Ok(())
+    }
+
+    pub async fn request_refresh(
+        &self,
+        path_id: String,
+        priority: RefreshPriority,
+    ) -> Result<(), String> {
+        self.request_refresh_with_reason(path_id, priority, "on_demand")
+            .await
+    }
+
+    async fn request_refresh_with_reason(
+        &self,
+        path_id: String,
+        priority: RefreshPriority,
+        trigger_reason: &str,
+    ) -> Result<(), String> {
+        let mut entries = self.state.entries.lock().await;
+        let entry = entries
+            .get_mut(&path_id)
+            .ok_or_else(|| "Repository is not monitored".to_string())?;
+        entry.priority = entry.priority.max(priority);
+        entry.trigger_reason = trigger_reason.to_string();
+        if entry.running {
+            entry.follow_up = true;
+            self.state
+                .coalesced_requests
+                .fetch_add(1, Ordering::Relaxed);
+            return Ok(());
+        }
+        entry.running = true;
+        entry.generation = entry.generation.wrapping_add(1);
+        let generation = entry.generation;
+        drop(entries);
+        self.spawn_refresh(path_id, generation);
+        Ok(())
+    }
+
+    pub async fn set_detail_active(&self, path_id: &str, active: bool) -> Result<(), String> {
+        let mut entries = self.state.entries.lock().await;
+        let entry = entries
+            .get_mut(path_id)
+            .ok_or_else(|| "Repository is not monitored".to_string())?;
+        entry.detail_active = active;
+        if active {
+            entry.priority = entry.priority.max(RefreshPriority::Foreground);
+        }
+        Ok(())
+    }
+
+    pub async fn stop_monitored(&self, path_id: &str) -> Result<(), String> {
+        if let Some(task) = self.state.watcher_tasks.lock().await.remove(path_id) {
+            task.abort();
+            self.record_watcher_stop().await;
+        }
+        if let Some(task) = self.state.polling_tasks.lock().await.remove(path_id) {
+            task.abort();
+        }
+        let removed = self.state.entries.lock().await.remove(path_id).is_some();
+        if removed {
+            self.state.cancellations.fetch_add(1, Ordering::Relaxed);
+        }
+        Ok(())
+    }
+
+    pub async fn stop_all(&self) {
+        self.state.shutting_down.store(true, Ordering::Release);
+        let watcher_tasks = {
+            let mut tasks = self.state.watcher_tasks.lock().await;
+            let watcher_stop_count = tasks.len() as u64;
+            let tasks = tasks.drain().map(|(_, task)| task).collect::<Vec<_>>();
+            (watcher_stop_count, tasks)
+        };
+        for task in watcher_tasks.1 {
+            task.abort();
+        }
+        if watcher_tasks.0 > 0 {
+            self.record_watcher_stop_n(watcher_tasks.0).await;
+        }
+        let polling_tasks = {
+            let mut tasks = self.state.polling_tasks.lock().await;
+            tasks.drain().map(|(_, task)| task).collect::<Vec<_>>()
+        };
+        for task in polling_tasks {
+            task.abort();
+        }
+        let mut entries = self.state.entries.lock().await;
+        self.state
+            .cancellations
+            .fetch_add(entries.len() as u64, Ordering::Relaxed);
+        entries.clear();
+        self.state.pending_workspace_updates.lock().await.clear();
+    }
+
+    pub async fn recover_after_wake(&self) {
+        if self.state.shutting_down.load(Ordering::Acquire) {
+            return;
+        }
+
+        self.state.wake_recoveries.fetch_add(1, Ordering::Relaxed);
+        let repository_ids = {
+            let entries = self.state.entries.lock().await;
+            entries.keys().cloned().collect::<Vec<_>>()
+        };
+
+        for path_id in repository_ids {
+            if self.state.shutting_down.load(Ordering::Acquire) {
+                break;
+            }
+            if let Some(task) = self.state.watcher_tasks.lock().await.remove(&path_id) {
+                task.abort();
+            }
+            if !self.ensure_watcher(&path_id).await {
+                self.ensure_polling_fallback(&path_id).await;
+            }
+            let _ = self
+                .request_refresh_with_reason(path_id, RefreshPriority::Background, "wake_recovery")
+                .await;
+        }
+    }
+
+    pub async fn diagnostics(&self) -> ManagerDiagnostics {
+        let entries = self.state.entries.lock().await;
+        let observability = self.state.observability.lock().await;
+        let now = Instant::now();
+        let recent_15m = observability
+            .samples
+            .iter()
+            .filter(|sample| now.duration_since(sample.recorded_at) <= Duration::from_secs(900))
+            .collect::<Vec<_>>();
+        let recent_10m = observability
+            .samples
+            .iter()
+            .filter(|sample| now.duration_since(sample.recorded_at) <= Duration::from_secs(600))
+            .collect::<Vec<_>>();
+        let recent_stale_observations = recent_15m
+            .iter()
+            .filter_map(|sample| sample.stale_state)
+            .collect::<Vec<_>>();
+        let recent_registrations = recent_10m
+            .iter()
+            .filter(|sample| sample.registration_attempt)
+            .count() as f64;
+        ManagerDiagnostics {
+            active_entries: entries.len(),
+            running_refreshes: entries.values().filter(|entry| entry.running).count(),
+            registration_attempts: self.state.registration_attempts.load(Ordering::Relaxed),
+            coalesced_requests: self.state.coalesced_requests.load(Ordering::Relaxed),
+            cancellations: self.state.cancellations.load(Ordering::Relaxed),
+            terminal_failures: self.state.terminal_failures.load(Ordering::Relaxed),
+            shutting_down: self.state.shutting_down.load(Ordering::Acquire),
+            watcher_count: self.state.watcher_tasks.lock().await.len(),
+            polling_count: self.state.polling_tasks.lock().await.len(),
+            degraded_entries: entries
+                .values()
+                .filter(|entry| entry.failure_count > 0)
+                .count(),
+            wake_recoveries: self.state.wake_recoveries.load(Ordering::Relaxed),
+            refresh_attempts: observability.refresh_attempts,
+            refresh_successes: observability.refresh_successes,
+            refresh_failures: observability.refresh_failures,
+            refresh_duration_ms_total: observability.refresh_duration_ms_total,
+            watcher_registrations: observability.watcher_registrations,
+            watcher_registration_failures: observability.watcher_registration_failures,
+            watcher_starts: observability.watcher_starts,
+            watcher_stops: observability.watcher_stops,
+            event_batches: self.state.event_batches.load(Ordering::Relaxed),
+            stale_state_rate_15m: if recent_stale_observations.is_empty() {
+                0.0
+            } else {
+                recent_stale_observations
+                    .iter()
+                    .filter(|stale| **stale)
+                    .count() as f64
+                    / recent_stale_observations.len() as f64
+            },
+            registration_failure_rate_10m: if recent_registrations == 0.0 {
+                0.0
+            } else {
+                recent_10m
+                    .iter()
+                    .filter(|sample| sample.registration_failure)
+                    .count() as f64
+                    / recent_registrations
+            },
+        }
+    }
+
+    pub async fn debug_snapshot(&self) -> WatcherDebugSnapshot {
+        let diagnostics = self.diagnostics().await;
+        let entries = self.state.entries.lock().await;
+        let watcher_ids = self.state.watcher_tasks.lock().await;
+        let polling_ids = self.state.polling_tasks.lock().await;
+        let mut repositories = entries
+            .iter()
+            .map(|(repository_id, entry)| RepositoryDebugEntry {
+                repository_id: repository_id.clone(),
+                priority: match entry.priority {
+                    RefreshPriority::Background => "background",
+                    RefreshPriority::Visible => "visible",
+                    RefreshPriority::Foreground => "foreground",
+                }
+                .to_string(),
+                detail_active: entry.detail_active,
+                running: entry.running,
+                follow_up: entry.follow_up,
+                failure_count: entry.failure_count,
+                trigger_reason: entry.trigger_reason.clone(),
+                monitor_mode: if watcher_ids.contains_key(repository_id) {
+                    "watcher"
+                } else if polling_ids.contains_key(repository_id) {
+                    "polling"
+                } else {
+                    "pending"
+                }
+                .to_string(),
+                generation: entry.generation,
+            })
+            .collect::<Vec<_>>();
+        repositories.sort_by(|left, right| left.repository_id.cmp(&right.repository_id));
+
+        WatcherDebugSnapshot {
+            captured_at: chrono::Utc::now().to_rfc3339(),
+            diagnostics,
+            repositories,
+        }
+    }
+
+    pub async fn register_active_paths(&self, paths: Vec<TrackedPathRow>) {
+        let permits = Arc::new(Semaphore::new(STARTUP_REGISTRATION_CONCURRENCY));
+        let mut registrations = Vec::with_capacity(paths.len());
+        for path in paths {
+            let manager = self.clone();
+            let permits = Arc::clone(&permits);
+            registrations.push(tauri::async_runtime::spawn(async move {
+                let Ok(_permit) = permits.acquire_owned().await else {
+                    return;
+                };
+                let priority = if path.is_pinned != 0 {
+                    RefreshPriority::Visible
+                } else {
+                    RefreshPriority::Background
+                };
+                let _ = manager
+                    .ensure_monitored(path.id, path.absolute_path, priority)
+                    .await;
+            }));
+        }
+        for registration in registrations {
+            let _ = registration.await;
+        }
+    }
+
+    fn spawn_refresh(&self, path_id: String, generation: u64) {
+        let manager = self.clone();
+        tauri::async_runtime::spawn(async move {
+            manager.run_refresh_loop(path_id, generation).await;
+        });
+    }
+
+    async fn ensure_watcher(&self, path_id: &str) -> bool {
+        if self.state.watcher_tasks.lock().await.contains_key(path_id) {
+            return true;
+        }
+        let Some((absolute_path, detail_active)) = self
+            .state
+            .entries
+            .lock()
+            .await
+            .get(path_id)
+            .map(|entry| (entry.absolute_path.clone(), entry.detail_active))
+        else {
+            self.record_watcher_registration(false).await;
+            return false;
+        };
+        let Ok(layout) = resolve_repository_layout(Path::new(&absolute_path)) else {
+            self.record_watcher_registration(false).await;
+            return false;
+        };
+        let targets = watch_targets(&layout, detail_active);
+        let (sender, receiver) = mpsc::sync_channel::<notify::Result<Event>>(128);
+        let overflowed = Arc::new(AtomicBool::new(false));
+        let callback_overflow = Arc::clone(&overflowed);
+        let watcher_result = RecommendedWatcher::new(
+            move |event| {
+                if sender.try_send(event).is_err() {
+                    callback_overflow.store(true, Ordering::Release);
+                }
+            },
+            notify::Config::default(),
+        );
+        let Ok(mut watcher) = watcher_result else {
+            self.record_watcher_registration(false).await;
+            return false;
+        };
+        for target in targets {
+            if watcher.watch(&target.path, target.mode).is_err() {
+                overflowed.store(true, Ordering::Release);
+            }
+        }
+
+        let manager = self.clone();
+        let path_id = path_id.to_string();
+        let task_path_id = path_id.clone();
+        let task = tauri::async_runtime::spawn(async move {
+            let _watcher = watcher;
+            let mut pending_since = None;
+            let mut interval = tokio::time::interval(Duration::from_millis(50));
+            loop {
+                interval.tick().await;
+                let mut force_flush = overflowed.swap(false, Ordering::AcqRel);
+                while let Ok(result) = receiver.try_recv() {
+                    match result {
+                        Ok(event) => {
+                            if event.paths.iter().any(|path| {
+                                classify_watch_trigger(&layout, path, detail_active).is_some()
+                            }) {
+                                pending_since.get_or_insert_with(Instant::now);
+                            }
+                        }
+                        Err(_) => force_flush = true,
+                    }
+                }
+                if force_flush {
+                    pending_since = Some(Instant::now() - Duration::from_secs(1));
+                }
+                if pending_since.is_some_and(|started| {
+                    started.elapsed() >= Duration::from_millis(200)
+                        || started.elapsed() >= Duration::from_secs(1)
+                }) {
+                    pending_since = None;
+                    let _ = manager
+                        .request_refresh_with_reason(
+                            task_path_id.clone(),
+                            RefreshPriority::Background,
+                            "filesystem",
+                        )
+                        .await;
+                }
+            }
+        });
+        let mut watcher_tasks = self.state.watcher_tasks.lock().await;
+        if watcher_tasks.contains_key(path_id.as_str()) {
+            task.abort();
+        } else {
+            watcher_tasks.insert(path_id, task);
+            self.record_watcher_registration(true).await;
+            self.record_watcher_start().await;
+        }
+        true
+    }
+
+    async fn ensure_polling_fallback(&self, path_id: &str) {
+        if self.state.polling_tasks.lock().await.contains_key(path_id) {
+            return;
+        }
+        let manager = self.clone();
+        let task_path_id = path_id.to_string();
+        let initial_delay = polling_initial_delay(&task_path_id);
+        let task = tauri::async_runtime::spawn(async move {
+            tokio::time::sleep(initial_delay).await;
+            loop {
+                if manager.state.shutting_down.load(Ordering::Acquire) {
+                    break;
+                }
+                let _ = manager
+                    .request_refresh_with_reason(
+                        task_path_id.clone(),
+                        RefreshPriority::Background,
+                        "polling_fallback",
+                    )
+                    .await;
+                tokio::time::sleep(POLLING_INTERVAL).await;
+            }
+        });
+        let mut polling_tasks = self.state.polling_tasks.lock().await;
+        if polling_tasks.contains_key(path_id) {
+            task.abort();
+        } else {
+            polling_tasks.insert(path_id.to_string(), task);
+        }
+    }
+
+    async fn run_refresh_loop(&self, path_id: String, generation: u64) {
+        let outcome = {
+            let entries = self.state.entries.lock().await;
+            entries.get(&path_id).and_then(|entry| {
+                (entry.generation == generation).then(|| {
+                    (
+                        entry.absolute_path.clone(),
+                        entry.detail_active,
+                        entry.priority,
+                    )
+                })
+            })
+        };
+        let Some((absolute_path, _detail_active, _priority)) = outcome else {
+            return;
+        };
+
+        let trigger_reason = {
+            let entries = self.state.entries.lock().await;
+            entries
+                .get(&path_id)
+                .map(|entry| entry.trigger_reason.clone())
+                .unwrap_or_else(|| "unknown".to_string())
+        };
+
+        let refresh_started = Instant::now();
+        let refresh_result: Result<RefreshOutcome, String> =
+            refresh_repository_full(&self.pool, &self.writer, &path_id, &absolute_path).await;
+        let refresh_failed = refresh_result.is_err();
+        self.record_refresh(refresh_failed, refresh_started.elapsed())
+            .await;
+        if let Ok(stale_state) =
+            sqlx::query_scalar::<_, i64>("SELECT is_cache_stale FROM tracked_paths WHERE id = ?")
+                .bind(&path_id)
+                .fetch_optional(&self.pool)
+                .await
+        {
+            if let Some(stale_state) = stale_state {
+                self.record_stale_state(stale_state != 0).await;
+            }
+        }
+        if refresh_failed {
+            self.state.terminal_failures.fetch_add(1, Ordering::Relaxed);
+        }
+
+        let mut entries = self.state.entries.lock().await;
+        let Some(entry) = entries.get_mut(&path_id) else {
+            return;
+        };
+        if entry.generation != generation {
+            return;
+        }
+        if let Ok(outcome) = &refresh_result {
+            self.queue_workspace_updated(&outcome.path_id, &trigger_reason)
+                .await;
+        }
+        let retry_delay = if refresh_failed {
+            entry.failure_count = entry.failure_count.saturating_add(1);
+            Some(health::retry_delay_seconds(entry.failure_count, 0))
+        } else {
+            entry.failure_count = 0;
+            None
+        };
+        if (entry.follow_up || retry_delay.is_some())
+            && !self.state.shutting_down.load(Ordering::Acquire)
+        {
+            entry.follow_up = false;
+            let next_generation = entry.generation;
+            drop(entries);
+            if let Some(delay_seconds) = retry_delay {
+                tokio::time::sleep(std::time::Duration::from_secs(delay_seconds)).await;
+            }
+            self.spawn_refresh(path_id, next_generation);
+        } else {
+            entry.running = false;
+        }
+    }
+
+    async fn queue_workspace_updated(&self, repository_id: &str, trigger_reason: &str) {
+        let should_schedule = {
+            let mut pending = self.state.pending_workspace_updates.lock().await;
+            let was_empty = pending.is_empty();
+            pending
+                .entry(repository_id.to_string())
+                .or_insert_with(|| trigger_reason.to_string());
+            was_empty
+        };
+        if should_schedule {
+            let manager = self.clone();
+            tauri::async_runtime::spawn(async move {
+                tokio::time::sleep(WORKSPACE_UPDATE_FLUSH_DELAY).await;
+                manager.flush_workspace_updates().await;
+            });
+        }
+    }
+
+    async fn flush_workspace_updates(&self) {
+        let Some(app_handle) = &self.app_handle else {
+            return;
+        };
+        if self.state.shutting_down.load(Ordering::Acquire) {
+            return;
+        }
+        let updates = {
+            let mut pending = self.state.pending_workspace_updates.lock().await;
+            std::mem::take(&mut *pending)
+        };
+        if updates.is_empty() {
+            return;
+        }
+        let mut trigger_reasons = updates.values().cloned().collect::<Vec<_>>();
+        trigger_reasons.sort();
+        trigger_reasons.dedup();
+        let trigger_reason = if trigger_reasons.len() == 1 {
+            trigger_reasons.remove(0)
+        } else {
+            "managed_batch".to_string()
+        };
+        let revision = self.state.revision.fetch_add(1, Ordering::AcqRel) + 1;
+        for event in
+            workspace_updated_events(revision, updates.into_keys().collect(), trigger_reason)
+        {
+            self.state.event_batches.fetch_add(1, Ordering::Relaxed);
+            let _ = app_handle.emit(WORKSPACE_UPDATED_EVENT, event);
+        }
+    }
+
+    async fn record_refresh(&self, failed: bool, duration: Duration) {
+        let mut observability = self.state.observability.lock().await;
+        observability.refresh_attempts += 1;
+        observability.refresh_duration_ms_total += duration.as_millis() as u64;
+        if failed {
+            observability.refresh_failures += 1;
+        } else {
+            observability.refresh_successes += 1;
+        }
+        observability.samples.push_back(MetricSample {
+            recorded_at: Instant::now(),
+            registration_attempt: false,
+            registration_failure: false,
+            stale_state: None,
+        });
+        Self::trim_samples(&mut observability.samples);
+    }
+
+    async fn record_stale_state(&self, stale: bool) {
+        let mut observability = self.state.observability.lock().await;
+        observability.samples.push_back(MetricSample {
+            recorded_at: Instant::now(),
+            registration_attempt: false,
+            registration_failure: false,
+            stale_state: Some(stale),
+        });
+        Self::trim_samples(&mut observability.samples);
+    }
+
+    async fn record_watcher_registration(&self, failed: bool) {
+        let mut observability = self.state.observability.lock().await;
+        observability.watcher_registrations += 1;
+        if failed {
+            observability.watcher_registration_failures += 1;
+        }
+        observability.samples.push_back(MetricSample {
+            recorded_at: Instant::now(),
+            registration_attempt: true,
+            registration_failure: failed,
+            stale_state: None,
+        });
+        Self::trim_samples(&mut observability.samples);
+    }
+
+    async fn record_watcher_start(&self) {
+        self.state.observability.lock().await.watcher_starts += 1;
+    }
+
+    async fn record_watcher_stop(&self) {
+        self.record_watcher_stop_n(1).await;
+    }
+
+    async fn record_watcher_stop_n(&self, count: u64) {
+        self.state.observability.lock().await.watcher_stops += count;
+    }
+
+    fn trim_samples(samples: &mut VecDeque<MetricSample>) {
+        let cutoff = Instant::now() - Duration::from_secs(900);
+        while samples
+            .front()
+            .is_some_and(|sample| sample.recorded_at < cutoff)
+        {
+            samples.pop_front();
+        }
+    }
+
+    #[cfg(test)]
+    async fn entry_count(&self) -> usize {
+        self.state.entries.lock().await.len()
+    }
+}
+
+fn polling_initial_delay(path_id: &str) -> Duration {
+    let hash = path_id.bytes().fold(0_u64, |state, byte| {
+        state
+            .wrapping_mul(1_099_511_628_211)
+            .wrapping_add(byte as u64)
+    });
+    Duration::from_millis(hash % POLLING_INTERVAL.as_millis() as u64)
+}
+
+fn workspace_updated_events(
+    revision: u64,
+    repository_ids: Vec<String>,
+    trigger_reason: String,
+) -> Vec<WorkspaceUpdatedEvent> {
+    let batch_count = repository_ids
+        .len()
+        .div_ceil(MAX_WORKSPACE_UPDATED_BATCH_SIZE)
+        .max(1);
+    let emitted_at = chrono::Utc::now().to_rfc3339();
+    repository_ids
+        .chunks(MAX_WORKSPACE_UPDATED_BATCH_SIZE)
+        .enumerate()
+        .map(|(batch_index, ids)| WorkspaceUpdatedEvent {
+            version: 1,
+            event_id: Uuid::new_v4().to_string(),
+            revision,
+            repository_ids: ids.to_vec(),
+            trigger_reason: trigger_reason.clone(),
+            batch_index,
+            batch_count,
+            emitted_at: emitted_at.clone(),
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn polling_initial_delay_is_deterministic_and_spread() {
+        let first = polling_initial_delay("repo-1");
+        let second = polling_initial_delay("repo-2");
+
+        assert_eq!(first, polling_initial_delay("repo-1"));
+        assert!(first < POLLING_INTERVAL);
+        assert!(second < POLLING_INTERVAL);
+        assert_ne!(first, second);
+    }
+
+    #[tokio::test]
+    async fn registration_is_idempotent_and_coalesces_running_work() {
+        let pool = SqlitePool::connect_lazy("sqlite::memory:").unwrap();
+        let manager = WatcherManager::new(pool, RepositoryCacheWriter::default());
+        manager
+            .ensure_monitored(
+                "repo".to_string(),
+                "C:\\missing".to_string(),
+                RefreshPriority::Background,
+            )
+            .await
+            .unwrap();
+        manager
+            .ensure_monitored(
+                "repo".to_string(),
+                "C:\\missing".to_string(),
+                RefreshPriority::Foreground,
+            )
+            .await
+            .unwrap();
+        assert_eq!(manager.entry_count().await, 1);
+        let diagnostics = manager.diagnostics().await;
+        assert_eq!(diagnostics.registration_attempts, 2);
+        assert_eq!(diagnostics.coalesced_requests, 1);
+    }
+
+    #[tokio::test]
+    async fn stopping_a_repository_removes_its_runtime_entry() {
+        let pool = SqlitePool::connect_lazy("sqlite::memory:").unwrap();
+        let manager = WatcherManager::new(pool, RepositoryCacheWriter::default());
+        manager
+            .ensure_monitored(
+                "repo".to_string(),
+                "C:\\missing".to_string(),
+                RefreshPriority::Background,
+            )
+            .await
+            .unwrap();
+        manager.stop_monitored("repo").await.unwrap();
+        assert_eq!(manager.entry_count().await, 0);
+        assert_eq!(manager.diagnostics().await.cancellations, 1);
+    }
+
+    #[tokio::test]
+    async fn diagnostics_report_aggregate_rates_without_repository_details() {
+        let pool = SqlitePool::connect_lazy("sqlite::memory:").unwrap();
+        let manager = WatcherManager::new(pool, RepositoryCacheWriter::default());
+        manager
+            .record_refresh(false, Duration::from_millis(12))
+            .await;
+        manager
+            .record_refresh(true, Duration::from_millis(20))
+            .await;
+        manager.record_stale_state(true).await;
+        manager.record_stale_state(false).await;
+        manager.record_watcher_registration(true).await;
+
+        let diagnostics = manager.diagnostics().await;
+        assert_eq!(diagnostics.refresh_attempts, 2);
+        assert_eq!(diagnostics.refresh_successes, 1);
+        assert_eq!(diagnostics.refresh_failures, 1);
+        assert_eq!(diagnostics.refresh_duration_ms_total, 32);
+        assert_eq!(diagnostics.watcher_registration_failures, 1);
+        assert_eq!(diagnostics.stale_state_rate_15m, 0.5);
+        assert_eq!(diagnostics.registration_failure_rate_10m, 1.0);
+    }
+
+    #[tokio::test]
+    async fn shutdown_and_diagnostics_complete_concurrently() {
+        let pool = SqlitePool::connect_lazy("sqlite::memory:").unwrap();
+        let manager = WatcherManager::new(pool, RepositoryCacheWriter::default());
+        let shutdown_manager = manager.clone();
+        let diagnostics_manager = manager.clone();
+        let shutdown = tokio::spawn(async move {
+            shutdown_manager.stop_all().await;
+        });
+        let diagnostics = tokio::spawn(async move { diagnostics_manager.diagnostics().await });
+
+        tokio::time::timeout(Duration::from_secs(1), shutdown)
+            .await
+            .unwrap()
+            .unwrap();
+        tokio::time::timeout(Duration::from_secs(1), diagnostics)
+            .await
+            .unwrap()
+            .unwrap();
+    }
+
+    #[test]
+    fn workspace_updated_events_are_versioned_bounded_and_share_revision() {
+        let repository_ids = (0..251).map(|index| format!("repo-{index}")).collect();
+        let events = workspace_updated_events(7, repository_ids, "filesystem".to_string());
+
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0].version, 1);
+        assert_eq!(events[0].repository_ids.len(), 250);
+        assert_eq!(events[1].repository_ids.len(), 1);
+        assert!(events.iter().all(|event| event.revision == 7));
+        assert_ne!(events[0].event_id, events[1].event_id);
+        assert_eq!(events[0].batch_count, 2);
+        assert_eq!(events[1].batch_index, 1);
+    }
+}

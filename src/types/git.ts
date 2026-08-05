@@ -79,6 +79,20 @@ export interface TrackedPath {
   archived_at?: string | null;
   /** Starred pin state for quick dashboard filtering */
   is_favorite?: number;
+  /** Durable startup-refresh pin preference */
+  is_pinned?: number;
+  /** Durable repository monitoring health */
+  health_state?: 'unverified' | 'monitoring' | 'monitoring_failed' | 'healthy' | 'unreachable' | 'missing' | 'moved';
+  /** Whether the cached Git data is known to be stale */
+  is_cache_stale?: number;
+  /** Last repository verification timestamp */
+  last_verified_at?: string | null;
+  /** Last successful repository verification timestamp */
+  last_successful_verification_at?: string | null;
+  /** Consecutive verification failure count */
+  verification_failure_count?: number;
+  /** Sanitized verification failure message */
+  last_verification_error?: string | null;
   /** Foreign key into custom_groups table */
   group_id?: string | null;
   /** Optional user-defined logical grouping label */

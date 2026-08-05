@@ -584,6 +584,11 @@
   box-shadow: 0 10px 24px -18px rgba(245, 158, 11, 0.85);
 }
 
+.repo-card.is-pinned {
+  border-color: color-mix(in srgb, var(--app-accent) 55%, var(--card-border));
+  box-shadow: 0 10px 24px -18px color-mix(in srgb, var(--app-accent) 75%, transparent);
+}
+
 .repo-card-top {
   display: flex;
   align-items: flex-start;
@@ -614,6 +619,22 @@
   height: 15px;
   border-radius: 999px;
   background: linear-gradient(135deg, #fbbf24, #f59e0b);
+  color: white;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
+  pointer-events: none;
+}
+
+.repo-icon-pinned-badge {
+  position: absolute;
+  right: -4px;
+  top: -4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  border-radius: 999px;
+  background: var(--app-accent);
   color: white;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
   pointer-events: none;

@@ -9,6 +9,7 @@ import {
   Star,
   Trash,
   Info,
+  PushPin,
 } from "@phosphor-icons/react";
 import { ConfirmationModal } from "../../../../components/Modal/ConfirmationModal";
 import { RepoThemeModal } from "./RepoThemeModal.tsx";
@@ -16,6 +17,7 @@ import { getViewportSafeMenuPosition } from "./menuPosition";
 
 type RepoCardOverflowMenuProps = {
   isFavorite: boolean;
+  isPinned: boolean;
   isBusy: boolean;
   canUseRemoteActions: boolean;
   onOpenDetails: () => void;
@@ -25,6 +27,7 @@ type RepoCardOverflowMenuProps = {
   onPush: () => void | Promise<void>;
   onRenameAlias: () => void;
   onToggleFavorite: () => void | Promise<void>;
+  onTogglePinned: () => void | Promise<void>;
   onValidate?: () => void | Promise<void>;
   onUntrack: (event: React.MouseEvent<HTMLButtonElement>) => void;
   currentThemeColor: string | null;
@@ -34,6 +37,7 @@ type RepoCardOverflowMenuProps = {
 
 export function RepoCardOverflowMenu({
   isFavorite,
+  isPinned,
   isBusy,
   canUseRemoteActions,
   onOpenDetails,
@@ -43,6 +47,7 @@ export function RepoCardOverflowMenu({
   onPush,
   onRenameAlias,
   onToggleFavorite,
+  onTogglePinned,
   onValidate,
   onUntrack,
   currentThemeColor,
@@ -258,6 +263,15 @@ export function RepoCardOverflowMenu({
                 <span>Validate repository</span>
               </button>
             ) : null}
+            <button
+              type="button"
+              className="overflow-menu-item"
+              onClick={() => handleAction(onTogglePinned)}
+              disabled={isBusy}
+            >
+              <PushPin size={16} weight={isPinned ? "fill" : "regular"} />
+              <span>{isPinned ? "Unpin repository" : "Pin repository"}</span>
+            </button>
           </div>
 
           <div className="overflow-divider" />

@@ -18,6 +18,7 @@ erDiagram
         INTEGER launch_at_login
         INTEGER start_minimized
         TEXT theme
+        INTEGER detail_status_refresh_interval
     }
 
     tracked_paths {
@@ -36,6 +37,13 @@ erDiagram
         TEXT theme_color_hex
         TEXT icon_name
         TEXT github_owner_login
+        INTEGER is_pinned
+        TEXT health_state
+        INTEGER is_cache_stale
+        DATETIME last_verified_at
+        DATETIME last_successful_verification_at
+        INTEGER verification_failure_count
+        TEXT last_verification_error
         INTEGER is_active
         DATETIME created_at
         DATETIME archived_at

@@ -1,0 +1,102 @@
+.database-recovery-loading {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  color: var(--app-muted);
+  background: var(--app-bg);
+}
+
+.database-recovery {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 32px;
+  box-sizing: border-box;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--app-warning) 10%, var(--app-bg)), var(--app-bg) 52%),
+    var(--app-bg);
+}
+
+.database-recovery__panel {
+  width: min(100%, 560px);
+  padding: 36px;
+  box-sizing: border-box;
+  border: 1px solid color-mix(in srgb, var(--app-warning) 35%, var(--app-border));
+  border-radius: 10px;
+  background: var(--app-surface);
+  box-shadow: 0 18px 50px var(--app-shadow);
+}
+
+.database-recovery__icon {
+  width: 52px;
+  height: 52px;
+  display: grid;
+  place-items: center;
+  color: var(--app-warning);
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--app-warning) 14%, transparent);
+}
+
+.database-recovery__eyebrow {
+  margin: 24px 0 8px;
+  color: var(--app-warning);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.database-recovery h1 {
+  margin: 0;
+  text-align: left;
+  font-size: 26px;
+  line-height: 1.2;
+}
+
+.database-recovery__message {
+  margin: 16px 0 0;
+  color: var(--app-text);
+}
+
+.database-recovery__path {
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  overflow-wrap: anywhere;
+  border: 1px solid var(--app-border);
+  border-radius: 6px;
+  color: var(--app-muted);
+  background: var(--app-surface-muted);
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 12px;
+}
+
+.database-recovery__action-message {
+  margin: 16px 0 0;
+  color: var(--app-success);
+  overflow-wrap: anywhere;
+}
+
+.database-recovery__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 28px;
+}
+
+@media (max-width: 560px) {
+  .database-recovery {
+    padding: 16px;
+  }
+
+  .database-recovery__panel {
+    padding: 24px;
+  }
+
+  .database-recovery__actions {
+    flex-direction: column;
+  }
+
+  .database-recovery__actions .app-btn {
+    width: 100%;
+  }
+}

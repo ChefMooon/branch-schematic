@@ -1,7 +1,7 @@
 # Codebase Context Snapshot
 
 =========================================
-📅 **Snapshot Updated:** Aug 5, 2026, 8:56 AM
+📅 **Snapshot Updated:** Aug 5, 2026, 4:30 PM
 📦 **Key Dependencies:**
   - `react`: ^19.1.0
   - `react-dom`: ^19.1.0
@@ -20,6 +20,8 @@
 branch-schematic/
 ├── .env
 ├── .gitignore
+├── .tmp
+│   └── stage-9-benchmark-2000.json
 ├── img
 │   └── dashboard.png
 ├── index.html
@@ -40,6 +42,9 @@ branch-schematic/
 │   │   │   └── CollapsiblePanel.tsx
 │   │   ├── color-picker
 │   │   │   └── ColorPicker.tsx
+│   │   ├── database-recovery
+│   │   │   ├── DatabaseRecoveryGate.css
+│   │   │   └── DatabaseRecoveryGate.tsx
 │   │   ├── layout
 │   │   │   ├── AppLayout.test.tsx
 │   │   │   ├── AppLayout.tsx
@@ -170,29 +175,37 @@ branch-schematic/
 │   │   │   ├── types
 │   │   │   │   └── index.ts
 │   │   │   └── utils
-│   │   └── repository-detail
+│   │   ├── repository-detail
+│   │   │   ├── components
+│   │   │   │   ├── RepositoryChangeGroup.tsx
+│   │   │   │   ├── RepositoryChangesListPanel.tsx
+│   │   │   │   ├── RepositoryChangesPreviewPanel.tsx
+│   │   │   │   ├── RepositoryCommitComposer.tsx
+│   │   │   │   ├── RepositoryDetail.css
+│   │   │   │   ├── RepositoryDetail.test.tsx
+│   │   │   │   ├── RepositoryDetail.tsx
+│   │   │   │   ├── RepositoryDetailBody.test.tsx
+│   │   │   │   ├── RepositoryDetailBody.tsx
+│   │   │   │   ├── RepositoryDetailChangesTab.test.tsx
+│   │   │   │   ├── RepositoryDetailChangesTab.tsx
+│   │   │   │   ├── RepositoryDetailCommitsTab.tsx
+│   │   │   │   ├── RepositoryDetailHeader.test.tsx
+│   │   │   │   ├── RepositoryDetailHeader.tsx
+│   │   │   │   └── RepositoryDiffPreview.tsx
+│   │   │   ├── hooks
+│   │   │   │   ├── useRepositoryChanges.ts
+│   │   │   │   ├── useRepositoryFileDiff.ts
+│   │   │   │   └── useResizableChangesPanels.ts
+│   │   │   └── types
+│   │   │       └── repositoryChanges.ts
+│   │   └── repository-update-diagnostics
 │   │       ├── components
-│   │       │   ├── RepositoryChangeGroup.tsx
-│   │       │   ├── RepositoryChangesListPanel.tsx
-│   │       │   ├── RepositoryChangesPreviewPanel.tsx
-│   │       │   ├── RepositoryCommitComposer.tsx
-│   │       │   ├── RepositoryDetail.css
-│   │       │   ├── RepositoryDetail.test.tsx
-│   │       │   ├── RepositoryDetail.tsx
-│   │       │   ├── RepositoryDetailBody.test.tsx
-│   │       │   ├── RepositoryDetailBody.tsx
-│   │       │   ├── RepositoryDetailChangesTab.test.tsx
-│   │       │   ├── RepositoryDetailChangesTab.tsx
-│   │       │   ├── RepositoryDetailCommitsTab.tsx
-│   │       │   ├── RepositoryDetailHeader.test.tsx
-│   │       │   ├── RepositoryDetailHeader.tsx
-│   │       │   └── RepositoryDiffPreview.tsx
+│   │       │   ├── RepositoryUpdateDiagnosticsModal.css
+│   │       │   └── RepositoryUpdateDiagnosticsModal.tsx
 │   │       ├── hooks
-│   │       │   ├── useRepositoryChanges.ts
-│   │       │   ├── useRepositoryFileDiff.ts
-│   │       │   └── useResizableChangesPanels.ts
+│   │       │   └── useRepositoryUpdateDiagnostics.ts
 │   │       └── types
-│   │           └── repositoryChanges.ts
+│   │           └── repositoryUpdateDiagnostics.ts
 │   ├── hooks
 │   │   ├── useBackdropDismiss.ts
 │   │   ├── useClickOutside.ts
@@ -212,7 +225,8 @@ branch-schematic/
 │   ├── stores
 │   │   ├── canvas-store.ts
 │   │   ├── workspace-store.test.ts
-│   │   └── workspace-store.ts
+│   │   ├── workspace-store.ts
+│   │   └── workspace-update-sync.test.ts
 │   ├── test
 │   │   └── setup.ts
 │   ├── theme.ts
@@ -237,11 +251,14 @@ branch-schematic/
 │   │       └── windows-schema.json
 │   ├── src
 │   │   ├── auth.rs
-│   │   ├── daemon.rs
 │   │   ├── db.rs
 │   │   ├── git.rs
+│   │   ├── health.rs
+│   │   ├── layout.rs
 │   │   ├── lib.rs
-│   │   └── main.rs
+│   │   ├── main.rs
+│   │   ├── manager.rs
+│   │   └── refresh.rs
 │   ├── tauri.conf.json
 │   ├── tauri.linux.conf.json
 │   └── tauri.windows.conf.json

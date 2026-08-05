@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import "../App.css";
 import { applyTheme, loadThemePreference, type ThemePreference } from "../theme";
 import { AppLayout } from "../components/layout/AppLayout";
+import { DatabaseRecoveryGate } from "../components/database-recovery/DatabaseRecoveryGate";
 import { NotificationProvider } from "../components/notifications/NotificationProvider";
 import '@xyflow/react/dist/style.css';
 
@@ -35,13 +36,15 @@ const RootLayout = () => {
   }, [theme]);
 
   return (
-    <NotificationProvider>
-      <AppLayout>
-        {/* Sub-pages such as /branch-map and /database mount exactly here! */}
-        <Outlet />
-        <TanStackRouterDevtools position="bottom-right" />
-      </AppLayout>
-    </NotificationProvider>
+    <DatabaseRecoveryGate>
+      <NotificationProvider>
+        <AppLayout>
+          {/* Sub-pages such as /branch-map and /database mount exactly here! */}
+          <Outlet />
+          <TanStackRouterDevtools position="bottom-right" />
+        </AppLayout>
+      </NotificationProvider>
+    </DatabaseRecoveryGate>
   );
 };
 

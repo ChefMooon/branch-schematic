@@ -16,6 +16,7 @@ const DEFAULT_SETTINGS = {
   launchAtLogin: false,
   startMinimized: false,
   theme: DEFAULT_THEME
+  ,detailStatusRefreshInterval: 5
 };
 
 function RouteComponent() {
@@ -24,6 +25,7 @@ function RouteComponent() {
   const [launchAtLogin, setLaunchAtLogin] = useState(DEFAULT_SETTINGS.launchAtLogin);
   const [startMinimized, setStartMinimized] = useState(DEFAULT_SETTINGS.startMinimized);
   const [theme, setTheme] = useState<ThemePreference>(DEFAULT_SETTINGS.theme);
+  const [detailStatusRefreshInterval, setDetailStatusRefreshInterval] = useState(DEFAULT_SETTINGS.detailStatusRefreshInterval);
 
   // 1. LOAD SETTINGS FROM DATABASE ON MOUNT
   useEffect(() => {
@@ -53,6 +55,8 @@ function RouteComponent() {
       } catch (err) {
         console.error("Failed to load settings from DB:", err);
       }
+      const interval = await invoke<number>('get_detail_status_refresh_interval');
+      setDetailStatusRefreshInterval(Math.min(5, Math.max(2, Number(interval) || 5)));
     }
     loadSettings();
   }, []);
@@ -90,6 +94,7 @@ function RouteComponent() {
     setLaunchAtLogin(DEFAULT_SETTINGS.launchAtLogin);
     setStartMinimized(DEFAULT_SETTINGS.startMinimized);
     setTheme(DEFAULT_SETTINGS.theme);
+    setDetailStatusRefreshInterval(DEFAULT_SETTINGS.detailStatusRefreshInterval);
     applyTheme(DEFAULT_SETTINGS.theme);
     await saveThemePreference(DEFAULT_SETTINGS.theme);
 
@@ -112,6 +117,7 @@ function RouteComponent() {
         ]
       );
       await invoke('sync_runtime_settings_command');
+      await invoke('set_detail_status_refresh_interval', { value: DEFAULT_SETTINGS.detailStatusRefreshInterval });
     } catch (err) {
       console.error('Failed to reset database settings:', err);
     }
@@ -122,6 +128,14 @@ function RouteComponent() {
     applyTheme(nextTheme);
     void updateSetting('theme', nextTheme);
     void saveThemePreference(nextTheme);
+  }
+
+  function handleDetailIntervalChange(value: number) {
+    const nextValue = Math.min(5, Math.max(2, value));
+    setDetailStatusRefreshInterval(nextValue);
+    void invoke('set_detail_status_refresh_interval', { value: nextValue }).catch((err) => {
+      console.error('Failed to save detail status refresh interval:', err);
+    });
   }
 
   return (
@@ -151,6 +165,25 @@ function RouteComponent() {
               <span className="settings-description">Keep the app running in the background when closed.</span>
             </div>
           </label>
+
+          <div className="settings-item settings-item-range">
+            <div className="settings-text">
+              <span className="settings-label">Detail status refresh interval</span>
+              <span className="settings-description">How often the open repository view checks local working-tree status.</span>
+            </div>
+            <div className="settings-range-control">
+              <input
+                type="range"
+                min="2"
+                max="5"
+                step="1"
+                value={detailStatusRefreshInterval}
+                onChange={(event) => handleDetailIntervalChange(Number(event.target.value))}
+                aria-label="Detail status refresh interval"
+              />
+              <output>{detailStatusRefreshInterval}s</output>
+            </div>
+          </div>
 
           <label className="settings-item">
             <input

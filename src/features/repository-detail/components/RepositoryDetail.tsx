@@ -37,7 +37,7 @@ export function RepositoryDetail({ isOpen, repo, onClose }: RepositoryDetailProp
     setPreviewBranch(nextBranch);
     setSelectedCommitHash(null);
     setActiveTab('commits');
-  }, [isOpen, repo]);
+  }, [isOpen, repo?.id, repo?.current_branch]);
 
   useEffect(() => {
     if (!isOpen || !repo || !previewBranch) return;
@@ -75,7 +75,27 @@ export function RepositoryDetail({ isOpen, repo, onClose }: RepositoryDetailProp
     return () => {
       isMounted = false;
     };
-  }, [isOpen, previewBranch, repo]);
+  }, [isOpen, previewBranch, repo?.id]);
+
+  useEffect(() => {
+    if (!isOpen || !repo) return;
+
+    let disposed = false;
+    void Promise.resolve(invoke('ensure_repository_monitored_command', {
+      pathId: repo.id,
+      absolutePath: repo.absolute_path,
+    }))
+      .then(() => invoke('set_repository_detail_active_command', { pathId: repo.id, active: true }))
+      .then(() => invoke('request_repository_refresh_command', { pathId: repo.id }))
+      .catch((error) => {
+        if (!disposed) console.error('Failed to promote repository detail refresh:', error);
+      });
+
+    return () => {
+      disposed = true;
+      void Promise.resolve(invoke('set_repository_detail_active_command', { pathId: repo.id, active: false })).catch(() => undefined);
+    };
+  }, [isOpen, repo?.id, repo?.absolute_path]);
 
   useEffect(() => {
     if (!isOpen) return;

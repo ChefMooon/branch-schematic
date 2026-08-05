@@ -163,6 +163,25 @@ total_branches_mutated: number;
 
 * **Frontend Reaction:** Under React 19's non-blocking design strategy, the canvas avoids layout-shifting force refreshes. Instead, a custom action notification drops: `"Remote updates available for your working paths. [Refresh Workspace Layout]"` to hand layout stability control fully to the developer.
 
+### 3.3 `workspace-updated`
+
+Managed watcher refreshes emit this versioned invalidation event after the authoritative cache write succeeds. The payload is metadata only; the frontend must re-query backend state rather than applying repository data from the event.
+
+```typescript
+{
+  version: 1;
+  eventId: string;
+  revision: number;
+  repositoryIds: string[]; // At most 250 IDs per event batch
+  triggerReason: string;
+  batchIndex: number;
+  batchCount: number;
+  emittedAt: string; // ISO-8601 timestamp
+}
+```
+
+The workspace store owns one shared listener, ignores duplicate repository revisions, and schedules reconciliation when a payload is malformed or a revision gap is detected. Legacy watcher mode does not depend on this event contract.
+
 ---
 
 ## 4. React 19 Integration Design Note

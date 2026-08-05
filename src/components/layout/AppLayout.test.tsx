@@ -5,6 +5,7 @@ import { AppLayout } from './AppLayout';
 
 const mockStore = {
   hydrateFromBackend: vi.fn(),
+  subscribeToWorkspaceUpdates: vi.fn(),
   quickFilterMetadata: null,
   hydrateQuickFilterMetadata: vi.fn(),
   groupDirectory: [],
@@ -93,6 +94,9 @@ vi.mock('../../features/auth-profile/components/ProfileDropdown', () => ({
   ProfileDropdown: ({ isOpen }: { isOpen: boolean }) => (isOpen ? <div data-testid="profile-dropdown">Profile menu</div> : null),
 }));
 vi.mock('../../features/auth-profile/components/ProfileManagementModal', () => ({ ProfileManagementModal: () => null }));
+vi.mock('../../features/repository-update-diagnostics/components/RepositoryUpdateDiagnosticsModal', () => ({
+  RepositoryUpdateDiagnosticsModal: () => null,
+}));
 
 vi.mock('../notifications/NotificationDropdown', () => ({
   NotificationDropdown: ({ isOpen }: { isOpen: boolean }) => (isOpen ? <div data-testid="notification-panel">Notification panel</div> : null),
@@ -102,8 +106,20 @@ describe('AppLayout', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockStore.hydrateFromBackend.mockResolvedValue(undefined);
+    mockStore.subscribeToWorkspaceUpdates.mockResolvedValue(vi.fn());
     mockStore.hydrateQuickFilterMetadata.mockResolvedValue(undefined);
     mockStore.cleanupDanglingTags.mockResolvedValue(0);
+  });
+
+  it('places the repository diagnostics action beside the notification action', () => {
+    render(
+      <AppLayout>
+        <div>content</div>
+      </AppLayout>,
+    );
+
+    expect(screen.getByRole('button', { name: /open repository update diagnostics/i })).toBeInTheDocument();
+    expect(screen.getByTitle(/notifications/i)).toBeInTheDocument();
   });
 
   it('closes the notification dropdown when the bell button is clicked while it is open', async () => {

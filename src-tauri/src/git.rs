@@ -1,13 +1,20 @@
-use std::{fs, path::{Component, Path, PathBuf}};
-use std::sync::{Arc, Mutex};
-use uuid::Uuid;
-use git2::{AutotagOption, Branch, BranchType, Cred, CredentialType, FetchOptions, Oid, PushOptions, RemoteCallbacks, Repository};
+use crate::auth;
+use crate::db;
+use crate::manager::{RefreshPriority, WatcherManager};
+use crate::DbState;
+use git2::{
+    AutotagOption, Branch, BranchType, Cred, CredentialType, FetchOptions, Oid, PushOptions,
+    RemoteCallbacks, Repository,
+};
 use reqwest::header::{HeaderValue, ACCEPT, AUTHORIZATION, USER_AGENT};
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
-use crate::DbState;
-use crate::db;
-use crate::auth;
+use std::sync::{Arc, Mutex};
+use std::{
+    fs,
+    path::{Component, Path, PathBuf},
+};
+use uuid::Uuid;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct CommitLog {
@@ -70,6 +77,7 @@ pub struct WorkspaceDetails {
     pub available_branches: Vec<String>,
     pub uncommitted_changes_count: usize,
     pub is_favorite: i64,
+    pub is_pinned: i64,
     pub group_id: Option<String>,
     pub custom_group: Option<String>,
     pub last_accessed_at: Option<String>,
@@ -358,7 +366,10 @@ async fn fetch_single_github_repo_metadata(
     Some(GitHubSingleRepoMeta {
         fork: payload.fork,
         owner_login: payload.owner.login,
-        permissions_push: payload.permissions.map(|permissions| permissions.push).unwrap_or(false),
+        permissions_push: payload
+            .permissions
+            .map(|permissions| permissions.push)
+            .unwrap_or(false),
     })
 }
 
@@ -423,13 +434,15 @@ fn describe_remote_repository_listing_error(raw_error: &str) -> String {
     }
 
     if trimmed.contains("Remote repository request failed (401)") {
-        return "GitHub rejected the OAuth token (401). Reconnect the profile and authorize again.".to_string();
+        return "GitHub rejected the OAuth token (401). Reconnect the profile and authorize again."
+            .to_string();
     }
 
     if trimmed.contains("Remote repository request failed (403)") {
         let lowered = trimmed.to_lowercase();
         if lowered.contains("rate limit") {
-            return "GitHub API rate limit was exceeded (403). Wait a few minutes and try again.".to_string();
+            return "GitHub API rate limit was exceeded (403). Wait a few minutes and try again."
+                .to_string();
         }
 
         if lowered.contains("saml") || lowered.contains("sso") {
@@ -464,7 +477,8 @@ fn describe_remote_repository_listing_error(raw_error: &str) -> String {
             if body_end > body_start {
                 let json_slice = &trimmed[body_start..=body_end];
                 if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(json_slice) {
-                    if let Some(message) = parsed.get("message").and_then(serde_json::Value::as_str) {
+                    if let Some(message) = parsed.get("message").and_then(serde_json::Value::as_str)
+                    {
                         let clean_message = message.trim();
                         if !clean_message.is_empty() {
                             return format!("GitHub rejected repository listing: {clean_message}");
@@ -492,13 +506,16 @@ async fn fetch_remote_repositories_page(
     url::Url::parse(&endpoint)
         .map_err(|_| format!("The profile API base URL is invalid: {}", api_base_url))?;
 
-	let query = vec![
-		("page", page.to_string()),
-		("per_page", per_page.to_string()),
-		("sort", "updated".to_string()),
-		("visibility", "all".to_string()),
-		("affiliation", "owner,collaborator,organization_member".to_string()),
-	];
+    let query = vec![
+        ("page", page.to_string()),
+        ("per_page", per_page.to_string()),
+        ("sort", "updated".to_string()),
+        ("visibility", "all".to_string()),
+        (
+            "affiliation",
+            "owner,collaborator,organization_member".to_string(),
+        ),
+    ];
 
     let response = reqwest::Client::new()
         .get(&endpoint)
@@ -536,11 +553,13 @@ async fn fetch_remote_repositories_page(
     if !response.status().is_success() {
         let status = response.status();
         let body = response.text().await.unwrap_or_default();
-        eprintln!("Remote repository request failed for profile {} ({}): {}", profile.id, status, body);
+        eprintln!(
+            "Remote repository request failed for profile {} ({}): {}",
+            profile.id, status, body
+        );
         return Err(format!(
             "Remote repository request failed ({}): {}",
-            status,
-            body
+            status, body
         ));
     }
 
@@ -571,7 +590,9 @@ async fn fetch_remote_repositories_page(
                 is_private: repository.is_private,
                 fork: repository.fork,
                 permissions_push,
-                default_branch: repository.default_branch.unwrap_or_else(|| "main".to_string()),
+                default_branch: repository
+                    .default_branch
+                    .unwrap_or_else(|| "main".to_string()),
                 updated_at: repository.updated_at.unwrap_or_default(),
                 clone_url: repository.clone_url.unwrap_or_default(),
                 ssh_url: repository.ssh_url.unwrap_or_default(),
@@ -625,11 +646,13 @@ async fn fetch_remote_branches_page(
     if !response.status().is_success() {
         let status = response.status();
         let body = response.text().await.unwrap_or_default();
-        eprintln!("Remote branch request failed for profile {} ({}): {}", profile.id, status, body);
+        eprintln!(
+            "Remote branch request failed for profile {} ({}): {}",
+            profile.id, status, body
+        );
         return Err(format!(
             "Remote branch request failed ({}): {}",
-            status,
-            body
+            status, body
         ));
     }
 
@@ -714,7 +737,9 @@ fn parse_owner_and_repo_from_url(repo_url: &str) -> Option<(String, String)> {
             return None;
         }
 
-        let mut parts = cleaned_slug.split('/').filter(|segment| !segment.trim().is_empty());
+        let mut parts = cleaned_slug
+            .split('/')
+            .filter(|segment| !segment.trim().is_empty());
         let owner = parts.next()?.trim();
         let repo_raw = parts.next()?.trim();
         let repo = repo_raw.strip_suffix(".git").unwrap_or(repo_raw);
@@ -755,7 +780,9 @@ fn resolve_clone_url(
     let repo_name = repo_name
         .map(str::trim)
         .filter(|value| !value.is_empty())
-        .ok_or_else(|| "A repository name is required when repo_url is not provided.".to_string())?;
+        .ok_or_else(|| {
+            "A repository name is required when repo_url is not provided.".to_string()
+        })?;
 
     let clone_base = if let Some(active_profile) = profile {
         let api_base_url = normalize_api_base_url(active_profile);
@@ -768,7 +795,12 @@ fn resolve_clone_url(
         "https://github.com".to_string()
     };
 
-    Ok(format!("{}/{}/{}.git", clone_base.trim_end_matches('/'), owner, repo_name))
+    Ok(format!(
+        "{}/{}/{}.git",
+        clone_base.trim_end_matches('/'),
+        owner,
+        repo_name
+    ))
 }
 
 #[tauri::command]
@@ -781,7 +813,9 @@ pub async fn list_remote_repositories(
     let (page, per_page) = normalize_pagination(page, per_page);
     let profile = auth::resolve_profile_for_remote(state.inner().pool(), profile_id.as_deref())
         .await?
-        .ok_or_else(|| "No active profile is available for remote repository access.".to_string())?;
+        .ok_or_else(|| {
+            "No active profile is available for remote repository access.".to_string()
+        })?;
 
     fetch_remote_repositories_page(&profile, page, per_page)
         .await
@@ -797,9 +831,17 @@ pub async fn list_enterprise_repositories(
 ) -> Result<RemoteRepositoryPage, String> {
     let profile = auth::resolve_profile_for_remote(state.inner().pool(), profile_id.as_deref())
         .await?
-        .ok_or_else(|| "No active profile is available for enterprise repository access.".to_string())?;
+        .ok_or_else(|| {
+            "No active profile is available for enterprise repository access.".to_string()
+        })?;
 
-    if profile.api_base_url.as_deref().map(str::trim).unwrap_or("").is_empty() {
+    if profile
+        .api_base_url
+        .as_deref()
+        .map(str::trim)
+        .unwrap_or("")
+        .is_empty()
+    {
         return Err("Enterprise profile configuration is missing an API base URL.".to_string());
     }
 
@@ -851,7 +893,8 @@ pub async fn clone_remote_repository(
         return Err("The destination path must be an existing directory.".to_string());
     }
 
-    let profile = auth::resolve_profile_for_remote(state.inner().pool(), profile_id.as_deref()).await?;
+    let profile =
+        auth::resolve_profile_for_remote(state.inner().pool(), profile_id.as_deref()).await?;
     let clone_url = resolve_clone_url(
         profile.as_ref(),
         owner.as_deref(),
@@ -865,7 +908,9 @@ pub async fn clone_remote_repository(
         .filter(|value| !value.is_empty())
         .map(str::to_string)
         .or_else(|| parse_repo_name_from_url(&clone_url))
-        .ok_or_else(|| "Unable to determine a repository name for the clone destination.".to_string())?;
+        .ok_or_else(|| {
+            "Unable to determine a repository name for the clone destination.".to_string()
+        })?;
 
     let target_path = destination.join(sanitize_repository_name(&inferred_repo_name));
     if target_path.exists() {
@@ -907,7 +952,11 @@ pub async fn clone_remote_repository(
         let mut builder = git2::build::RepoBuilder::new();
         builder.fetch_options(fetch_options);
 
-        if let Some(branch_name) = branch.as_deref().map(str::trim).filter(|value| !value.is_empty()) {
+        if let Some(branch_name) = branch
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        {
             builder.branch(branch_name);
         }
 
@@ -921,11 +970,17 @@ pub async fn clone_remote_repository(
         .ok_or_else(|| "Failed to resolve cloned repository path.".to_string())?
         .to_string();
 
-    let track_result = track_repository_path(state.inner().pool(), &target_path_string, profile_id.as_deref()).await?;
-    let path_id = db::fetch_tracked_path_id_by_absolute_path(state.inner().pool(), &target_path_string)
-        .await
-        .map_err(|error| format!("Failed to resolve tracked repository id: {}", error))?
-        .ok_or_else(|| "The cloned repository could not be tracked.".to_string())?;
+    let track_result = track_repository_path(
+        state.inner().pool(),
+        &target_path_string,
+        profile_id.as_deref(),
+    )
+    .await?;
+    let path_id =
+        db::fetch_tracked_path_id_by_absolute_path(state.inner().pool(), &target_path_string)
+            .await
+            .map_err(|error| format!("Failed to resolve tracked repository id: {}", error))?
+            .ok_or_else(|| "The cloned repository could not be tracked.".to_string())?;
 
     Ok(CloneRemoteRepositoryResult {
         path_id,
@@ -935,7 +990,9 @@ pub async fn clone_remote_repository(
 }
 
 #[tauri::command]
-pub fn parse_remote_repository_slug(repo_url: String) -> Result<ParsedRemoteRepositorySlug, String> {
+pub fn parse_remote_repository_slug(
+    repo_url: String,
+) -> Result<ParsedRemoteRepositorySlug, String> {
     let (owner, repo_name) = parse_owner_and_repo_from_url(&repo_url).ok_or_else(|| {
         "Unable to parse owner and repository name from URL. Use a GitHub or GitHub Enterprise HTTPS/SSH URL."
             .to_string()
@@ -1067,7 +1124,11 @@ fn sanitize_repository_name(name: &str) -> String {
         .to_string()
 }
 
-fn resolve_repository_target_path(parent_path: &Path, repo_name: &str, create_in_subfolder: bool) -> Result<std::path::PathBuf, String> {
+fn resolve_repository_target_path(
+    parent_path: &Path,
+    repo_name: &str,
+    create_in_subfolder: bool,
+) -> Result<std::path::PathBuf, String> {
     let cleaned_name = sanitize_repository_name(repo_name);
     if create_in_subfolder {
         let target_dir = parent_path.join(cleaned_name);
@@ -1077,20 +1138,37 @@ fn resolve_repository_target_path(parent_path: &Path, repo_name: &str, create_in
     }
 }
 
-fn initialize_repository_structure(path: &Path, include_readme: bool, repo_name: &str, repo_description: &str, gitignore_template: &str, license_template: &str) -> Result<(), String> {
+fn initialize_repository_structure(
+    path: &Path,
+    include_readme: bool,
+    repo_name: &str,
+    repo_description: &str,
+    gitignore_template: &str,
+    license_template: &str,
+) -> Result<(), String> {
     if path.exists() && path.is_file() {
         return Err(format!("'{}' is a file, not a directory.", path.display()));
     }
 
     if !path.exists() {
-        fs::create_dir_all(path)
-            .map_err(|error| format!("Failed to create repository directory '{}': {}", path.display(), error))?;
+        fs::create_dir_all(path).map_err(|error| {
+            format!(
+                "Failed to create repository directory '{}': {}",
+                path.display(),
+                error
+            )
+        })?;
     }
 
     let is_existing_repo = Repository::open(path).is_ok();
     if !is_existing_repo {
-        Repository::init(path)
-            .map_err(|error| format!("Failed to initialize Git repository at '{}': {}", path.display(), error))?;
+        Repository::init(path).map_err(|error| {
+            format!(
+                "Failed to initialize Git repository at '{}': {}",
+                path.display(),
+                error
+            )
+        })?;
     }
 
     if include_readme {
@@ -1107,8 +1185,13 @@ fn initialize_repository_structure(path: &Path, include_readme: bool, repo_name:
                 format!("\n\n{}", repo_description.trim())
             };
             let content = format!("# {}{}\n", repo_label, description_text);
-            fs::write(&readme_path, content)
-                .map_err(|error| format!("Failed to write README at '{}': {}", readme_path.display(), error))?;
+            fs::write(&readme_path, content).map_err(|error| {
+                format!(
+                    "Failed to write README at '{}': {}",
+                    readme_path.display(),
+                    error
+                )
+            })?;
         }
     }
 
@@ -1119,15 +1202,26 @@ fn initialize_repository_structure(path: &Path, include_readme: bool, repo_name:
             "rust" => "target/\nCargo.lock\n",
             _ => "*.log\n",
         };
-        fs::write(&gitignore_path, default_gitignore)
-            .map_err(|error| format!("Failed to write .gitignore at '{}': {}", gitignore_path.display(), error))?;
+        fs::write(&gitignore_path, default_gitignore).map_err(|error| {
+            format!(
+                "Failed to write .gitignore at '{}': {}",
+                gitignore_path.display(),
+                error
+            )
+        })?;
     }
 
     let gitattributes_path = path.join(".gitattributes");
     if !gitattributes_path.exists() {
-        let default_gitattributes = "# Auto detect text files and perform LF normalization\n* text=auto\n";
-        fs::write(&gitattributes_path, default_gitattributes)
-            .map_err(|error| format!("Failed to write .gitattributes at '{}': {}", gitattributes_path.display(), error))?;
+        let default_gitattributes =
+            "# Auto detect text files and perform LF normalization\n* text=auto\n";
+        fs::write(&gitattributes_path, default_gitattributes).map_err(|error| {
+            format!(
+                "Failed to write .gitattributes at '{}': {}",
+                gitattributes_path.display(),
+                error
+            )
+        })?;
     }
 
     let license_path = path.join("LICENSE");
@@ -1137,8 +1231,13 @@ fn initialize_repository_structure(path: &Path, include_readme: bool, repo_name:
             "apache" => "Apache License 2.0\n\nCopyright (c) 2026\n",
             _ => "Copyright (c) 2026\n",
         };
-        fs::write(&license_path, default_license)
-            .map_err(|error| format!("Failed to write LICENSE at '{}': {}", license_path.display(), error))?;
+        fs::write(&license_path, default_license).map_err(|error| {
+            format!(
+                "Failed to write LICENSE at '{}': {}",
+                license_path.display(),
+                error
+            )
+        })?;
     }
 
     Ok(())
@@ -1167,7 +1266,8 @@ pub async fn initialize_new_repository(
         trimmed_name.to_string()
     };
 
-    let target_path = resolve_repository_target_path(parent_path, &display_name, create_in_subfolder)?;
+    let target_path =
+        resolve_repository_target_path(parent_path, &display_name, create_in_subfolder)?;
 
     initialize_repository_structure(
         &target_path,
@@ -1179,8 +1279,12 @@ pub async fn initialize_new_repository(
     )?;
 
     let remote_url = {
-        let repo = Repository::open(&target_path)
-            .map_err(|error| format!("The repository path was not created successfully: {}", error))?;
+        let repo = Repository::open(&target_path).map_err(|error| {
+            format!(
+                "The repository path was not created successfully: {}",
+                error
+            )
+        })?;
         let mut remote_url: Option<String> = None;
 
         if let Ok(remote) = repo.find_remote("origin") {
@@ -1196,8 +1300,13 @@ pub async fn initialize_new_repository(
     let mut github_owner_login: Option<String> = None;
 
     if remote_url.is_some() {
-        let (derived_origin_type, derived_owner_login) =
-            resolve_repository_origin_metadata(state.inner().pool(), remote_url.as_deref(), None, false).await;
+        let (derived_origin_type, derived_owner_login) = resolve_repository_origin_metadata(
+            state.inner().pool(),
+            remote_url.as_deref(),
+            None,
+            false,
+        )
+        .await;
         repo_origin_type = derived_origin_type;
         github_owner_login = derived_owner_login;
     }
@@ -1216,7 +1325,10 @@ pub async fn initialize_new_repository(
     .await
     .map_err(|error| format!("Database indexing loop failure: {}", error))?;
 
-    println!("Repository '{}' initialized and committed to SQLite catalog cache successfully.", display_name);
+    println!(
+        "Repository '{}' initialized and committed to SQLite catalog cache successfully.",
+        display_name
+    );
     Ok(())
 }
 
@@ -1237,7 +1349,10 @@ pub struct RepositoryTrackResult {
 }
 
 #[tauri::command]
-pub fn crawl_repositories_command(root_path: String, max_depth: u32) -> Result<Vec<DiscoveredRepo>, String> {
+pub fn crawl_repositories_command(
+    root_path: String,
+    max_depth: u32,
+) -> Result<Vec<DiscoveredRepo>, String> {
     let root = Path::new(&root_path);
     if !root.exists() || !root.is_dir() {
         return Err("The selected folder does not exist or is not a directory.".to_string());
@@ -1301,8 +1416,12 @@ async fn track_repository_path(
     let path = Path::new(absolute_path);
 
     let remote_url = {
-        let repo = Repository::open(path)
-            .map_err(|e| format!("The selected folder is not a valid Git repository workspace context: {}", e))?;
+        let repo = Repository::open(path).map_err(|e| {
+            format!(
+                "The selected folder is not a valid Git repository workspace context: {}",
+                e
+            )
+        })?;
         let mut remote_url: Option<String> = None;
 
         if let Ok(remote) = repo.find_remote("origin") {
@@ -1347,7 +1466,10 @@ async fn track_repository_path(
     .await
     .map_err(|err| format!("Database indexing loop failure: {}", err))?;
 
-    if existing_path_state.as_ref().is_some_and(|(_, is_active)| *is_active == 1) {
+    if existing_path_state
+        .as_ref()
+        .is_some_and(|(_, is_active)| *is_active == 1)
+    {
         return Ok(RepositoryTrackResult {
             outcome: "already_tracked".to_string(),
             message: format!(
@@ -1357,7 +1479,10 @@ async fn track_repository_path(
         });
     }
 
-    println!("Repository '{}' committed to SQLite catalog cache successfully.", display_name);
+    println!(
+        "Repository '{}' committed to SQLite catalog cache successfully.",
+        display_name
+    );
     Ok(RepositoryTrackResult {
         outcome: "added".to_string(),
         message: format!("Added '{}' to your workspace catalog.", display_name),
@@ -1367,7 +1492,7 @@ async fn track_repository_path(
 #[tauri::command]
 pub async fn add_new_tracked_path(
     state: tauri::State<'_, DbState>,
-    absolute_path: String
+    absolute_path: String,
 ) -> Result<RepositoryTrackResult, String> {
     track_repository_path(state.inner().pool(), &absolute_path, None).await
 }
@@ -1375,14 +1500,19 @@ pub async fn add_new_tracked_path(
 #[tauri::command]
 pub async fn relink_repository_path(
     state: tauri::State<'_, DbState>,
+    manager: tauri::State<'_, WatcherManager>,
     path_id: String,
     absolute_path: String,
 ) -> Result<RepositoryTrackResult, String> {
     let pool = state.inner().pool();
     let path = std::path::Path::new(&absolute_path);
 
-    let repo = Repository::open(path)
-        .map_err(|e| format!("The selected folder is not a valid Git repository workspace context: {}", e))?;
+    let repo = Repository::open(path).map_err(|e| {
+        format!(
+            "The selected folder is not a valid Git repository workspace context: {}",
+            e
+        )
+    })?;
 
     let remote_url = {
         let mut remote_url: Option<String> = None;
@@ -1410,7 +1540,8 @@ pub async fn relink_repository_path(
         github_owner_login = derived_owner_login;
     }
 
-    let conflicting_path_id = db::fetch_tracked_path_id_by_absolute_path(pool, &absolute_path).await
+    let conflicting_path_id = db::fetch_tracked_path_id_by_absolute_path(pool, &absolute_path)
+        .await
         .map_err(|err| format!("Database lookup failure: {}", err))?;
 
     if conflicting_path_id.is_some() && conflicting_path_id.as_deref() != Some(path_id.as_str()) {
@@ -1431,21 +1562,35 @@ pub async fn relink_repository_path(
     .await
     .map_err(|err| format!("Database indexing loop failure: {}", err))?;
 
+    manager.stop_monitored(&path_id).await?;
+    manager
+        .ensure_monitored(
+            path_id.clone(),
+            absolute_path.clone(),
+            RefreshPriority::Foreground,
+        )
+        .await?;
+
     Ok(RepositoryTrackResult {
         outcome: "updated".to_string(),
-        message: format!("Reattached '{}' to its new workspace location.", display_name),
+        message: format!(
+            "Reattached '{}' to its new workspace location.",
+            display_name
+        ),
     })
 }
 
 #[tauri::command]
 pub async fn untrack_repository(
     state: tauri::State<'_, DbState>,
+    manager: tauri::State<'_, WatcherManager>,
     path_id: String,
 ) -> Result<(), String> {
+    manager.stop_monitored(&path_id).await?;
     crate::db::untrack_repository_path(state.inner().pool(), &path_id)
         .await
         .map_err(|err| format!("Failed to untrack target repository row: {}", err))?;
-        
+
     println!("Successfully hidden/untracked repo reference: {}", path_id);
     Ok(())
 }
@@ -1463,6 +1608,7 @@ pub async fn get_tracked_workspaces(
             tracked_paths.repo_origin_type,
             tracked_paths.github_owner_login,
             tracked_paths.is_favorite,
+            tracked_paths.is_pinned,
             tracked_paths.group_id,
             custom_groups.group_name AS custom_group,
             tracked_paths.last_accessed_at,
@@ -1496,7 +1642,7 @@ pub async fn get_tracked_workspaces(
             LEFT JOIN cached_git_branches
                 ON cached_git_branches.path_id = tracked_paths.id
                 AND cached_git_branches.is_head = 1
-         WHERE tracked_paths.is_active = 1"
+         WHERE tracked_paths.is_active = 1",
     )
     .fetch_all(state.inner().pool())
     .await
@@ -1512,6 +1658,7 @@ pub async fn get_tracked_workspaces(
         let repo_origin_type: String = row.get("repo_origin_type");
         let github_owner_login: Option<String> = row.get("github_owner_login");
         let is_favorite: i64 = row.get("is_favorite");
+        let is_pinned: i64 = row.get("is_pinned");
         let group_id: Option<String> = row.get("group_id");
         let custom_group: Option<String> = row.get("custom_group");
         let last_accessed_at: Option<String> = row.get("last_accessed_at");
@@ -1565,6 +1712,7 @@ pub async fn get_tracked_workspaces(
             available_branches,
             uncommitted_changes_count,
             is_favorite,
+            is_pinned,
             group_id,
             custom_group,
             last_accessed_at,
@@ -1611,6 +1759,19 @@ pub async fn set_repository_favorite(
     db::update_repository_favorite(state.inner().pool(), &path_id, is_favorite)
         .await
         .map_err(|err| format!("Failed to persist favorite state: {}", err))?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn set_repository_pinned(
+    state: tauri::State<'_, DbState>,
+    path_id: String,
+    is_pinned: bool,
+) -> Result<(), String> {
+    db::update_repository_pinned(state.inner().pool(), &path_id, is_pinned)
+        .await
+        .map_err(|err| format!("Failed to persist pinned state: {}", err))?;
 
     Ok(())
 }
@@ -1669,7 +1830,10 @@ pub async fn create_custom_group(
         .await
         .map_err(|err| format!("Failed to validate tag name: {}", err))?;
     if tag_conflict {
-        return Err("A tag with this name already exists. Tags and groups must have unique names.".to_string());
+        return Err(
+            "A tag with this name already exists. Tags and groups must have unique names."
+                .to_string(),
+        );
     }
 
     let group_conflict = db::group_name_exists(state.inner().pool(), &trimmed_name, None)
@@ -1700,7 +1864,10 @@ pub async fn update_custom_group(
         .await
         .map_err(|err| format!("Failed to validate tag name: {}", err))?;
     if tag_conflict {
-        return Err("A tag with this name already exists. Tags and groups must have unique names.".to_string());
+        return Err(
+            "A tag with this name already exists. Tags and groups must have unique names."
+                .to_string(),
+        );
     }
 
     let group_conflict = db::group_name_exists(state.inner().pool(), &trimmed_name, Some(&id))
@@ -1756,7 +1923,10 @@ pub async fn create_global_tag(
         .await
         .map_err(|err| format!("Failed to validate group name: {}", err))?;
     if group_conflict {
-        return Err("A group with this name already exists. Tags and groups must have unique names.".to_string());
+        return Err(
+            "A group with this name already exists. Tags and groups must have unique names."
+                .to_string(),
+        );
     }
 
     db::create_global_tag(state.inner().pool(), &trimmed_name, color_hex.as_deref())
@@ -1796,7 +1966,10 @@ pub async fn update_global_tag(
         .await
         .map_err(|err| format!("Failed to validate group name: {}", err))?;
     if group_conflict {
-        return Err("A group with this name already exists. Tags and groups must have unique names.".to_string());
+        return Err(
+            "A group with this name already exists. Tags and groups must have unique names."
+                .to_string(),
+        );
     }
 
     db::update_global_tag(state.inner().pool(), &id, &trimmed_name, &color_hex)
@@ -1805,19 +1978,14 @@ pub async fn update_global_tag(
 }
 
 #[tauri::command]
-pub async fn delete_global_tag(
-    state: tauri::State<'_, DbState>,
-    id: String,
-) -> Result<(), String> {
+pub async fn delete_global_tag(state: tauri::State<'_, DbState>, id: String) -> Result<(), String> {
     db::delete_global_tag(state.inner().pool(), &id)
         .await
         .map_err(|err| format!("Failed to delete global tag: {}", err))
 }
 
 #[tauri::command]
-pub async fn cleanup_dangling_global_tags(
-    state: tauri::State<'_, DbState>,
-) -> Result<i64, String> {
+pub async fn cleanup_dangling_global_tags(state: tauri::State<'_, DbState>) -> Result<i64, String> {
     db::cleanup_dangling_global_tags(state.inner().pool())
         .await
         .map_err(|err| format!("Failed to clean dangling tags: {}", err))
@@ -1830,9 +1998,14 @@ pub async fn add_repository_tag(
     tag_name: String,
     color_hex: Option<String>,
 ) -> Result<Vec<db::RepoTagRow>, String> {
-    db::attach_repository_tag(state.inner().pool(), &path_id, &tag_name, color_hex.as_deref())
-        .await
-        .map_err(|err| format!("Failed to attach repository tag: {}", err))?;
+    db::attach_repository_tag(
+        state.inner().pool(),
+        &path_id,
+        &tag_name,
+        color_hex.as_deref(),
+    )
+    .await
+    .map_err(|err| format!("Failed to attach repository tag: {}", err))?;
 
     db::fetch_repository_tags(state.inner().pool(), &path_id)
         .await
@@ -1871,7 +2044,12 @@ pub async fn touch_repository_last_accessed(
 ) -> Result<(), String> {
     db::touch_repository_last_accessed(state.inner().pool(), &path_id)
         .await
-        .map_err(|err| format!("Failed to update repository last accessed timestamp: {}", err))?;
+        .map_err(|err| {
+            format!(
+                "Failed to update repository last accessed timestamp: {}",
+                err
+            )
+        })?;
 
     Ok(())
 }
@@ -1907,15 +2085,18 @@ pub fn determine_branch_topology(
     let repo = Repository::open(absolute_path)
         .map_err(|e| format!("Failed to open Git repository: {}", e))?;
 
-    let ref_a = repo.revparse_single(&format!("refs/heads/{}", normalized_branch_a))
+    let ref_a = repo
+        .revparse_single(&format!("refs/heads/{}", normalized_branch_a))
         .map_err(|e| format!("Branch '{}' not found: {}", normalized_branch_a, e))?;
-    let ref_b = repo.revparse_single(&format!("refs/heads/{}", normalized_branch_b))
+    let ref_b = repo
+        .revparse_single(&format!("refs/heads/{}", normalized_branch_b))
         .map_err(|e| format!("Branch '{}' not found: {}", normalized_branch_b, e))?;
 
     let oid_a = ref_a.id();
     let oid_b = ref_b.id();
 
-    let merge_base_oid = repo.merge_base(oid_a, oid_b)
+    let merge_base_oid = repo
+        .merge_base(oid_a, oid_b)
         .map_err(|e| format!("No common ancestor found between branches: {}", e))?;
 
     let mut revwalk = repo.revwalk().map_err(|e| e.to_string())?;
@@ -2010,7 +2191,9 @@ fn compute_divergence_from_default(
 /// Opens the repository and computes branch/sync status for ONLY the currently
 /// checked-out (HEAD) branch -- this matches exactly what RepositoryCard displays
 /// and keeps the operation cheap even for repositories with many local branches.
-pub(crate) fn analyze_repository_git_status(absolute_path: &str) -> Result<RepoGitStatusSnapshot, String> {
+pub(crate) fn analyze_repository_git_status(
+    absolute_path: &str,
+) -> Result<RepoGitStatusSnapshot, String> {
     let repo = Repository::open(absolute_path)
         .map_err(|e| format!("Failed to open Git repository: {}", e))?;
 
@@ -2087,20 +2270,29 @@ pub(crate) fn analyze_repository_git_status(absolute_path: &str) -> Result<RepoG
 fn build_change_status_label(status: git2::Status) -> String {
     if status.contains(git2::Status::CONFLICTED) {
         "conflicted".to_string()
-    } else if status.contains(git2::Status::WT_RENAMED) || status.contains(git2::Status::INDEX_RENAMED) {
+    } else if status.contains(git2::Status::WT_RENAMED)
+        || status.contains(git2::Status::INDEX_RENAMED)
+    {
         "renamed".to_string()
     } else if status.contains(git2::Status::WT_NEW) || status.contains(git2::Status::INDEX_NEW) {
         "added".to_string()
-    } else if status.contains(git2::Status::WT_DELETED) || status.contains(git2::Status::INDEX_DELETED) {
+    } else if status.contains(git2::Status::WT_DELETED)
+        || status.contains(git2::Status::INDEX_DELETED)
+    {
         "deleted".to_string()
-    } else if status.contains(git2::Status::WT_MODIFIED) || status.contains(git2::Status::INDEX_MODIFIED) {
+    } else if status.contains(git2::Status::WT_MODIFIED)
+        || status.contains(git2::Status::INDEX_MODIFIED)
+    {
         "modified".to_string()
     } else {
         "modified".to_string()
     }
 }
 
-fn describe_change_entry(repo: &Repository, entry: &git2::StatusEntry<'_>) -> Result<RepositoryChangeItem, String> {
+fn describe_change_entry(
+    repo: &Repository,
+    entry: &git2::StatusEntry<'_>,
+) -> Result<RepositoryChangeItem, String> {
     let path = entry.path().unwrap_or_default().to_string();
     let status = entry.status();
     let staged = status.contains(git2::Status::INDEX_NEW)
@@ -2134,15 +2326,25 @@ const MAX_FILE_DIFF_BYTES: usize = 512 * 1024;
 
 fn repository_relative_path(repo: &Repository, relative_path: &str) -> Result<PathBuf, String> {
     let path = Path::new(relative_path);
-    if path.as_os_str().is_empty() || path.is_absolute() || path.components().any(|component| matches!(component, Component::ParentDir)) {
+    if path.as_os_str().is_empty()
+        || path.is_absolute()
+        || path
+            .components()
+            .any(|component| matches!(component, Component::ParentDir))
+    {
         return Err("The selected path must be a repository-relative file path.".to_string());
     }
 
-    let workdir = repo.workdir().ok_or_else(|| "Bare repositories do not have a working tree to preview.".to_string())?;
+    let workdir = repo
+        .workdir()
+        .ok_or_else(|| "Bare repositories do not have a working tree to preview.".to_string())?;
     Ok(workdir.join(path))
 }
 
-fn bounded_text_file_patch(repo: &Repository, relative_path: &str) -> Result<RepositoryFileDiff, String> {
+fn bounded_text_file_patch(
+    repo: &Repository,
+    relative_path: &str,
+) -> Result<RepositoryFileDiff, String> {
     let file_path = repository_relative_path(repo, relative_path)?;
     let metadata = fs::metadata(&file_path)
         .map_err(|error| format!("Failed to inspect '{}': {error}", relative_path))?;
@@ -2171,8 +2373,12 @@ fn bounded_text_file_patch(repo: &Repository, relative_path: &str) -> Result<Rep
         });
     }
 
-    let text = String::from_utf8(contents)
-        .map_err(|_| format!("'{}' is not valid UTF-8 text and cannot be previewed.", relative_path))?;
+    let text = String::from_utf8(contents).map_err(|_| {
+        format!(
+            "'{}' is not valid UTF-8 text and cannot be previewed.",
+            relative_path
+        )
+    })?;
     let mut patch = format!("--- /dev/null\n+++ b/{relative_path}\n");
     for line in text.lines() {
         patch.push('+');
@@ -2222,7 +2428,8 @@ pub async fn get_repository_file_diff(
     let repo = Repository::open(&absolute_path)
         .map_err(|error| format!("Failed to open Git repository: {error}"))?;
     repository_relative_path(&repo, &path)?;
-    let status = repo.status_file(Path::new(&path))
+    let status = repo
+        .status_file(Path::new(&path))
         .map_err(|error| format!("Failed to inspect '{}': {error}", path))?;
 
     if status.contains(git2::Status::WT_NEW) && !staged {
@@ -2233,7 +2440,9 @@ pub async fn get_repository_file_diff(
     options.pathspec(&path);
     let diff = if staged {
         let head_tree = repo.head().ok().and_then(|head| head.peel_to_tree().ok());
-        let index = repo.index().map_err(|error| format!("Failed to inspect Git index: {error}"))?;
+        let index = repo
+            .index()
+            .map_err(|error| format!("Failed to inspect Git index: {error}"))?;
         repo.diff_tree_to_index(head_tree.as_ref(), Some(&index), Some(&mut options))
     } else {
         repo.diff_index_to_workdir(None, Some(&mut options))
@@ -2247,12 +2456,17 @@ pub async fn get_repository_file_diff(
             patch: None,
             is_binary: false,
             is_truncated: false,
-            unavailable_reason: Some("No text diff is available for the selected file.".to_string()),
+            unavailable_reason: Some(
+                "No text diff is available for the selected file.".to_string(),
+            ),
         });
     }
 
     let delta = diff.deltas().next().expect("checked that diff has a delta");
-    let old_path = delta.old_file().path().map(|value| value.to_string_lossy().into_owned());
+    let old_path = delta
+        .old_file()
+        .path()
+        .map(|value| value.to_string_lossy().into_owned());
     let is_binary = delta.flags().contains(git2::DiffFlags::BINARY);
     if is_binary {
         return Ok(RepositoryFileDiff {
@@ -2272,23 +2486,34 @@ pub async fn get_repository_file_diff(
         patch: Some(patch),
         is_binary: false,
         is_truncated,
-        unavailable_reason: is_truncated.then(|| "The preview was truncated to keep the application responsive.".to_string()),
+        unavailable_reason: is_truncated
+            .then(|| "The preview was truncated to keep the application responsive.".to_string()),
     })
 }
 
 fn stage_path(repo: &Repository, relative_path: &str) -> Result<(), String> {
-    let mut index = repo.index().map_err(|error| format!("Failed to open Git index: {error}"))?;
-    index.add_path(Path::new(relative_path))
+    let mut index = repo
+        .index()
+        .map_err(|error| format!("Failed to open Git index: {error}"))?;
+    index
+        .add_path(Path::new(relative_path))
         .map_err(|error| format!("Failed to stage '{}' in Git: {error}", relative_path))?;
-    index.write().map_err(|error| format!("Failed to write Git index: {error}"))?;
+    index
+        .write()
+        .map_err(|error| format!("Failed to write Git index: {error}"))?;
     Ok(())
 }
 
 fn unstage_path(repo: &Repository, relative_path: &str) -> Result<(), String> {
-    let mut index = repo.index().map_err(|error| format!("Failed to open Git index: {error}"))?;
-    index.remove_path(Path::new(relative_path))
+    let mut index = repo
+        .index()
+        .map_err(|error| format!("Failed to open Git index: {error}"))?;
+    index
+        .remove_path(Path::new(relative_path))
         .map_err(|error| format!("Failed to unstage '{}' in Git: {error}", relative_path))?;
-    index.write().map_err(|error| format!("Failed to write Git index: {error}"))?;
+    index
+        .write()
+        .map_err(|error| format!("Failed to write Git index: {error}"))?;
     Ok(())
 }
 
@@ -2333,7 +2558,10 @@ pub async fn stage_repository_paths(
     let repo = Repository::open(&absolute_path)
         .map_err(|error| format!("Failed to open Git repository: {error}"))?;
 
-    let normalized_paths = paths.into_iter().filter(|path| !path.trim().is_empty()).collect::<Vec<_>>();
+    let normalized_paths = paths
+        .into_iter()
+        .filter(|path| !path.trim().is_empty())
+        .collect::<Vec<_>>();
     if normalized_paths.is_empty() {
         return Err("No paths were provided to stage.".to_string());
     }
@@ -2353,7 +2581,10 @@ pub async fn unstage_repository_paths(
     let repo = Repository::open(&absolute_path)
         .map_err(|error| format!("Failed to open Git repository: {error}"))?;
 
-    let normalized_paths = paths.into_iter().filter(|path| !path.trim().is_empty()).collect::<Vec<_>>();
+    let normalized_paths = paths
+        .into_iter()
+        .filter(|path| !path.trim().is_empty())
+        .collect::<Vec<_>>();
     if normalized_paths.is_empty() {
         return Err("No paths were provided to unstage.".to_string());
     }
@@ -2379,9 +2610,15 @@ pub async fn create_commit(
     {
         let repo = Repository::open(&absolute_path)
             .map_err(|error| format!("Failed to open Git repository: {error}"))?;
-        let mut index = repo.index().map_err(|error| format!("Failed to inspect Git index: {error}"))?;
-        let tree_oid = index.write_tree().map_err(|error| format!("Failed to build commit tree: {error}"))?;
-        let tree = repo.find_tree(tree_oid).map_err(|error| format!("Failed to resolve commit tree: {error}"))?;
+        let mut index = repo
+            .index()
+            .map_err(|error| format!("Failed to inspect Git index: {error}"))?;
+        let tree_oid = index
+            .write_tree()
+            .map_err(|error| format!("Failed to build commit tree: {error}"))?;
+        let tree = repo
+            .find_tree(tree_oid)
+            .map_err(|error| format!("Failed to resolve commit tree: {error}"))?;
         let signature = repo.signature().map_err(|_| "Git identity is not configured. Set user.name and user.email before creating commits.".to_string())?;
 
         let parent_refs = match repo.head() {
@@ -2391,14 +2628,25 @@ pub async fn create_commit(
             },
             Err(_) => Vec::new(),
         };
-        let message = match body.as_deref().map(str::trim).filter(|value| !value.is_empty()) {
+        let message = match body
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        {
             Some(body_text) => format!("{trimmed_title}\n\n{body_text}"),
             None => trimmed_title.to_string(),
         };
 
         let parent_slice: Vec<&git2::Commit<'_>> = parent_refs.iter().collect();
-        repo.commit(Some("HEAD"), &signature, &signature, &message, &tree, parent_slice.as_slice())
-            .map_err(|error| format!("Failed to create commit: {error}"))?;
+        repo.commit(
+            Some("HEAD"),
+            &signature,
+            &signature,
+            &message,
+            &tree,
+            parent_slice.as_slice(),
+        )
+        .map_err(|error| format!("Failed to create commit: {error}"))?;
     }
 
     get_repository_changes(absolute_path).await
@@ -2466,7 +2714,10 @@ where
     action(callbacks).map_err(|e| format!("Git network operation failed: {}", e))
 }
 
-async fn resolve_profile_for_repo(state: &sqlx::SqlitePool, path_id: &str) -> Result<Option<auth::AuthProfileRow>, String> {
+async fn resolve_profile_for_repo(
+    state: &sqlx::SqlitePool,
+    path_id: &str,
+) -> Result<Option<auth::AuthProfileRow>, String> {
     auth::resolve_profile_for_repository(state, path_id).await
 }
 
@@ -2769,8 +3020,10 @@ mod tests {
             pool
         });
 
-        let first_result = tauri::async_runtime::block_on(track_repository_path(&pool, path_str, None)).unwrap();
-        let second_result = tauri::async_runtime::block_on(track_repository_path(&pool, path_str, None)).unwrap();
+        let first_result =
+            tauri::async_runtime::block_on(track_repository_path(&pool, path_str, None)).unwrap();
+        let second_result =
+            tauri::async_runtime::block_on(track_repository_path(&pool, path_str, None)).unwrap();
 
         assert_eq!(first_result.outcome, "added");
         assert_eq!(second_result.outcome, "already_tracked");
@@ -2813,7 +3066,8 @@ mod tests {
             pool
         });
 
-        let first_result = tauri::async_runtime::block_on(track_repository_path(&pool, path_str, None)).unwrap();
+        let first_result =
+            tauri::async_runtime::block_on(track_repository_path(&pool, path_str, None)).unwrap();
         tauri::async_runtime::block_on(async {
             sqlx::query("UPDATE tracked_paths SET is_active = 0 WHERE absolute_path = ?")
                 .bind(path_str)
@@ -2821,7 +3075,8 @@ mod tests {
                 .await
                 .unwrap();
         });
-        let second_result = tauri::async_runtime::block_on(track_repository_path(&pool, path_str, None)).unwrap();
+        let second_result =
+            tauri::async_runtime::block_on(track_repository_path(&pool, path_str, None)).unwrap();
 
         assert_eq!(first_result.outcome, "added");
         assert_eq!(second_result.outcome, "added");
@@ -2943,8 +3198,14 @@ mod tests {
         ))
         .unwrap();
 
-        assert!(changed_diff.patch.as_deref().is_some_and(|patch| patch.contains("+updated")));
-        assert!(untracked_diff.patch.as_deref().is_some_and(|patch| patch.contains("+new file")));
+        assert!(changed_diff
+            .patch
+            .as_deref()
+            .is_some_and(|patch| patch.contains("+updated")));
+        assert!(untracked_diff
+            .patch
+            .as_deref()
+            .is_some_and(|patch| patch.contains("+new file")));
         assert!(!changed_diff.is_binary);
         assert!(!untracked_diff.is_binary);
 
@@ -3057,9 +3318,14 @@ mod tests {
             .flatten()
             .filter_map(|(branch, _)| branch.name().ok().flatten().map(|name| name.to_string()))
             .collect();
-        let secondary_branch = branch_names.iter().find(|name| *name != "feature").unwrap().clone();
+        let secondary_branch = branch_names
+            .iter()
+            .find(|name| *name != "feature")
+            .unwrap()
+            .clone();
 
-        let result = determine_branch_topology(repo_path.to_str().unwrap(), &secondary_branch, "feature");
+        let result =
+            determine_branch_topology(repo_path.to_str().unwrap(), &secondary_branch, "feature");
         assert!(result.is_ok());
 
         let topology = result.unwrap();
@@ -3082,7 +3348,9 @@ mod tests {
         // git init.defaultBranch config; force it onto "main" so the test is
         // deterministic, then add a "master" branch pointing at the same commit.
         let mut head_ref = repo.head().unwrap();
-        head_ref.rename("refs/heads/main", true, "test setup").unwrap();
+        head_ref
+            .rename("refs/heads/main", true, "test setup")
+            .unwrap();
 
         let head_commit = repo.head().unwrap().peel_to_commit().unwrap();
         if repo.find_branch("master", BranchType::Local).is_err() {
@@ -3107,7 +3375,9 @@ mod tests {
         // either "main" or "master" depending on the local git config; rename it to
         // "master" explicitly so this test is deterministic regardless of environment.
         let mut head_ref = repo.head().unwrap();
-        head_ref.rename("refs/heads/master", true, "test setup").unwrap();
+        head_ref
+            .rename("refs/heads/master", true, "test setup")
+            .unwrap();
 
         let local_branches = vec!["master".to_string()];
         let resolved = resolve_default_branch_name(&repo, &local_branches);

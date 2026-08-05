@@ -10,6 +10,7 @@ interface RepositoryChangesListPanelProps {
   error: string | null;
   snapshot: RepositoryChangesSnapshot | null;
   statusMessage: string | null;
+  lastVerifiedAt: string | null;
   groupedChanges: GroupedChanges;
   expandedGroups: Record<ChangeGroupKey, boolean>;
   selectedEntry: RepositoryChangeItem | null;
@@ -27,6 +28,7 @@ export function RepositoryChangesListPanel({
   error,
   snapshot,
   statusMessage,
+  lastVerifiedAt,
   groupedChanges,
   expandedGroups,
   selectedEntry,
@@ -69,6 +71,9 @@ export function RepositoryChangesListPanel({
                 <span>{statusMessage}</span>
               </div>
             ) : null}
+            <div className="repository-view-status-meta">
+              {lastVerifiedAt ? `Verified ${new Date(lastVerifiedAt).toLocaleTimeString()}` : 'Waiting for verification'}
+            </div>
 
             <div className="repository-view-changes-groups" role="list">
               {CHANGE_GROUPS.map((group) => (

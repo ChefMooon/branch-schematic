@@ -11,6 +11,7 @@ import {
   WarningCircle,
   UsersThree,
   Star,
+  PushPin,
 } from "@phosphor-icons/react";
 import { repositoryIconRegistry } from "../../icon/utils/iconRegistry";
 import type { TrackedPath } from "../../../types/git";
@@ -44,6 +45,7 @@ export function RepositoryCard({ repo, onRefresh, onOpenManagement, onOpenManage
   const originType = resolvedOriginType ?? computedOriginType;
   const originBadgeState = useRepoOriginBadgeState(repo, originType);
   const setRepositoryFavorite = useWorkspaceStore((state) => state.setRepositoryFavorite);
+  const setRepositoryPinned = useWorkspaceStore((state) => state.setRepositoryPinned);
   const setRepositoryGroup = useWorkspaceStore((state) => state.setRepositoryGroup);
   const updateRepositoryTheme = useWorkspaceStore((state) => state.updateRepositoryTheme);
   const refreshRepositoryGitStatus = useWorkspaceStore((state) => state.refreshRepositoryGitStatus);
@@ -214,6 +216,10 @@ export function RepositoryCard({ repo, onRefresh, onOpenManagement, onOpenManage
     await setRepositoryFavorite(repo.id, (repo.is_favorite ?? 0) !== 1);
   };
 
+  const handlePinnedToggle = async () => {
+    await setRepositoryPinned(repo.id, (repo.is_pinned ?? 0) !== 1);
+  };
+
   const handleGroupChange = async (groupId: string | null) => {
     await setRepositoryGroup(repo.id, groupId);
   };
@@ -364,7 +370,7 @@ export function RepositoryCard({ repo, onRefresh, onOpenManagement, onOpenManage
 
   return (
     <div
-      className={`repo-card origin-${originType.toLowerCase()} ${(repo.is_favorite ?? 0) === 1 ? 'is-favorited' : ''} ${isSelected ? 'is-selected' : ''} ${isMissing ? 'is-missing' : ''}`}
+      className={`repo-card origin-${originType.toLowerCase()} ${(repo.is_favorite ?? 0) === 1 ? 'is-favorited' : ''} ${(repo.is_pinned ?? 0) === 1 ? 'is-pinned' : ''} ${isSelected ? 'is-selected' : ''} ${isMissing ? 'is-missing' : ''}`}
       style={{ borderColor: `${resolvedThemeColor}55` }}
       onDoubleClick={handleCardDoubleClick}
     >
@@ -381,6 +387,11 @@ export function RepositoryCard({ repo, onRefresh, onOpenManagement, onOpenManage
           {isFavorite && (
             <span className="repo-icon-favorite-badge" aria-hidden="true">
               <Star size={10} weight="fill" />
+            </span>
+          )}
+          {(repo.is_pinned ?? 0) === 1 && (
+            <span className="repo-icon-pinned-badge" aria-label="Pinned repository">
+              <PushPin size={10} weight="fill" />
             </span>
           )}
         </div>
@@ -413,6 +424,9 @@ export function RepositoryCard({ repo, onRefresh, onOpenManagement, onOpenManage
           onToggleFavorite={() => {
             void handleFavoriteToggle();
           }}
+          onTogglePinned={() => {
+            void handlePinnedToggle();
+          }}
           onValidate={() => {
             void handleValidateRepository();
           }}
@@ -422,6 +436,12 @@ export function RepositoryCard({ repo, onRefresh, onOpenManagement, onOpenManage
           originBadgeTitle={originBadgeState.title}
         />
       </div>
+
+      {repo.health_state && repo.health_state !== 'healthy' && repo.health_state !== 'unverified' ? (
+        <div className={`repo-health-indicator repo-health-indicator--${repo.health_state}`} role="status">
+          {repo.health_state.replace(/_/g, ' ')}{repo.last_verification_error ? `: ${repo.last_verification_error}` : ''}
+        </div>
+      ) : null}
 
       {isMissing ? (
         <div className="repo-card-missing-state">

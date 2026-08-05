@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import type { RepositoryChangesSnapshot, TrackedPath } from '../../../types/git';
 import { groupChanges } from '../types/repositoryChanges';
@@ -17,6 +17,9 @@ export function useRepositoryChanges(repo: TrackedPath | null) {
   const [isBusy, setIsBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [lastVerifiedAt, setLastVerifiedAt] = useState<string | null>(null);
+  const requestGeneration = useRef(0);
+  const activeRequest = useRef<Promise<void> | null>(null);
 
   const applySnapshot = (nextSnapshot: RepositoryChangesSnapshot) => {
     setSnapshot(nextSnapshot);
@@ -30,27 +33,65 @@ export function useRepositoryChanges(repo: TrackedPath | null) {
 
   const loadChanges = async () => {
     if (!repo?.absolute_path) return;
+    if (activeRequest.current) return activeRequest.current;
+
+    const generation = requestGeneration.current;
 
     setIsLoading(true);
     setError(null);
-    try {
-      const nextSnapshot = await invoke<RepositoryChangesSnapshot>('get_repository_changes', {
-        absolutePath: repo.absolute_path,
-      });
-
-      applySnapshot(nextSnapshot);
-    } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : 'Unable to load repository changes.');
-    } finally {
-      setIsLoading(false);
-    }
+    const request = (async () => {
+      try {
+        const nextSnapshot = await invoke<RepositoryChangesSnapshot>('get_repository_changes', {
+          absolutePath: repo.absolute_path,
+        });
+        if (generation !== requestGeneration.current) return;
+        applySnapshot(nextSnapshot);
+        setLastVerifiedAt(new Date().toISOString());
+      } catch (loadError) {
+        if (generation === requestGeneration.current) {
+          setError(loadError instanceof Error ? loadError.message : 'Unable to load repository changes.');
+        }
+      } finally {
+        if (generation === requestGeneration.current) setIsLoading(false);
+        activeRequest.current = null;
+      }
+    })();
+    activeRequest.current = request;
+    return request;
   };
 
   useEffect(() => {
+    requestGeneration.current += 1;
+    activeRequest.current = null;
     setSelectedPath(null);
     setError(null);
     setStatusMessage(null);
-    void loadChanges();
+    setLastVerifiedAt(null);
+    if (!repo?.id) return;
+    let intervalId: ReturnType<typeof setInterval> | undefined;
+    let intervalBootstrapId: ReturnType<typeof setTimeout> | undefined;
+    let disposed = false;
+    void Promise.resolve(loadChanges()).finally(() => {
+      if (disposed) return;
+      intervalBootstrapId = setTimeout(() => {
+        void Promise.resolve(invoke<number>('get_detail_status_refresh_interval'))
+          .then((interval) => {
+            if (disposed) return;
+            const seconds = Math.min(5, Math.max(2, Number(interval) || 5));
+            intervalId = setInterval(() => void loadChanges(), seconds * 1000);
+          })
+          .catch(() => {
+            if (!disposed) intervalId = setInterval(() => void loadChanges(), 5000);
+          });
+      }, 100);
+    });
+
+    return () => {
+      disposed = true;
+      requestGeneration.current += 1;
+      if (intervalBootstrapId) clearTimeout(intervalBootstrapId);
+      if (intervalId) clearInterval(intervalId);
+    };
   }, [repo?.id, repo?.absolute_path]);
 
   const runAction = async (action: RepositoryChangesAction, paths?: string[], commitValues?: CommitValues) => {
@@ -111,6 +152,7 @@ export function useRepositoryChanges(repo: TrackedPath | null) {
     isBusy,
     error,
     statusMessage,
+    lastVerifiedAt,
     loadChanges,
     runAction,
   };
