@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import { createFileRoute } from '@tanstack/react-router';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, type CSSProperties } from 'react';
 import { Button } from '../components/button/Button';
 import { applyTheme, DEFAULT_THEME, loadThemePreference, saveThemePreference, type ThemePreference } from '../theme';
 import { openAppDatabase } from '../lib/db';
@@ -138,6 +138,8 @@ function RouteComponent() {
     });
   }
 
+  const detailStatusRefreshProgress = ((detailStatusRefreshInterval - 2) / 3) * 100;
+
   return (
     <div className="settings-shell">
       <header className="settings-header">
@@ -178,6 +180,7 @@ function RouteComponent() {
                 max="5"
                 step="1"
                 value={detailStatusRefreshInterval}
+                style={{ '--range-progress': `${detailStatusRefreshProgress}%` } as CSSProperties}
                 onChange={(event) => handleDetailIntervalChange(Number(event.target.value))}
                 aria-label="Detail status refresh interval"
               />

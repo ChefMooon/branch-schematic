@@ -267,6 +267,85 @@ button {
   background-color: color-mix(in srgb, var(--app-accent) 10%, var(--app-surface));
 }
 
+.settings-item-range {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+.settings-range-control {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) 2.25rem;
+  align-items: center;
+  gap: 10px;
+  min-width: 260px;
+}
+
+.settings-range-control input[type="range"] {
+  width: 100%;
+  height: 20px;
+  margin: 0;
+  box-sizing: border-box;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+.settings-range-control input[type="range"]::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 999px;
+  background: linear-gradient(
+    to right,
+    var(--app-accent) var(--range-progress),
+    var(--app-control-strong) var(--range-progress)
+  );
+}
+
+.settings-range-control input[type="range"]::-webkit-slider-thumb {
+  width: 16px;
+  height: 16px;
+  margin-top: -5px;
+  border: 2px solid var(--app-surface);
+  border-radius: 50%;
+  background: var(--app-accent);
+  box-shadow: 0 1px 4px color-mix(in srgb, var(--app-shadow) 45%, transparent);
+  appearance: none;
+}
+
+.settings-range-control input[type="range"]::-moz-range-track {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--app-control-strong);
+}
+
+.settings-range-control input[type="range"]::-moz-range-progress {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--app-accent);
+}
+
+.settings-range-control input[type="range"]::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--app-surface);
+  border-radius: 50%;
+  background: var(--app-accent);
+  box-shadow: 0 1px 4px color-mix(in srgb, var(--app-shadow) 45%, transparent);
+}
+
+.settings-range-control input[type="range"]:focus-visible {
+  outline: 2px solid var(--app-accent);
+  outline-offset: 4px;
+}
+
+.settings-range-control output {
+  width: 2.25rem;
+  color: var(--app-text);
+  font-size: 0.9rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  text-align: right;
+}
+
 .settings-item input[type="checkbox"] {
   width: 16px;
   height: 16px;
@@ -292,6 +371,18 @@ button {
   font-size: 0.9rem;
   line-height: 1.4;
   color: var(--app-muted);
+}
+
+@media (max-width: 680px) {
+  .settings-item-range {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .settings-range-control {
+    width: 100%;
+    min-width: 0;
+  }
 }
 
 .theme-row {
