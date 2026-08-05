@@ -1,6 +1,6 @@
 # Database Schema Specification
 
-*Auto-generated on 2026-07-12 from `db.rs` migrations.*
+*Auto-generated on 2026-08-05 from `db.rs` migrations.*
 
 > 🔄 **To Regenerate This File:** If you have modified your SQLite migrations or tables, run:
 > ```bash
@@ -169,6 +169,11 @@ erDiagram
         TEXT profile_id
     }
 
+    cached_git_commit_branches {
+        TEXT commit_hash
+        TEXT branch_id
+    }
+
 
     custom_groups ||--o{ tracked_paths : "group_id"
     tracked_paths ||--o{ tracked_path_tags : "repo_path_id"
@@ -188,4 +193,6 @@ erDiagram
     tracked_paths ||--o{ canvas_manual_edges : "target_repo_id"
     tracked_paths ||--o{ profile_repo_scopes : "repo_path_id"
     auth_profiles ||--o{ profile_repo_scopes : "profile_id"
+    cached_git_commits ||--o{ cached_git_commit_branches : "commit_hash"
+    cached_git_branches ||--o{ cached_git_commit_branches : "branch_id"
 ```

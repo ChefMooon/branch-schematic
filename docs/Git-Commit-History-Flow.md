@@ -29,17 +29,36 @@ The app uses a hybrid model:
 
 ## How the App Finds Local Git History
 
-### 1. Repository scan
+### 1. Repository registration and initial warm-up
 
-When a repository is tracked or re-indexed, the backend calls the Tauri command scan_local_repository.
+When a repository is added to the workspace, the frontend calls `watch_project_directory` from [src-tauri/src/lib.rs](src-tauri/src/lib.rs) and [src/features/branch-map/BranchMap.tsx](src/features/branch-map/BranchMap.tsx). The backend creates an `IndexerDaemon` and immediately runs an initial index pass so the cache is populated as soon as the repo is tracked.
 
-That function:
+### 2. How the app notices new local commits
 
-- opens the repository with git2::Repository::open
-- enumerates local branches with repo.branches(Some(BranchType::Local))
+The app does not rely on Git hooks or a UI-side polling loop for commit detection. Instead, the Rust daemon uses the `notify` crate to watch the repository directory for filesystem activity under `.git/`.
+
+When Git writes new objects, refs, or other metadata, the watcher detects that change, waits briefly for the burst to settle, and then runs a fresh indexing pass. In practice, this means:
+
+- local commits are noticed through `.git` filesystem changes
+- the daemon uses a small debounce window before re-indexing
+- the app reuses cached SQLite state instead of scanning the repository on every render
+
+This is the main mechanism that keeps the app responsive while still making recent local commit history available quickly.
+
+### 3. What the index pass does
+
+The index pass:
+
+- opens the repository with `git2::Repository::open`
+- enumerates local branches with `repo.branches(Some(BranchType::Local))`
 - identifies the current HEAD branch
 - resolves each branch tip commit
 - captures the latest commit metadata for each branch
+- writes or updates branch rows in `cached_git_branches`
+- walks recent history for each branch tip using `git2 revwalk`
+- writes recent commits into `cached_git_commits`
+- stores branch-to-commit mappings in `cached_git_commit_branches`
+- recomputes and caches sync status for the HEAD branch
 
 This produces a lightweight branch snapshot with:
 
@@ -50,34 +69,26 @@ This produces a lightweight branch snapshot with:
 - commit summary
 - commit timestamp
 
-### 2. Background indexing daemon
+### 4. Why the UI stays fast
 
-The daemon in [src-tauri/src/daemon.rs](src-tauri/src/daemon.rs) watches repository directories for Git-related filesystem changes.
-
-When it notices changes under the repository's .git tree, it runs an indexing pass that:
-
-- calls scan_local_repository
-- writes branch rows into cached_git_branches
-- walks recent history for each branch using git2 revwalk
-- writes recent commits into cached_git_commits
-- recomputes and caches branch sync status
-
-This means the app does not rely on a live git log traversal for every UI refresh. Instead, it keeps a compact, queryable cache in SQLite.
+The frontend reads from the SQLite cache rather than traversing the repo on every render. The branch map also uses a small refresh loop while an active view is open, polling approximately every 4 seconds to update visible node metadata without forcing a full backend scan on each UI interaction.
 
 ## How Commit History Is Cached
 
-The cache is organized around two tables:
+The cache is organized around the following tables:
 
-- cached_git_branches
+- `cached_git_branches`
   - stores branch-level state such as branch name, HEAD status, last commit hash, and sync counters
-- cached_git_commits
-  - stores historical commits keyed by commit hash and linked to a branch id
+- `cached_git_commits`
+  - stores historical commits keyed by commit hash and linked to a branch row
+- `cached_git_commit_branches`
+  - stores the many-to-many mapping between commits and branches so shared commits can be associated with more than one branch
 
-The daemon currently walks the most recent 100 commits per branch and stores them in the commit cache. That remains a pragmatic default for UI responsiveness, but it is now backed by a branch-to-commit mapping table so shared commits can be associated with multiple branches more accurately than before.
+The daemon currently walks the most recent 100 commits per branch and stores them in the commit cache. That remains the current default for UI responsiveness, and the mapping table makes the history model more accurate for shared commit ancestry.
 
 ## How the UI Uses the Cached History
 
-The frontend does not directly invoke git log from the UI. Instead, the Rust backend exposes database-backed data and status snapshots.
+The frontend does not directly invoke `git log` from the UI. Instead, the Rust backend exposes database-backed data and status snapshots.
 
 The app uses the cached state to support:
 
@@ -85,39 +96,46 @@ The app uses the cached state to support:
 - branch-level views that render recent commit history
 - canvas-based branch visualizations that depend on branch metadata
 
-The actual SQL access is mediated through the backend database layer in [src-tauri/src/db.rs](src-tauri/src/db.rs), which exposes methods such as fetch_branch_commits and repository workspace queries.
+The actual SQL access is mediated through the backend database layer in [src-tauri/src/db.rs](src-tauri/src/db.rs), which exposes the queries that power the workspace and branch-map views.
 
 ## How Remote Git Operations Work
 
-The app also supports real Git network operations against the repository's origin remote.
+The app also supports real Git network operations against the repository's `origin` remote.
 
 ### Fetch
 
-The git_fetch_operation command:
+The `git_fetch_operation` command:
 
 - resolves the repository path from the tracked path id
-- opens the repository with git2
+- opens the repository with `git2`
 - uses auth callbacks to negotiate credentials
-- calls fetch on the origin remote
+- calls fetch on the `origin` remote
 - refreshes cached sync status afterward
 
 ### Pull
 
-The git_pull_operation command:
+The `git_pull_operation` command:
 
-- fetches from origin
+- fetches from `origin`
 - analyzes whether the current branch can be fast-forwarded
 - performs a fast-forward update if possible
 - rejects divergent branches with a clear error message
+- refreshes cached sync status afterward
 
 ### Push
 
-The git_push_operation command:
+The `git_push_operation` command:
 
 - resolves the current branch
 - verifies that it has an upstream configured
-- pushes the branch to origin using a push refspec
-- refreshes sync status afterward
+- pushes the branch to `origin` using a push refspec
+- refreshes cached sync status afterward
+
+Importantly, fetch/pull/push currently refresh sync status, but they do not run the full branch-history reindex pass. For that reason, the history cache depends primarily on the filesystem watcher and the initial scan.
+
+## Related Notes
+
+A more operational view of the refresh strategy, including the exact watcher triggers and performance tradeoffs, is documented in [docs/Repository-Update-Detection.md](docs/Repository-Update-Detection.md).
 
 ## Relationship to GitHub
 
@@ -133,16 +151,19 @@ The application relies on local Git state for commit history and branch topology
 
 The current implementation is effective for local branch visualization and lightweight history caching, but there are a few areas worth reviewing:
 
-1. Commit history is only partially cached
-   - The daemon stores the last 50 commits per branch, which is enough for a compact view but not a full audit trail.
+1. Commit history is capped at 100 commits per branch
+   - That is enough for compact views, but it is not a full audit trail for larger repositories.
 
-2. History is updated from filesystem watchers and manual refreshes
-   - This is responsive, but it can miss edge cases if the watcher is not triggered or if the repository is changed in unusual ways.
+2. History updates are driven by filesystem watchers and the active-canvas refresh loop
+   - This is responsive, but it can still lag behind unusual repository changes if the watcher misses an event or if the repo is modified outside the expected path patterns.
 
 3. Sync status is cached separately from history
-   - The app recomputes ahead/behind state and stores it, which is good for UI performance, but it means the UI can display stale sync information until the next refresh or index cycle.
+   - The app recomputes ahead/behind state and stores it, which is good for UI performance, but the UI can still show stale sync information until the next refresh or index cycle.
 
-4. Remote operations are local Git operations, not GitHub API history reads
+4. Remote operations refresh sync status but do not re-run the full history index pass
+   - That keeps the network flow lightweight, but it means history updates are primarily driven by local filesystem changes rather than by fetch/pull/push events.
+
+5. Remote operations are local Git operations, not GitHub API history reads
    - If the product eventually wants GitHub commit history beyond the local clone, a direct API-backed history flow may be necessary.
 
 ## Recommended Plan
