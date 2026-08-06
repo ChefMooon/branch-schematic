@@ -187,12 +187,16 @@ interface CanvasState {
   initializeBranchMapSession: () => Promise<void>;
   hydrateViewsList: () => Promise<void>;
   hydrateWorkspaceNodes: () => Promise<void>;
+  clearActiveViewVisibility: () => Promise<void>;
   updateNodeConfig: (repoPathId: string, viewMode: 'COMPACT' | 'EXPANDED', density: number, hex: string, explodeBranches: boolean) => Promise<void>;
   removeManualEdge: (edgeId: string) => Promise<void>;
   saveViewport: (zoom: number, x: number, y: number) => Promise<void>;
 }
 
-export const useCanvasStore = create<CanvasState>((set, get) => ({
+export const useCanvasStore = create<CanvasState>((set, get) => {
+  let hydrationGeneration = 0;
+
+  return ({
   views: [],
   activeViewId: null,
   isViewHydrating: false,
@@ -610,11 +614,26 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   hydrateWorkspaceNodes: async () => {
     const viewId = get().activeViewId;
     if (!viewId) return;
+    const generation = ++hydrationGeneration;
+    const isCurrentHydration = () =>
+      generation === hydrationGeneration && get().activeViewId === viewId;
 
     try {
       const paths = await invoke<{ absolute_path: string }[]>('get_active_tracked_paths');
       const trackedWorkspaces = await invoke<{ absolute_path: string; current_branch?: string | null; default_branch_name?: string | null }[]>('get_tracked_workspaces');
       const dbNodes = await invoke<WorkspaceNodeRecord[]>('get_workspace_nodes', { viewId });
+      if (!isCurrentHydration()) return;
+      const visibleRepositoryIds = Array.from(
+        new Set(
+          dbNodes
+            .map((record) => record.repo_path_id || record.path_id)
+            .filter((repositoryId): repositoryId is string => Boolean(repositoryId)),
+        ),
+      );
+      await invoke('set_branch_map_visible_repositories_command', {
+        repositoryIds: visibleRepositoryIds,
+      });
+      if (!isCurrentHydration()) return;
       const topologyLookup = await (async (): Promise<ResolvedTopologyLookup> => {
         if (!paths || paths.length === 0) return { branchPair: null, relation: null };
 
@@ -817,6 +836,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       });
 
       const dbEdges = await invoke<CanvasEdgeRecord[]>('get_manual_edges', { viewId });
+      if (!isCurrentHydration()) return;
       dbEdges.forEach((edge) => {
         const matchingNode = dbNodes.find((node) => node.repo_path_id === edge.source_repo_id);
         const accentColor = matchingNode ? matchingNode.theme_color_hex : '#4f46e5';
@@ -852,6 +872,16 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
     } catch (error) {
       console.error('Failed graph workspace hydration sequence:', error);
     }
+  },
+
+  clearActiveViewVisibility: async () => {
+    hydrationGeneration += 1;
+    await invoke('set_branch_map_visible_repositories_command', {
+      repositoryIds: [],
+    });
+    await invoke('set_selected_repository_command', {
+      repositoryId: null,
+    });
   },
 
   updateNodeConfig: async (repoPathId, viewMode, density, hex, explodeBranches) => {
@@ -933,4 +963,5 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       console.error('Failed to save viewport offset state:', error);
     }
   }
-}));
+  });
+});

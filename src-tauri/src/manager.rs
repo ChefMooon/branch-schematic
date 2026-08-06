@@ -5,7 +5,7 @@ use crate::refresh::{refresh_repository_full, RefreshOutcome, RepositoryCacheWri
 use notify::{Event, RecommendedWatcher, Watcher};
 use serde::Serialize;
 use sqlx::SqlitePool;
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::Path;
 use std::sync::{
     atomic::{AtomicBool, AtomicU64, Ordering},
@@ -19,7 +19,15 @@ use uuid::Uuid;
 pub const WORKSPACE_UPDATED_EVENT: &str = "workspace-updated";
 const MAX_WORKSPACE_UPDATED_BATCH_SIZE: usize = 250;
 const STARTUP_REGISTRATION_CONCURRENCY: usize = 8;
+const STARTUP_PIN_BOOST: Duration = Duration::from_secs(5 * 60);
 const POLLING_INTERVAL: Duration = Duration::from_secs(30);
+const VISIBLE_REFRESH_DELAY: Duration = Duration::from_millis(25);
+const BACKGROUND_REFRESH_DELAY: Duration = Duration::from_millis(100);
+const VISIBLE_POLLING_INTERVAL: Duration = Duration::from_secs(15);
+const MAX_CONCURRENT_REFRESHES: usize = 8;
+const MAX_FOREGROUND_REFRESHES: usize = 2;
+const MAX_VISIBLE_REFRESHES: usize = 4;
+const MAX_BACKGROUND_REFRESHES: usize = 2;
 const WORKSPACE_UPDATE_FLUSH_DELAY: Duration = Duration::from_millis(50);
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -74,6 +82,9 @@ pub struct ManagerDiagnostics {
 pub struct RepositoryDebugEntry {
     pub repository_id: String,
     pub priority: String,
+    pub visible_in_active_view: bool,
+    pub explicitly_selected: bool,
+    pub startup_pin_active: bool,
     pub detail_active: bool,
     pub running: bool,
     pub follow_up: bool,
@@ -115,7 +126,11 @@ struct RuntimeEntry {
     absolute_path: String,
     generation: u64,
     priority: RefreshPriority,
+    visible_in_active_view: bool,
     detail_active: bool,
+    detail_sessions: HashSet<String>,
+    explicitly_selected: bool,
+    startup_pin_until: Option<Instant>,
     running: bool,
     follow_up: bool,
     failure_count: u32,
@@ -134,6 +149,12 @@ struct ManagerState {
     wake_recoveries: AtomicU64,
     revision: AtomicU64,
     event_batches: AtomicU64,
+    active_view_visible_ids: Mutex<HashSet<String>>,
+    selected_repository_id: Mutex<Option<String>>,
+    refresh_slots: Arc<Semaphore>,
+    foreground_refresh_slots: Arc<Semaphore>,
+    visible_refresh_slots: Arc<Semaphore>,
+    background_refresh_slots: Arc<Semaphore>,
     pending_workspace_updates: Mutex<HashMap<String, String>>,
     observability: Mutex<ObservabilityState>,
 }
@@ -147,6 +168,33 @@ pub struct WatcherManager {
 }
 
 impl WatcherManager {
+    fn effective_priority(entry: &RuntimeEntry, now: Instant) -> RefreshPriority {
+        if entry.detail_active || entry.explicitly_selected {
+            RefreshPriority::Foreground
+        } else if entry.visible_in_active_view
+            || entry.startup_pin_until.is_some_and(|expires_at| expires_at > now)
+        {
+            RefreshPriority::Visible
+        } else {
+            RefreshPriority::Background
+        }
+    }
+
+    fn refresh_delay(priority: RefreshPriority) -> Duration {
+        match priority {
+            RefreshPriority::Foreground => Duration::ZERO,
+            RefreshPriority::Visible => VISIBLE_REFRESH_DELAY,
+            RefreshPriority::Background => BACKGROUND_REFRESH_DELAY,
+        }
+    }
+
+    fn polling_interval(priority: RefreshPriority) -> Duration {
+        match priority {
+            RefreshPriority::Foreground | RefreshPriority::Visible => VISIBLE_POLLING_INTERVAL,
+            RefreshPriority::Background => POLLING_INTERVAL,
+        }
+    }
+
     pub fn new(pool: SqlitePool, writer: RepositoryCacheWriter) -> Self {
         Self {
             pool,
@@ -164,6 +212,12 @@ impl WatcherManager {
                 wake_recoveries: AtomicU64::new(0),
                 revision: AtomicU64::new(0),
                 event_batches: AtomicU64::new(0),
+                active_view_visible_ids: Mutex::new(HashSet::new()),
+                selected_repository_id: Mutex::new(None),
+                refresh_slots: Arc::new(Semaphore::new(MAX_CONCURRENT_REFRESHES)),
+                foreground_refresh_slots: Arc::new(Semaphore::new(MAX_FOREGROUND_REFRESHES)),
+                visible_refresh_slots: Arc::new(Semaphore::new(MAX_VISIBLE_REFRESHES)),
+                background_refresh_slots: Arc::new(Semaphore::new(MAX_BACKGROUND_REFRESHES)),
                 pending_workspace_updates: Mutex::new(HashMap::new()),
                 observability: Mutex::new(ObservabilityState::default()),
             }),
@@ -192,9 +246,16 @@ impl WatcherManager {
             .registration_attempts
             .fetch_add(1, Ordering::Relaxed);
 
+        let visible_in_active_view = self
+            .state
+            .active_view_visible_ids
+            .lock()
+            .await
+            .contains(&path_id);
         let mut entries = self.state.entries.lock().await;
         if let Some(entry) = entries.get_mut(&path_id) {
-            entry.priority = entry.priority.max(priority);
+            entry.visible_in_active_view = visible_in_active_view;
+            entry.priority = Self::effective_priority(entry, Instant::now());
             if entry.running {
                 entry.follow_up = true;
                 self.state
@@ -213,13 +274,28 @@ impl WatcherManager {
             return Ok(());
         }
 
+        let startup_pin_until = (priority == RefreshPriority::Visible && !visible_in_active_view)
+            .then(|| Instant::now() + STARTUP_PIN_BOOST);
+        let explicitly_selected = priority == RefreshPriority::Foreground;
+        let effective_priority = if explicitly_selected {
+            RefreshPriority::Foreground
+        } else if visible_in_active_view || startup_pin_until.is_some() {
+            RefreshPriority::Visible
+        } else {
+            RefreshPriority::Background
+        };
+
         entries.insert(
             path_id.clone(),
             RuntimeEntry {
                 absolute_path,
                 generation: 1,
-                priority,
+                priority: effective_priority,
+                visible_in_active_view,
                 detail_active: false,
+                detail_sessions: HashSet::new(),
+                explicitly_selected,
+                startup_pin_until,
                 running: true,
                 follow_up: false,
                 failure_count: 0,
@@ -231,6 +307,79 @@ impl WatcherManager {
             self.ensure_polling_fallback(&path_id).await;
         }
         self.spawn_refresh(path_id, 1);
+        Ok(())
+    }
+
+    pub async fn set_visible_repositories(
+        &self,
+        repository_ids: Vec<String>,
+    ) -> Result<(), String> {
+        if self.state.shutting_down.load(Ordering::Acquire) {
+            return Err("Watcher manager is shutting down".to_string());
+        }
+
+        let visible_ids = repository_ids
+            .into_iter()
+            .filter(|repository_id| !repository_id.trim().is_empty())
+            .collect::<HashSet<_>>();
+        let previous_visible_ids = self
+            .state
+            .active_view_visible_ids
+            .lock()
+            .await
+            .clone();
+        *self.state.active_view_visible_ids.lock().await = visible_ids.clone();
+
+        let mut entries = self.state.entries.lock().await;
+        let newly_visible_ids = visible_ids
+            .difference(&previous_visible_ids)
+            .filter(|repository_id| entries.contains_key(*repository_id))
+            .cloned()
+            .collect::<Vec<_>>();
+        for (repository_id, entry) in entries.iter_mut() {
+            entry.visible_in_active_view = visible_ids.contains(repository_id);
+            entry.priority = Self::effective_priority(entry, Instant::now());
+        }
+        drop(entries);
+
+        for repository_id in newly_visible_ids {
+            self.request_refresh_with_reason(
+                repository_id,
+                RefreshPriority::Visible,
+                "active_view_visible",
+            )
+            .await?;
+        }
+
+        Ok(())
+    }
+
+    pub async fn set_selected_repository(
+        &self,
+        repository_id: Option<String>,
+    ) -> Result<(), String> {
+        if self.state.shutting_down.load(Ordering::Acquire) {
+            return Err("Watcher manager is shutting down".to_string());
+        }
+
+        let mut selected_id = self.state.selected_repository_id.lock().await;
+        let previous_id = std::mem::replace(&mut *selected_id, repository_id.clone());
+        drop(selected_id);
+
+        let mut entries = self.state.entries.lock().await;
+        if let Some(previous_id) = previous_id {
+            if let Some(entry) = entries.get_mut(&previous_id) {
+                entry.explicitly_selected = false;
+                entry.priority = Self::effective_priority(entry, Instant::now());
+            }
+        }
+        if let Some(repository_id) = repository_id {
+            if let Some(entry) = entries.get_mut(&repository_id) {
+                entry.explicitly_selected = true;
+                entry.priority = Self::effective_priority(entry, Instant::now());
+            }
+        }
+
         Ok(())
     }
 
@@ -246,14 +395,14 @@ impl WatcherManager {
     async fn request_refresh_with_reason(
         &self,
         path_id: String,
-        priority: RefreshPriority,
+        _priority: RefreshPriority,
         trigger_reason: &str,
     ) -> Result<(), String> {
         let mut entries = self.state.entries.lock().await;
         let entry = entries
             .get_mut(&path_id)
             .ok_or_else(|| "Repository is not monitored".to_string())?;
-        entry.priority = entry.priority.max(priority);
+        entry.priority = Self::effective_priority(entry, Instant::now());
         entry.trigger_reason = trigger_reason.to_string();
         if entry.running {
             entry.follow_up = true;
@@ -270,14 +419,48 @@ impl WatcherManager {
         Ok(())
     }
 
-    pub async fn set_detail_active(&self, path_id: &str, active: bool) -> Result<(), String> {
+    pub async fn set_detail_session(
+        &self,
+        path_id: &str,
+        session_id: &str,
+        active: bool,
+    ) -> Result<(), String> {
+        if session_id.trim().is_empty() {
+            return Err("Detail session ID cannot be empty".to_string());
+        }
+
         let mut entries = self.state.entries.lock().await;
         let entry = entries
             .get_mut(path_id)
             .ok_or_else(|| "Repository is not monitored".to_string())?;
-        entry.detail_active = active;
         if active {
-            entry.priority = entry.priority.max(RefreshPriority::Foreground);
+            entry.detail_sessions.insert(session_id.to_string());
+        } else {
+            entry.detail_sessions.remove(session_id);
+        }
+        entry.detail_active = !entry.detail_sessions.is_empty();
+        entry.priority = Self::effective_priority(entry, Instant::now());
+
+        let detail_active = entry.detail_active;
+        drop(entries);
+
+        if let Some(task) = self.state.watcher_tasks.lock().await.remove(path_id) {
+            task.abort();
+            self.record_watcher_stop().await;
+        }
+        if let Some(task) = self.state.polling_tasks.lock().await.remove(path_id) {
+            task.abort();
+        }
+        if !self.ensure_watcher(path_id).await {
+            self.ensure_polling_fallback(path_id).await;
+        }
+        if detail_active {
+            self.request_refresh_with_reason(
+                path_id.to_string(),
+                RefreshPriority::Foreground,
+                "detail_active",
+            )
+            .await?;
         }
         Ok(())
     }
@@ -427,14 +610,21 @@ impl WatcherManager {
         let polling_ids = self.state.polling_tasks.lock().await;
         let mut repositories = entries
             .iter()
-            .map(|(repository_id, entry)| RepositoryDebugEntry {
+            .map(|(repository_id, entry)| {
+                let effective_priority = Self::effective_priority(entry, Instant::now());
+                RepositoryDebugEntry {
                 repository_id: repository_id.clone(),
-                priority: match entry.priority {
+                priority: match effective_priority {
                     RefreshPriority::Background => "background",
                     RefreshPriority::Visible => "visible",
                     RefreshPriority::Foreground => "foreground",
                 }
                 .to_string(),
+                visible_in_active_view: entry.visible_in_active_view,
+                explicitly_selected: entry.explicitly_selected,
+                startup_pin_active: entry
+                    .startup_pin_until
+                    .is_some_and(|expires_at| expires_at > Instant::now()),
                 detail_active: entry.detail_active,
                 running: entry.running,
                 follow_up: entry.follow_up,
@@ -449,6 +639,7 @@ impl WatcherManager {
                 }
                 .to_string(),
                 generation: entry.generation,
+                }
             })
             .collect::<Vec<_>>();
         repositories.sort_by(|left, right| left.repository_id.cmp(&right.repository_id));
@@ -604,7 +795,15 @@ impl WatcherManager {
                         "polling_fallback",
                     )
                     .await;
-                tokio::time::sleep(POLLING_INTERVAL).await;
+                let priority = manager
+                    .state
+                    .entries
+                    .lock()
+                    .await
+                    .get(&task_path_id)
+                    .map(|entry| Self::effective_priority(entry, Instant::now()))
+                    .unwrap_or(RefreshPriority::Background);
+                tokio::time::sleep(Self::polling_interval(priority)).await;
             }
         });
         let mut polling_tasks = self.state.polling_tasks.lock().await;
@@ -617,9 +816,10 @@ impl WatcherManager {
 
     async fn run_refresh_loop(&self, path_id: String, generation: u64) {
         let outcome = {
-            let entries = self.state.entries.lock().await;
-            entries.get(&path_id).and_then(|entry| {
+            let mut entries = self.state.entries.lock().await;
+            entries.get_mut(&path_id).and_then(|entry| {
                 (entry.generation == generation).then(|| {
+                    entry.priority = Self::effective_priority(entry, Instant::now());
                     (
                         entry.absolute_path.clone(),
                         entry.detail_active,
@@ -628,9 +828,37 @@ impl WatcherManager {
                 })
             })
         };
-        let Some((absolute_path, _detail_active, _priority)) = outcome else {
+        let Some((absolute_path, _detail_active, priority)) = outcome else {
             return;
         };
+
+        let _refresh_slot = match self.state.refresh_slots.clone().acquire_owned().await {
+            Ok(permit) => permit,
+            Err(_) => return,
+        };
+        let tier_slot = match priority {
+            RefreshPriority::Foreground => self
+                .state
+                .foreground_refresh_slots
+                .clone()
+                .acquire_owned(),
+            RefreshPriority::Visible => self
+                .state
+                .visible_refresh_slots
+                .clone()
+                .acquire_owned(),
+            RefreshPriority::Background => self
+                .state
+                .background_refresh_slots
+                .clone()
+                .acquire_owned(),
+        };
+        let _tier_slot = match tier_slot.await {
+            Ok(permit) => permit,
+            Err(_) => return,
+        };
+
+        tokio::time::sleep(Self::refresh_delay(priority)).await;
 
         let trigger_reason = {
             let entries = self.state.entries.lock().await;
@@ -888,6 +1116,127 @@ mod tests {
         let diagnostics = manager.diagnostics().await;
         assert_eq!(diagnostics.registration_attempts, 2);
         assert_eq!(diagnostics.coalesced_requests, 1);
+    }
+
+    #[tokio::test]
+    async fn active_view_scope_applies_before_registration_and_demotes_on_clear() {
+        let pool = SqlitePool::connect_lazy("sqlite::memory:").unwrap();
+        let manager = WatcherManager::new(pool, RepositoryCacheWriter::default());
+
+        manager
+            .set_visible_repositories(vec!["repo".to_string()])
+            .await
+            .unwrap();
+        manager
+            .ensure_monitored(
+                "repo".to_string(),
+                "C:\\missing".to_string(),
+                RefreshPriority::Background,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(
+            manager.state.entries.lock().await["repo"].priority,
+            RefreshPriority::Visible
+        );
+
+        manager.set_visible_repositories(Vec::new()).await.unwrap();
+        assert_eq!(
+            manager.state.entries.lock().await["repo"].priority,
+            RefreshPriority::Background
+        );
+    }
+
+    #[tokio::test]
+    async fn detail_signal_protects_foreground_priority_during_scope_reconciliation() {
+        let pool = SqlitePool::connect_lazy("sqlite::memory:").unwrap();
+        let manager = WatcherManager::new(pool, RepositoryCacheWriter::default());
+        manager
+            .ensure_monitored(
+                "repo".to_string(),
+                "C:\\missing".to_string(),
+                RefreshPriority::Background,
+            )
+            .await
+            .unwrap();
+        manager
+            .set_detail_session("repo", "test-detail-session", true)
+            .await
+            .unwrap();
+
+        manager.set_visible_repositories(Vec::new()).await.unwrap();
+
+        assert_eq!(
+            manager.state.entries.lock().await["repo"].priority,
+            RefreshPriority::Foreground
+        );
+    }
+
+    #[tokio::test]
+    async fn selection_replacement_and_clear_restore_context_priority() {
+        let pool = SqlitePool::connect_lazy("sqlite::memory:").unwrap();
+        let manager = WatcherManager::new(pool, RepositoryCacheWriter::default());
+        for repository_id in ["repo-a", "repo-b"] {
+            manager
+                .ensure_monitored(
+                    repository_id.to_string(),
+                    "C:\\missing".to_string(),
+                    RefreshPriority::Background,
+                )
+                .await
+                .unwrap();
+        }
+        manager
+            .set_visible_repositories(vec!["repo-a".to_string()])
+            .await
+            .unwrap();
+
+        manager
+            .set_selected_repository(Some("repo-a".to_string()))
+            .await
+            .unwrap();
+        assert_eq!(
+            manager.state.entries.lock().await["repo-a"].priority,
+            RefreshPriority::Foreground
+        );
+
+        manager
+            .set_selected_repository(Some("repo-b".to_string()))
+            .await
+            .unwrap();
+        let entries = manager.state.entries.lock().await;
+        assert_eq!(entries["repo-a"].priority, RefreshPriority::Visible);
+        assert_eq!(entries["repo-b"].priority, RefreshPriority::Foreground);
+        drop(entries);
+
+        manager.set_selected_repository(None).await.unwrap();
+        assert_eq!(
+            manager.state.entries.lock().await["repo-b"].priority,
+            RefreshPriority::Background
+        );
+    }
+
+    #[tokio::test]
+    async fn multiple_detail_sessions_require_all_sessions_to_close() {
+        let pool = SqlitePool::connect_lazy("sqlite::memory:").unwrap();
+        let manager = WatcherManager::new(pool, RepositoryCacheWriter::default());
+        manager
+            .ensure_monitored(
+                "repo".to_string(),
+                "C:\\missing".to_string(),
+                RefreshPriority::Background,
+            )
+            .await
+            .unwrap();
+
+        manager.set_detail_session("repo", "one", true).await.unwrap();
+        manager.set_detail_session("repo", "two", true).await.unwrap();
+        manager.set_detail_session("repo", "one", false).await.unwrap();
+        assert!(manager.state.entries.lock().await["repo"].detail_active);
+
+        manager.set_detail_session("repo", "two", false).await.unwrap();
+        assert!(!manager.state.entries.lock().await["repo"].detail_active);
     }
 
     #[tokio::test]

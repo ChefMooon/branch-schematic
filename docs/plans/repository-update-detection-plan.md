@@ -451,6 +451,136 @@ Path classification must include tests for Windows separators and case behavior,
 - The new watcher model is controlled by a feature flag whose default is disabled until internal load and correctness checks pass. The flag source, workspace scope, and rollback owner must be defined before rollout. Automatic rollback disables the new path for an affected workspace when stale-state rate exceeds 0.5% over 15 minutes or registration failures exceed 2% for 10 consecutive minutes.
 - Keep the legacy watcher path available until the new path meets the stated acceptance targets without material regression. Rollout stages remain internal, beta, 10%, 50%, and 100%, with metrics reviewed at each gate.
 
+## Priority Discrepancy Remediation Plan
+
+This staged plan addresses the current mismatch between the intended branch-map priority behavior and the implementation. It is limited to priority ownership and its branch-map integration; it does not replace the broader lifecycle, refresh, schema, or rollout stages above.
+
+### Confirmed discrepancy
+
+The intended priority model is:
+
+| Repository context | Intended tier | Current equivalent |
+|---|---|---|
+| Open detail view or explicit repository selection | `foreground-full` | `RefreshPriority::Foreground` |
+| Repository included in the active branch-map view/scope but not foreground | `visible-medium` | `RefreshPriority::Visible` |
+| Tracked repository outside the active visible context | `background-light` | `RefreshPriority::Background` |
+
+The current manager assigns ordinary startup repositories `Background` and pinned repositories `Visible`, but the branch-map view does not publish its active view scope to the manager. As a result, repositories represented by the selected branch-map view remain background unless another action promotes them. The current priority value also does not yet select a different refresh operation or polling cadence; it is primarily runtime state used for promotion/coalescing and diagnostics.
+
+The term “visible” in this plan means included by the active canvas view’s repository scope, not merely intersecting the current ReactFlow viewport. Viewport-aware prioritization may be added later as an optimization, but it must not replace active-view scope promotion or make repositories disappear from monitoring when they are panned off-screen.
+
+### Stage P0: Baseline and contract freeze
+
+**Objective:** Record the current priority behavior and freeze the branch-map priority contract before implementation.
+
+**Work packages:**
+
+- Capture manager priority snapshots for startup, active branch-map view, view switching, scope changes, pinning, repository selection, and detail open/close.
+- Confirm that the active view’s visible repository set is the deduplicated `repo_path_id` values from the authoritative `get_workspace_nodes(viewId)` result after path and branch visibility rules are applied. A repository is included when at least one branch node remains in scope. ReactFlow viewport intersection and tag-filter dimming do not alter this set; viewport intersection may only affect a separate optional optimization tier.
+- Replace scalar priority mutation with signal-owned runtime state. Track independent signals for detail sessions, explicit selection, active-view membership, and the startup pin boost. Compute the effective tier from those signals using `Foreground > Visible > Background > OnDemand`; removing one signal must recompute the tier without affecting the others.
+- Define explicit selection ownership and lifetime. Selection must have a manager-facing owner and clear on deselect, view switch, branch-map route unmount, repository removal, or replacement by another selection. Selection and detail state are separate signals and must not be inferred from each other.
+- Define active signals explicitly: any current detail session and explicit repository selection are foreground signals; active canvas-view inclusion is a visible signal; the pin flag is only a bounded startup hint and never a permanent visible or foreground signal.
+- Record that priority is not complete until it affects an explicitly documented scheduler behavior. A diagnostic label alone does not satisfy the contract.
+
+**Validation gate:** Add or update a baseline report with debug snapshots and a table showing the expected and observed tier for each scenario. No production behavior changes are allowed in this stage.
+
+### Stage P1: Manager-owned priority state and promotion API
+
+**Objective:** Give the `WatcherManager` an explicit, idempotent API for updating active-view visibility without allowing views to construct watchers or mutate runtime entries directly.
+
+**Work packages:**
+
+- Add a manager operation equivalent to `set_visible_repositories(view_id, repository_ids)` or a scoped promotion/reconciliation API. The manager must validate that IDs are active tracked repositories before changing runtime priority.
+- Reconcile the complete visible set atomically: promote IDs in the set to `Visible`, remove the active-view visible signal from IDs no longer in the set, and preserve `Foreground` for selected/detail-active repositories. An empty set must clear the previous active-view signal.
+- Make repeated updates idempotent and coalesce updates arriving while registration or refresh work is running. Do not create duplicate watcher handles or overlapping refreshes.
+- Keep the active-view signal runtime-only. Do not persist it in `tracked_paths`, `canvas_views`, or `is_active`.
+- Replace permanent pinned-to-visible startup behavior with a runtime startup boost. At manager initialization, record one monotonic startup epoch; a pinned repository receives `Visible` only while `now - startup_epoch < 5 minutes`. The boost must not restart on watcher re-registration, refresh retry, wake recovery, or pin-row reread. A process restart starts a new bounded epoch but never restores foreground or active-view state.
+- Add diagnostics for the source of a promotion and the effective tier so `visible` cannot be confused with “pinned” or “currently running.”
+
+**Validation gate:** Rust tests cover complete-set reconciliation, empty-set clearing, duplicate IDs, unknown/inactive IDs, foreground protection, foreground-to-visible fallback, visible-to-background demotion, pin-boost expiry, restart epoch behavior, lower-priority trigger protection, and concurrent promotion with an in-flight refresh.
+
+### Stage P2: Branch-map scope synchronization
+
+**Objective:** Make the active branch-map view publish its visible repository scope to the manager through the existing frontend/backend boundary.
+
+**Work packages:**
+
+- On branch-map initialization and every active view change, derive the deduplicated repository IDs represented by the active view after scope and branch visibility rules are applied. Derive the set only from the completed `get_workspace_nodes(viewId)` result; tag-filter dimming and viewport position do not alter membership.
+- Send the complete set to the manager through a typed Tauri command or the shared workspace synchronization layer. The branch-map component must request priority changes only; it must never create or own watcher instances.
+- Reconcile scope changes when repositories or branches are hidden/unhidden, views are duplicated/renamed/deleted, tracked repositories are archived/untracked, or cache invalidation changes the rendered node set.
+- Clear the previous active-view signal when leaving the branch-map route, when no active view exists, or when hydration returns no nodes. Do not clear foreground/selection/detail-active state as a side effect.
+- Ensure late responses from a previous view cannot overwrite the priority set for the newer active view. Associate requests with an active-view generation or use a manager-side latest-set-wins contract.
+
+**Validation gate:** Frontend tests verify promotion on initial load, active-view switching, scope changes, empty views, deduplication for exploded branches, tag-filter non-effect, route unmount cleanup, hydration completion, and stale response rejection. A manual check confirms that repositories in the selected view report `visible` while unrelated tracked repositories remain `background`.
+
+### Stage P3: Priority-aware refresh scheduling and lifecycle integration
+
+**Objective:** Ensure the promoted tier changes meaningful refresh behavior and remains correct across all priority signals.
+
+**Work packages:**
+
+- Define this normative scheduler matrix before implementation:
+
+| Tier | Queue ordering | Refresh operation | Polling/reconciliation | Concurrency |
+|---|---|---|---|---|
+| `Foreground` | Highest | Immediate full refresh for selection; targeted status refresh for detail-active | Detail-active poll uses the global 2-to-5-second interval; selection alone does not create a separate poll | Subject to the foreground cap |
+| `Visible` | Above background | Metadata or conservative full refresh according to the trigger matrix; active-view promotion itself requests one coalesced verification | Uses the visible-tier policy, not the detail-active interval | Subject to the visible-tier cap |
+| `Background` | Lowest scheduled tier | Lightweight metadata verification, escalating to full refresh when evidence requires it | Jittered background polling/fallback policy | Subject to the background cap |
+| `OnDemand` | User-requested work only | Explicit full/status request | No recurring poll from this tier | Uses the applicable foreground request cap |
+
+	The implementation may refine operation details only through an approved discrepancy. It must not satisfy the contract by changing labels while leaving queue ordering, refresh selection, and polling behavior identical.
+- Preserve the conservative trigger matrix: active-view visibility must not suppress a required full refresh, and filesystem events remain hints subject to Git-derived verification.
+- Ensure filesystem, polling, wake, onboarding, selection, detail, archive/untrack, and shutdown paths route through the same manager priority state. A background-triggered event must not accidentally demote an already-visible or foreground repository.
+- Define how visible repositories behave when the active view changes during an in-flight refresh: finish the current authorized operation, coalesce one follow-up if needed, and apply the latest effective priority to queued work.
+- Keep foreground selection/detail-active precedence over visible scope and ensure closing detail removes only the detail signal, allowing active-view visibility to remain.
+- Make detail activation an atomic, latest-state-wins manager transition. The manager must update detail state, reconcile watcher targets, schedule the immediate status refresh, and install or remove the detail timer as one transition. A stale open request must never reactivate detail monitoring after close. Detail state must use a stable session token or reference count so closing one exploded branch-card detail cannot clear another active detail session for the same repository.
+- Make pin expiry and app restart deterministic. A pinned repository receives the bounded startup boost defined in P1, then returns to its context-derived tier without reviving a watcher or foreground state by itself.
+
+**Validation gate:** Scheduler tests prove tier-specific queue ordering/operation behavior, no demotion by lower-priority triggers, correct foreground-to-visible and visible-to-background fallback, pin expiry, wake recovery, no overlapping refreshes, detail target reconfiguration, close-during-registration, rapid open-close-open, and independent exploded-card detail sessions. Diagnostics must expose effective tier, active signals, and the reason it was selected.
+
+### Stage P4: End-to-end branch-map and scale validation
+
+**Objective:** Prove that priority follows user context without creating a startup or scrolling storm.
+
+**Work packages:**
+
+- Test active-view switching and scope changes with multiple repositories, shared branch IDs, exploded branch cards, missing repositories, and repositories whose watchers are in fallback polling mode.
+- Verify cache-first branch-map rendering: visible repositories are promoted asynchronously after nodes are available, and the map is not blocked on manager registration or a full refresh barrier.
+- Apply the existing visible-window recomputation throttle only if viewport-aware prioritization is implemented. It must be separate from active-view scope promotion and must not run on every scroll event.
+- Treat fixture preparation as insufficient for acceptance. Add a live Tauri measurement scenario that records registration latency, effective priority transitions, queue depth, refresh concurrency, watcher/polling counts, CPU, memory, and stale-state latency. Report the 2,000-repository run and 5,000-repository soak separately; active-view membership must not imply simultaneous full refreshes for every repository.
+- P4 is blocked until the existing feature-flag source, precedence, scope, and rollback contract is resolved in the earlier implementation stages. With the flag disabled, no new scope-sync command, manager registration, or priority mutation may execute. With the flag enabled, the legacy watcher/polling path must not also register or refresh the same repository. Diagnostics must expose the active mode.
+
+**Validation gate:** Run the focused frontend and Rust tests, full builds, and the applicable scale benchmark. Record observed tier transitions and resource measurements in the stage report. The branch-map promotion is not rollout-ready if it only changes diagnostics without improving the documented scheduler behavior or if it causes all active-view repositories to refresh concurrently without caps.
+
+### Adversarial review findings incorporated
+
+The plan was reviewed against the current branch-map, canvas-store, workspace-store, manager, and detail-view paths. The review identified and this revision addresses the following failure modes:
+
+- **Scope ambiguity:** “Visible” could mean active-view membership or current viewport intersection. The plan now makes active-view membership normative and keeps viewport optimization optional.
+- **Demotion bugs:** A naïve “set visible” command could permanently promote repositories or demote foreground/detail-active repositories. The plan now requires complete-set reconciliation, precedence, and signal-specific removal.
+- **Exploded-node duplication:** A repository can produce multiple branch cards. The plan now requires repository-ID deduplication before promotion.
+- **Stale view races:** A delayed response from an old active view could overwrite a newer view’s set. The plan now requires generation or latest-set-wins protection.
+- **Pinning confusion:** Pinning was acting as a permanent `Visible` priority. The plan now treats it as a five-minute startup hint and tests expiry independently from active-view visibility.
+- **Label-only implementation:** Changing `Background` to `Visible` would not necessarily change refresh work. The plan now requires explicit scheduler effects and tests that distinguish runtime labels from behavior.
+- **Lifecycle gaps:** Branch-map-only updates could be lost during onboarding, wake, archive, untrack, detail close, or fallback polling. The plan now routes all signals through the manager and tests their precedence.
+- **Scale regression:** Promoting every active-view repository without queue or concurrency limits could create a burst. The plan now requires bounded scheduling and measurements at the existing scale targets.
+- **Scalar-priority recovery:** A single `max()` priority cannot demote a repository when a view, selection, detail session, or pin boost ends. The plan now requires independent signal ownership and effective-tier recomputation.
+- **Detail watcher race:** Enabling detail after watcher registration can omit worktree targets, and close can race with a pending open. The plan now requires an atomic manager transition, target reconciliation, latest-state-wins behavior, and session ownership.
+- **Selection ownership gap:** The current branch-map path has no shared selection lifetime. The plan now requires an explicit owner and clear policy instead of assuming node selection exists.
+- **Benchmark overclaim:** Fixture specifications do not prove live priority or resource behavior. The plan now requires a live Tauri measurement scenario and separates 2,000-repository validation from the 5,000-repository soak.
+
+### Final priority handoff criteria
+
+Priority work is ready to enter implementation only when:
+
+- active-view repositories reliably become `Visible` and unrelated repositories remain `Background`;
+- foreground selection and detail-active state override visible scope and recover correctly when removed;
+- pinning provides only the bounded startup boost;
+- priority changes are manager-owned, idempotent, generation-safe, and shared across views;
+- effective priority changes an explicitly documented scheduler behavior rather than diagnostics alone;
+- cache invalidation, refresh failure, fallback polling, wake recovery, and shutdown preserve the same priority invariants; and
+- focused tests, full builds, and scale measurements are recorded without changing production code during planning.
+
 ## Implementation Notes for the Future
 
 This update should be treated as a foundation change rather than a narrow bug fix. The main objective is to make repository update detection dependable, predictable, and scalable across the full app experience.

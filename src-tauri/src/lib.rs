@@ -417,9 +417,26 @@ async fn stop_repository_monitoring_command(
 async fn set_repository_detail_active_command(
     manager: tauri::State<'_, manager::WatcherManager>,
     path_id: String,
+    session_id: String,
     active: bool,
 ) -> Result<(), String> {
-    manager.set_detail_active(&path_id, active).await
+    manager.set_detail_session(&path_id, &session_id, active).await
+}
+
+#[tauri::command]
+async fn set_branch_map_visible_repositories_command(
+    manager: tauri::State<'_, manager::WatcherManager>,
+    repository_ids: Vec<String>,
+) -> Result<(), String> {
+    manager.set_visible_repositories(repository_ids).await
+}
+
+#[tauri::command]
+async fn set_selected_repository_command(
+    manager: tauri::State<'_, manager::WatcherManager>,
+    repository_id: Option<String>,
+) -> Result<(), String> {
+    manager.set_selected_repository(repository_id).await
 }
 
 #[tauri::command]
@@ -1175,6 +1192,8 @@ pub fn run() {
             request_repository_refresh_command,
             stop_repository_monitoring_command,
             set_repository_detail_active_command,
+            set_branch_map_visible_repositories_command,
+            set_selected_repository_command,
             get_watcher_manager_diagnostics_command,
             get_watcher_manager_debug_snapshot_command,
         ])

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import type { MouseEvent } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import {
   ReactFlow,
@@ -55,6 +56,7 @@ function MapWorkspace() {
   const hydrateViewsList = useCanvasStore((state) => state.hydrateViewsList);
   const initializeBranchMapSession = useCanvasStore((state) => state.initializeBranchMapSession);
   const hydrateWorkspaceNodes = useCanvasStore((state) => state.hydrateWorkspaceNodes);
+  const clearActiveViewVisibility = useCanvasStore((state) => state.clearActiveViewVisibility);
 
   const nodes = useCanvasStore((state) => state.nodes);
   const edges = useCanvasStore((state) => state.edges);
@@ -89,6 +91,12 @@ function MapWorkspace() {
       hydrateWorkspaceNodes();
     }
   }, [activeViewId, hydrateWorkspaceNodes]);
+
+  useEffect(() => {
+    return () => {
+      void clearActiveViewVisibility();
+    };
+  }, [clearActiveViewVisibility]);
 
   // 3. Sync the viewport only when the active view selection changes so metadata-only actions
   // do not reapply the stored camera state and cause a visible jump.
@@ -159,6 +167,23 @@ function MapWorkspace() {
     }
   };
 
+  const handleNodeClick = async (_event: MouseEvent, node: BranchCardNode) => {
+    const repositoryId = node.data.repoPathId || node.id;
+    try {
+      await invoke('set_selected_repository_command', { repositoryId });
+    } catch (error) {
+      console.error('Failed to update selected repository priority:', error);
+    }
+  };
+
+  const handlePaneClick = async () => {
+    try {
+      await invoke('set_selected_repository_command', { repositoryId: null });
+    } catch (error) {
+      console.error('Failed to clear selected repository priority:', error);
+    }
+  };
+
   return (
     <div 
       style={{
@@ -199,6 +224,8 @@ function MapWorkspace() {
             onEdgesChange={onEdgesChange}
             onConnect={onConnect}
             onEdgeClick={onEdgeClick}
+            onNodeClick={handleNodeClick}
+            onPaneClick={handlePaneClick}
             onNodeDragStop={handleNodeDragStop}
             onMoveEnd={(_event, viewport) => {
               if (activeViewId) {

@@ -23,6 +23,7 @@ export type CommitRecord = {
 
 export function RepositoryDetail({ isOpen, repo, onClose }: RepositoryDetailProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
+  const detailSessionIdRef = useRef<string | null>(null);
   const { handleMouseDown, handleMouseUp, handleMouseLeave, handleTouchStart, handleTouchEnd } = useBackdropDismiss(dialogRef, onClose, isOpen);
   const [commits, setCommits] = useState<CommitRecord[]>([]);
   const [selectedCommitHash, setSelectedCommitHash] = useState<string | null>(null);
@@ -81,19 +82,44 @@ export function RepositoryDetail({ isOpen, repo, onClose }: RepositoryDetailProp
     if (!isOpen || !repo) return;
 
     let disposed = false;
-    void Promise.resolve(invoke('ensure_repository_monitored_command', {
-      pathId: repo.id,
-      absolutePath: repo.absolute_path,
-    }))
-      .then(() => invoke('set_repository_detail_active_command', { pathId: repo.id, active: true }))
-      .then(() => invoke('request_repository_refresh_command', { pathId: repo.id }))
-      .catch((error) => {
-        if (!disposed) console.error('Failed to promote repository detail refresh:', error);
+    const sessionId = detailSessionIdRef.current ?? `${repo.id}-${Date.now()}-${Math.random()}`;
+    detailSessionIdRef.current = sessionId;
+
+    const activateDetailSession = async () => {
+      await invoke('ensure_repository_monitored_command', {
+        pathId: repo.id,
+        absolutePath: repo.absolute_path,
       });
+      if (disposed) return;
+      await invoke('set_repository_detail_active_command', {
+        pathId: repo.id,
+        sessionId,
+        active: true,
+      });
+      if (disposed) {
+        await invoke('set_repository_detail_active_command', {
+          pathId: repo.id,
+          sessionId,
+          active: false,
+        });
+        return;
+      }
+      await invoke('request_repository_refresh_command', { pathId: repo.id });
+    };
+
+    void activateDetailSession().catch((error) => {
+      if (!disposed) console.error('Failed to promote repository detail refresh:', error);
+    });
 
     return () => {
       disposed = true;
-      void Promise.resolve(invoke('set_repository_detail_active_command', { pathId: repo.id, active: false })).catch(() => undefined);
+      void Promise.resolve(
+        invoke('set_repository_detail_active_command', {
+          pathId: repo.id,
+          sessionId,
+          active: false,
+        }),
+      ).catch(() => undefined);
     };
   }, [isOpen, repo?.id, repo?.absolute_path]);
 
