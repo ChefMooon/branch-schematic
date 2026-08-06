@@ -1766,12 +1766,17 @@ pub async fn set_repository_favorite(
 #[tauri::command]
 pub async fn set_repository_pinned(
     state: tauri::State<'_, DbState>,
+    watcher_manager: tauri::State<'_, WatcherManager>,
     path_id: String,
     is_pinned: bool,
 ) -> Result<(), String> {
     db::update_repository_pinned(state.inner().pool(), &path_id, is_pinned)
         .await
         .map_err(|err| format!("Failed to persist pinned state: {}", err))?;
+
+    watcher_manager
+        .set_pinned_repository(&path_id, is_pinned)
+        .await?;
 
     Ok(())
 }

@@ -383,6 +383,21 @@ impl WatcherManager {
         Ok(())
     }
 
+    pub async fn set_pinned_repository(
+        &self,
+        path_id: &str,
+        pinned: bool,
+    ) -> Result<(), String> {
+        let mut entries = self.state.entries.lock().await;
+        let Some(entry) = entries.get_mut(path_id) else {
+            return Ok(());
+        };
+
+        entry.startup_pin_until = pinned.then(|| Instant::now() + STARTUP_PIN_BOOST);
+        entry.priority = Self::effective_priority(entry, Instant::now());
+        Ok(())
+    }
+
     pub async fn request_refresh(
         &self,
         path_id: String,
@@ -1190,6 +1205,41 @@ mod tests {
             manager.state.entries.lock().await["repo"].priority,
             RefreshPriority::Background
         );
+    }
+
+    #[tokio::test]
+    async fn pinning_reconciles_live_priority_without_overriding_foreground_signals() {
+        let pool = SqlitePool::connect_lazy("sqlite::memory:").unwrap();
+        let manager = WatcherManager::new(pool, RepositoryCacheWriter::default());
+
+        manager
+            .ensure_monitored(
+                "repo".to_string(),
+                "C:\\missing".to_string(),
+                RefreshPriority::Background,
+            )
+            .await
+            .unwrap();
+        manager.set_pinned_repository("repo", true).await.unwrap();
+
+        let entries = manager.state.entries.lock().await;
+        assert_eq!(entries["repo"].priority, RefreshPriority::Visible);
+        assert!(entries["repo"].startup_pin_until.is_some());
+        drop(entries);
+
+        manager
+            .set_selected_repository(Some("repo".to_string()))
+            .await
+            .unwrap();
+        assert_eq!(
+            manager.state.entries.lock().await["repo"].priority,
+            RefreshPriority::Foreground
+        );
+
+        manager.set_pinned_repository("repo", false).await.unwrap();
+        let entries = manager.state.entries.lock().await;
+        assert_eq!(entries["repo"].priority, RefreshPriority::Foreground);
+        assert!(entries["repo"].startup_pin_until.is_none());
     }
 
     #[tokio::test]
