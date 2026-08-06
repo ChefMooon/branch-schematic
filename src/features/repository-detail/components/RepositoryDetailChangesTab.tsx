@@ -18,6 +18,7 @@ export function RepositoryDetailChangesTab({ repo }: RepositoryDetailChangesTabP
     selectedPath,
     setSelectedPath,
     isLoading,
+    isRefreshing,
     isBusy,
     error,
     statusMessage,
@@ -71,6 +72,7 @@ export function RepositoryDetailChangesTab({ repo }: RepositoryDetailChangesTabP
           repo={repo}
           splitRatio={splitRatio}
           isLoading={isLoading}
+          isRefreshing={isRefreshing}
           error={error}
           snapshot={snapshot}
           statusMessage={statusMessage}

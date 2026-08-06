@@ -56,6 +56,14 @@ pub struct RepositoryChangesSnapshot {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
+pub struct RepositoryChangesRead {
+    pub revision: u64,
+    pub unchanged: bool,
+    pub snapshot: Option<RepositoryChangesSnapshot>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct RepositoryFileDiff {
     pub path: String,
     pub old_path: Option<String>,
@@ -2552,6 +2560,32 @@ pub async fn get_repository_changes(
         entries,
         is_in_progress_operation: false,
         operation_message: None,
+    })
+}
+
+#[tauri::command]
+pub async fn get_repository_changes_if_changed(
+    manager: tauri::State<'_, WatcherManager>,
+    path_id: String,
+    absolute_path: String,
+    known_revision: Option<u64>,
+) -> Result<RepositoryChangesRead, String> {
+    let revision = manager
+        .changes_revision(&path_id)
+        .await
+        .ok_or_else(|| "Repository is not monitored".to_string())?;
+    if known_revision.is_some_and(|known| known > 0 && known == revision) {
+        return Ok(RepositoryChangesRead {
+            revision,
+            unchanged: true,
+            snapshot: None,
+        });
+    }
+
+    Ok(RepositoryChangesRead {
+        revision,
+        unchanged: false,
+        snapshot: Some(get_repository_changes(absolute_path).await?),
     })
 }
 

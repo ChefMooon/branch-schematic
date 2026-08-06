@@ -1141,6 +1141,7 @@ pub fn run() {
             git::get_tracked_workspaces,
             git::refresh_repository_git_status,
             git::get_repository_changes,
+            git::get_repository_changes_if_changed,
             git::get_repository_file_diff,
             git::stage_repository_paths,
             git::unstage_repository_paths,

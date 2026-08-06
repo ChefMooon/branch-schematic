@@ -45,7 +45,7 @@ const fileDiff = {
 
 function mockChanges(snapshot = modifiedSnapshot) {
   invokeMock.mockImplementation((command: string) => {
-    if (command === 'get_repository_changes') return Promise.resolve(snapshot);
+    if (command === 'get_repository_changes_if_changed') return Promise.resolve({ revision: 1, unchanged: false, snapshot });
     if (command === 'get_repository_file_diff') return Promise.resolve(fileDiff);
     return Promise.resolve(snapshot);
   });
@@ -61,8 +61,10 @@ describe('RepositoryDetailChangesTab', () => {
     render(<RepositoryDetailChangesTab repo={repo} />);
 
     await waitFor(() => {
-      expect(invokeMock).toHaveBeenCalledWith('get_repository_changes', {
+      expect(invokeMock).toHaveBeenCalledWith('get_repository_changes_if_changed', {
+        pathId: 'repo-1',
         absolutePath: '/tmp/branch-schematic',
+        knownRevision: null,
       });
     });
 
@@ -140,7 +142,7 @@ describe('RepositoryDetailChangesTab', () => {
       entries: [{ path: 'src/App.tsx', status: 'modified', staged: true }],
     };
     invokeMock.mockImplementation((command: string) => {
-      if (command === 'get_repository_changes') return Promise.resolve(modifiedSnapshot);
+      if (command === 'get_repository_changes_if_changed') return Promise.resolve({ revision: 1, unchanged: false, snapshot: modifiedSnapshot });
       if (command === 'get_repository_file_diff') return Promise.resolve(fileDiff);
       if (command === 'stage_repository_paths') return Promise.resolve(stagedSnapshot);
       if (command === 'unstage_repository_paths') return Promise.resolve(modifiedSnapshot);
@@ -175,7 +177,7 @@ describe('RepositoryDetailChangesTab', () => {
       entries: [{ path: 'src/App.tsx', status: 'modified', staged: true }],
     };
     invokeMock.mockImplementation((command: string) => {
-      if (command === 'get_repository_changes') return Promise.resolve(stagedSnapshot);
+      if (command === 'get_repository_changes_if_changed') return Promise.resolve({ revision: 1, unchanged: false, snapshot: stagedSnapshot });
       if (command === 'get_repository_file_diff') return Promise.resolve(fileDiff);
       if (command === 'create_commit') return Promise.resolve({ ...stagedSnapshot, entries: [] });
       return Promise.resolve(null);

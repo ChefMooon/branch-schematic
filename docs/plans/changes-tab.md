@@ -200,6 +200,11 @@ This should be treated as a first-class mode of the page, not as an edge-case fa
 - After staging, unstaging, or committing, the view should refresh the change list immediately.
 - If the selected file is removed or no longer exists after an action, the selection should be cleared or moved to a safe fallback.
 - The UI should avoid stale state by reloading the change snapshot after any successful action and by disabling overlapping actions while a request is in flight.
+- The detail view should subscribe to the manager-owned `repository-changes-invalidated` event while mounted instead of running an independent short-interval polling loop.
+- The event should carry only a versioned repository ID and runtime revision; the frontend should fetch authoritative status through a revision-aware `get_repository_changes_if_changed` command.
+- A slower reconciliation read should remain enabled as a fallback for missed filesystem events, watcher degradation, sleep/wake recovery, and external tools with unreliable notifications.
+- An unchanged or semantically identical snapshot must not replace the mounted list, selected diff, scroll position, collapsed groups, or commit composer.
+- Background refreshes must preserve the last successful snapshot and surface errors without blanking the changes workspace.
 
 ### Diff preview resilience
 - The preview pane should support a fallback message for binary or unsupported content.

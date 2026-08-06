@@ -17,6 +17,7 @@ use tokio::sync::{Mutex, Semaphore};
 use uuid::Uuid;
 
 pub const WORKSPACE_UPDATED_EVENT: &str = "workspace-updated";
+pub const REPOSITORY_CHANGES_INVALIDATED_EVENT: &str = "repository-changes-invalidated";
 const MAX_WORKSPACE_UPDATED_BATCH_SIZE: usize = 250;
 const STARTUP_REGISTRATION_CONCURRENCY: usize = 8;
 const STARTUP_PIN_BOOST: Duration = Duration::from_secs(5 * 60);
@@ -40,6 +41,17 @@ pub struct WorkspaceUpdatedEvent {
     pub trigger_reason: String,
     pub batch_index: usize,
     pub batch_count: usize,
+    pub emitted_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct RepositoryChangesInvalidatedEvent {
+    pub version: u32,
+    pub event_id: String,
+    pub repository_id: String,
+    pub revision: u64,
+    pub trigger_reason: String,
     pub emitted_at: String,
 }
 
@@ -135,6 +147,7 @@ struct RuntimeEntry {
     follow_up: bool,
     failure_count: u32,
     trigger_reason: String,
+    changes_revision: u64,
 }
 
 struct ManagerState {
@@ -300,6 +313,7 @@ impl WatcherManager {
                 follow_up: false,
                 failure_count: 0,
                 trigger_reason: "startup".to_string(),
+                changes_revision: 0,
             },
         );
         drop(entries);
@@ -405,6 +419,15 @@ impl WatcherManager {
     ) -> Result<(), String> {
         self.request_refresh_with_reason(path_id, priority, "on_demand")
             .await
+    }
+
+    pub async fn changes_revision(&self, path_id: &str) -> Option<u64> {
+        self.state
+            .entries
+            .lock()
+            .await
+            .get(path_id)
+            .map(|entry| entry.changes_revision)
     }
 
     async fn request_refresh_with_reason(
@@ -921,9 +944,26 @@ impl WatcherManager {
         if entry.generation != generation {
             return;
         }
+        let changes_revision = if refresh_result.is_ok() && entry.detail_active {
+            entry.changes_revision = entry.changes_revision.wrapping_add(1);
+            Some(entry.changes_revision)
+        } else {
+            None
+        };
         if let Ok(outcome) = &refresh_result {
             self.queue_workspace_updated(&outcome.path_id, &trigger_reason)
                 .await;
+        }
+        drop(entries);
+        if let Some(changes_revision) = changes_revision {
+            self.emit_repository_changes_invalidated(&path_id, changes_revision, &trigger_reason);
+        }
+        let mut entries = self.state.entries.lock().await;
+        let Some(entry) = entries.get_mut(&path_id) else {
+            return;
+        };
+        if entry.generation != generation {
+            return;
         }
         let retry_delay = if refresh_failed {
             entry.failure_count = entry.failure_count.saturating_add(1);
@@ -945,6 +985,26 @@ impl WatcherManager {
         } else {
             entry.running = false;
         }
+    }
+
+    fn emit_repository_changes_invalidated(
+        &self,
+        repository_id: &str,
+        revision: u64,
+        trigger_reason: &str,
+    ) {
+        let Some(app_handle) = &self.app_handle else {
+            return;
+        };
+        let event = RepositoryChangesInvalidatedEvent {
+            version: 1,
+            event_id: Uuid::new_v4().to_string(),
+            repository_id: repository_id.to_string(),
+            revision,
+            trigger_reason: trigger_reason.to_string(),
+            emitted_at: chrono::Utc::now().to_rfc3339(),
+        };
+        let _ = app_handle.emit(REPOSITORY_CHANGES_INVALIDATED_EVENT, event);
     }
 
     async fn queue_workspace_updated(&self, repository_id: &str, trigger_reason: &str) {

@@ -109,8 +109,10 @@ describe('RepositoryDetailBody', () => {
     );
 
     await waitFor(() => {
-      expect(invokeMock).toHaveBeenCalledWith('get_repository_changes', {
+      expect(invokeMock).toHaveBeenCalledWith('get_repository_changes_if_changed', {
+        pathId: 'repo-1',
         absolutePath: '/tmp/branch-schematic',
+        knownRevision: null,
       });
     });
 
@@ -126,7 +128,10 @@ describe('RepositoryDetailBody', () => {
 
   it('renders grouped changes and commit composer for the changes tab', async () => {
     invokeMock.mockResolvedValue({
-      entries: [
+      revision: 1,
+      unchanged: false,
+      snapshot: {
+        entries: [
         {
           path: 'src/App.tsx',
           status: 'modified',
@@ -134,9 +139,10 @@ describe('RepositoryDetailBody', () => {
           diffAvailable: true,
           diffSummary: '@@ -1 +1 @@\n-old\n+new',
         },
-      ],
-      isInProgressOperation: false,
-      operationMessage: null,
+        ],
+        isInProgressOperation: false,
+        operationMessage: null,
+      },
     });
 
     const repo: TrackedPath = {
@@ -170,8 +176,10 @@ describe('RepositoryDetailBody', () => {
     );
 
     await waitFor(() => {
-      expect(invokeMock).toHaveBeenCalledWith('get_repository_changes', {
+      expect(invokeMock).toHaveBeenCalledWith('get_repository_changes_if_changed', {
+        pathId: 'repo-1',
         absolutePath: '/tmp/branch-schematic',
+        knownRevision: null,
       });
     });
 
@@ -184,9 +192,13 @@ describe('RepositoryDetailBody', () => {
   it('loads the selected file diff and renders both preview modes', async () => {
     invokeMock
       .mockResolvedValueOnce({
-        entries: [{ path: 'src/App.tsx', status: 'modified', staged: false }],
-        isInProgressOperation: false,
-        operationMessage: null,
+        revision: 1,
+        unchanged: false,
+        snapshot: {
+          entries: [{ path: 'src/App.tsx', status: 'modified', staged: false }],
+          isInProgressOperation: false,
+          operationMessage: null,
+        },
       })
       .mockResolvedValueOnce({
         path: 'src/App.tsx',
@@ -242,7 +254,10 @@ describe('RepositoryDetailBody', () => {
 
   it('collapses and expands a changes group without affecting its stage action', async () => {
     invokeMock.mockResolvedValue({
-      entries: [
+      revision: 1,
+      unchanged: false,
+      snapshot: {
+        entries: [
         {
           path: 'src/App.tsx',
           status: 'modified',
@@ -250,9 +265,10 @@ describe('RepositoryDetailBody', () => {
           diffAvailable: true,
           diffSummary: '@@ -1 +1 @@\n-old\n+new',
         },
-      ],
-      isInProgressOperation: false,
-      operationMessage: null,
+        ],
+        isInProgressOperation: false,
+        operationMessage: null,
+      },
     });
 
     const repo: TrackedPath = {
@@ -304,15 +320,19 @@ describe('RepositoryDetailBody', () => {
 
   it('keeps the changes list as the vertical scroll container', async () => {
     invokeMock.mockResolvedValue({
-      entries: Array.from({ length: 30 }, (_, index) => ({
-        path: `src/file-${index}.tsx`,
-        status: 'modified',
-        staged: false,
-        diffAvailable: true,
-        diffSummary: '@@ -1 +1 @@\n-old\n+new',
-      })),
-      isInProgressOperation: false,
-      operationMessage: null,
+      revision: 1,
+      unchanged: false,
+      snapshot: {
+        entries: Array.from({ length: 30 }, (_, index) => ({
+          path: `src/file-${index}.tsx`,
+          status: 'modified',
+          staged: false,
+          diffAvailable: true,
+          diffSummary: '@@ -1 +1 @@\n-old\n+new',
+        })),
+        isInProgressOperation: false,
+        operationMessage: null,
+      },
     });
 
     const repo: TrackedPath = {

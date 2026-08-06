@@ -7,6 +7,7 @@ interface RepositoryChangesListPanelProps {
   repo: TrackedPath | null;
   splitRatio: number;
   isLoading: boolean;
+  isRefreshing: boolean;
   error: string | null;
   snapshot: RepositoryChangesSnapshot | null;
   statusMessage: string | null;
@@ -25,6 +26,7 @@ export function RepositoryChangesListPanel({
   repo,
   splitRatio,
   isLoading,
+  isRefreshing,
   error,
   snapshot,
   statusMessage,
@@ -56,7 +58,7 @@ export function RepositoryChangesListPanel({
         </div>
       </div>
 
-      {isLoading ? (
+      {isLoading && !snapshot ? (
         <div className="repository-view-empty-state">Loading repository changes…</div>
       ) : error ? (
         <div className="repository-view-empty-state repository-view-empty-state--error">{error}</div>
@@ -72,7 +74,7 @@ export function RepositoryChangesListPanel({
               </div>
             ) : null}
             <div className="repository-view-status-meta">
-              {lastVerifiedAt ? `Verified ${new Date(lastVerifiedAt).toLocaleTimeString()}` : 'Waiting for verification'}
+              {isRefreshing ? 'Refreshing…' : lastVerifiedAt ? `Verified ${new Date(lastVerifiedAt).toLocaleTimeString()}` : 'Waiting for verification'}
             </div>
 
             <div className="repository-view-changes-groups" role="list">

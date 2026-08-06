@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 import type { RepositoryChangesSnapshot, TrackedPath } from '../../../types/git';
 import { groupChanges } from '../types/repositoryChanges';
 
@@ -10,18 +11,57 @@ interface CommitValues {
   body: string;
 }
 
+interface RepositoryChangesRead {
+  revision: number;
+  unchanged: boolean;
+  snapshot: RepositoryChangesSnapshot | null;
+}
+
+interface RepositoryChangesInvalidatedEvent {
+  version: number;
+  repositoryId: string;
+  revision: number;
+  triggerReason: string;
+}
+
+function snapshotsEqual(left: RepositoryChangesSnapshot | null, right: RepositoryChangesSnapshot) {
+  if (!left || left.isInProgressOperation !== right.isInProgressOperation || left.operationMessage !== right.operationMessage) {
+    return false;
+  }
+  if (left.entries.length !== right.entries.length) return false;
+
+  return left.entries.every((entry, index) => {
+    const other = right.entries[index];
+    return other
+      && entry.path === other.path
+      && entry.oldPath === other.oldPath
+      && entry.status === other.status
+      && entry.staged === other.staged
+      && entry.isConflicted === other.isConflicted
+      && entry.isBinary === other.isBinary
+      && entry.diffAvailable === other.diffAvailable
+      && entry.diffSummary === other.diffSummary
+      && entry.canStage === other.canStage
+      && entry.canUnstage === other.canUnstage;
+  });
+}
+
 export function useRepositoryChanges(repo: TrackedPath | null) {
   const [snapshot, setSnapshot] = useState<RepositoryChangesSnapshot | null>(null);
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [isBusy, setIsBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [lastVerifiedAt, setLastVerifiedAt] = useState<string | null>(null);
   const requestGeneration = useRef(0);
   const activeRequest = useRef<Promise<void> | null>(null);
+  const revision = useRef<number | null>(null);
+  const snapshotRef = useRef<RepositoryChangesSnapshot | null>(null);
 
   const applySnapshot = (nextSnapshot: RepositoryChangesSnapshot) => {
+    snapshotRef.current = nextSnapshot;
     setSnapshot(nextSnapshot);
     setStatusMessage(nextSnapshot.operationMessage ?? null);
     setSelectedPath((currentPath) => (
@@ -37,22 +77,35 @@ export function useRepositoryChanges(repo: TrackedPath | null) {
 
     const generation = requestGeneration.current;
 
-    setIsLoading(true);
+    const hasSnapshot = snapshotRef.current !== null;
+    if (hasSnapshot) {
+      setIsRefreshing(true);
+    } else {
+      setIsLoading(true);
+    }
     setError(null);
     const request = (async () => {
       try {
-        const nextSnapshot = await invoke<RepositoryChangesSnapshot>('get_repository_changes', {
+        const result = await invoke<RepositoryChangesRead>('get_repository_changes_if_changed', {
+          pathId: repo.id,
           absolutePath: repo.absolute_path,
+          knownRevision: revision.current,
         });
         if (generation !== requestGeneration.current) return;
-        applySnapshot(nextSnapshot);
+        revision.current = result.revision;
+        if (!result.unchanged && result.snapshot && !snapshotsEqual(snapshotRef.current, result.snapshot)) {
+          applySnapshot(result.snapshot);
+        }
         setLastVerifiedAt(new Date().toISOString());
       } catch (loadError) {
         if (generation === requestGeneration.current) {
           setError(loadError instanceof Error ? loadError.message : 'Unable to load repository changes.');
         }
       } finally {
-        if (generation === requestGeneration.current) setIsLoading(false);
+        if (generation === requestGeneration.current) {
+          setIsLoading(false);
+          setIsRefreshing(false);
+        }
         activeRequest.current = null;
       }
     })();
@@ -64,33 +117,37 @@ export function useRepositoryChanges(repo: TrackedPath | null) {
     requestGeneration.current += 1;
     activeRequest.current = null;
     setSelectedPath(null);
+    revision.current = null;
+    snapshotRef.current = null;
     setError(null);
     setStatusMessage(null);
     setLastVerifiedAt(null);
     if (!repo?.id) return;
     let intervalId: ReturnType<typeof setInterval> | undefined;
-    let intervalBootstrapId: ReturnType<typeof setTimeout> | undefined;
     let disposed = false;
+    let unlisten: (() => void) | undefined;
+
+    void listen<RepositoryChangesInvalidatedEvent>('repository-changes-invalidated', (event) => {
+      if (disposed || event.payload.version !== 1 || event.payload.repositoryId !== repo.id) return;
+      void loadChanges();
+    }).then((cleanup) => {
+      if (disposed) {
+        cleanup();
+      } else {
+        unlisten = cleanup;
+      }
+    }).catch(() => undefined);
+
     void Promise.resolve(loadChanges()).finally(() => {
       if (disposed) return;
-      intervalBootstrapId = setTimeout(() => {
-        void Promise.resolve(invoke<number>('get_detail_status_refresh_interval'))
-          .then((interval) => {
-            if (disposed) return;
-            const seconds = Math.min(5, Math.max(2, Number(interval) || 5));
-            intervalId = setInterval(() => void loadChanges(), seconds * 1000);
-          })
-          .catch(() => {
-            if (!disposed) intervalId = setInterval(() => void loadChanges(), 5000);
-          });
-      }, 100);
+      intervalId = setInterval(() => void loadChanges(), 30000);
     });
 
     return () => {
       disposed = true;
       requestGeneration.current += 1;
-      if (intervalBootstrapId) clearTimeout(intervalBootstrapId);
       if (intervalId) clearInterval(intervalId);
+      if (unlisten) unlisten();
     };
   }, [repo?.id, repo?.absolute_path]);
 
@@ -149,6 +206,7 @@ export function useRepositoryChanges(repo: TrackedPath | null) {
     selectedPath,
     setSelectedPath,
     isLoading,
+    isRefreshing,
     isBusy,
     error,
     statusMessage,

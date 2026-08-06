@@ -23,6 +23,22 @@ The app uses two complementary manager-owned mechanisms:
    - The branch map relies on the shared invalidation listener and does not run a page-level polling loop.
    - A repository may use manager-owned polling as a degraded fallback when watcher registration or recovery fails.
 
+### Repository changes invalidation
+
+The repository detail changes view uses the same manager-owned monitoring path rather than creating a second short-interval watcher. While a detail session is active, a successful manager refresh increments a runtime changes revision and emits a version 1 `repository-changes-invalidated` event containing:
+
+- `repositoryId`
+- `revision`
+- `triggerReason`
+- `eventId`
+- `emittedAt`
+
+The event is an invalidation signal only. It does not contain the changed-file list. The frontend responds by calling `get_repository_changes_if_changed` with the repository ID, absolute path, and its known revision. The command returns an explicit `unchanged` result when the known revision is current, or an authoritative `RepositoryChangesSnapshot` when a refresh is needed.
+
+The changes view also keeps a slower 30-second reconciliation read as a safety net for missed filesystem events, sleep/wake recovery, degraded watcher operation, and editors that save through notification-unfriendly atomic replacement patterns. Filesystem events remain hints; Git status remains authoritative. The frontend compares snapshot content before replacing mounted UI state, so a successful invalidation with no meaningful file-list change does not reset selection, diff context, scroll position, collapsed groups, or the commit composer.
+
+Stage, unstage, and commit commands remain immediate authoritative actions. Their returned snapshots update the view directly, while the next manager invalidation or reconciliation read resolves any concurrent external change.
+
 ## How local commits are detected
 
 New local commits are discovered indirectly through Git metadata updates. `WatcherManager` resolves the repository layout and watches logical `HEAD`, refs, `packed-refs`, and `index` targets in the resolved Git metadata root, using stable metadata parents when a target does not exist yet. It does not recursively watch object stores; object-only activity is a verification hint. Worktree monitoring is registered only while a repository is detail-active, and bare repositories have no working-tree watch.
