@@ -159,6 +159,7 @@ function parseManualEdgeNodePair(edgeId: string): [string, string] | null {
 interface CanvasState {
   views: CanvasViewRecord[];
   activeViewId: string | null;
+  isBranchMapActive: boolean;
   isViewHydrating: boolean;
   sessionViewportByViewId: Record<string, ViewportState>;
   openedViewIds: Record<string, boolean>;
@@ -187,6 +188,7 @@ interface CanvasState {
   initializeBranchMapSession: () => Promise<void>;
   hydrateViewsList: () => Promise<void>;
   hydrateWorkspaceNodes: () => Promise<void>;
+  setBranchMapActive: (active: boolean) => Promise<void>;
   clearActiveViewVisibility: () => Promise<void>;
   updateNodeConfig: (repoPathId: string, viewMode: 'COMPACT' | 'EXPANDED', density: number, hex: string, explodeBranches: boolean) => Promise<void>;
   removeManualEdge: (edgeId: string) => Promise<void>;
@@ -195,10 +197,22 @@ interface CanvasState {
 
 export const useCanvasStore = create<CanvasState>((set, get) => {
   let hydrationGeneration = 0;
+  let visibilityUpdate = Promise.resolve();
+
+  const publishVisibleRepositories = (repositoryIds: string[]) => {
+    const nextUpdate = visibilityUpdate.then(() =>
+      invoke<void>('set_branch_map_visible_repositories_command', {
+        repositoryIds,
+      }),
+    );
+    visibilityUpdate = nextUpdate.catch(() => undefined);
+    return nextUpdate;
+  };
 
   return ({
   views: [],
   activeViewId: null,
+  isBranchMapActive: false,
   isViewHydrating: false,
   sessionViewportByViewId: {},
   openedViewIds: {},
@@ -612,11 +626,15 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
   },
   
   hydrateWorkspaceNodes: async () => {
+    if (!get().isBranchMapActive) return;
+
     const viewId = get().activeViewId;
     if (!viewId) return;
     const generation = ++hydrationGeneration;
     const isCurrentHydration = () =>
-      generation === hydrationGeneration && get().activeViewId === viewId;
+      generation === hydrationGeneration &&
+      get().activeViewId === viewId &&
+      get().isBranchMapActive;
 
     try {
       const paths = await invoke<{ absolute_path: string }[]>('get_active_tracked_paths');
@@ -630,9 +648,8 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
             .filter((repositoryId): repositoryId is string => Boolean(repositoryId)),
         ),
       );
-      await invoke('set_branch_map_visible_repositories_command', {
-        repositoryIds: visibleRepositoryIds,
-      });
+      if (!isCurrentHydration()) return;
+      await publishVisibleRepositories(visibleRepositoryIds);
       if (!isCurrentHydration()) return;
       const topologyLookup = await (async (): Promise<ResolvedTopologyLookup> => {
         if (!paths || paths.length === 0) return { branchPair: null, relation: null };
@@ -876,12 +893,21 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
 
   clearActiveViewVisibility: async () => {
     hydrationGeneration += 1;
-    await invoke('set_branch_map_visible_repositories_command', {
-      repositoryIds: [],
-    });
+    await publishVisibleRepositories([]);
     await invoke('set_selected_repository_command', {
       repositoryId: null,
     });
+  },
+
+  setBranchMapActive: async (active) => {
+    if (active) {
+      set({ isBranchMapActive: true });
+      return;
+    }
+
+    if (!get().isBranchMapActive) return;
+    set({ isBranchMapActive: false });
+    await get().clearActiveViewVisibility();
   },
 
   updateNodeConfig: async (repoPathId, viewMode, density, hex, explodeBranches) => {

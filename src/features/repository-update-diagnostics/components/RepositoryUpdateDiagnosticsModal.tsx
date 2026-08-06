@@ -137,7 +137,7 @@ export function RepositoryUpdateDiagnosticsModal({ isOpen, onClose }: Repository
           <div className="repository-update-diagnostics-modal__table-wrap">
             <table className="repository-update-diagnostics-modal__table">
               <thead>
-                <tr><th>Priority</th><th>Repository</th><th>Runtime</th><th>Monitor</th><th>Detail</th><th>Trigger</th><th>Failures</th><th>Generation</th></tr>
+                <tr><th>Priority</th><th>Repository</th><th>Runtime</th><th>Monitor</th><th>Detail</th><th>Last trigger</th><th>Failures</th><th>Generation</th></tr>
               </thead>
               <tbody>
                 {filteredRepositories.map((entry) => {

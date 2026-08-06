@@ -56,7 +56,7 @@ function MapWorkspace() {
   const hydrateViewsList = useCanvasStore((state) => state.hydrateViewsList);
   const initializeBranchMapSession = useCanvasStore((state) => state.initializeBranchMapSession);
   const hydrateWorkspaceNodes = useCanvasStore((state) => state.hydrateWorkspaceNodes);
-  const clearActiveViewVisibility = useCanvasStore((state) => state.clearActiveViewVisibility);
+  const setBranchMapActive = useCanvasStore((state) => state.setBranchMapActive);
 
   const nodes = useCanvasStore((state) => state.nodes);
   const edges = useCanvasStore((state) => state.edges);
@@ -71,6 +71,14 @@ function MapWorkspace() {
     [views, activeViewId],
   );
   const isCanvasReady = views.length === 0 || Boolean(activeViewObj);
+
+  useEffect(() => {
+    void setBranchMapActive(true);
+
+    return () => {
+      void setBranchMapActive(false);
+    };
+  }, [setBranchMapActive]);
 
   // 1. Initial workspace views initialization
   useEffect(() => {
@@ -91,12 +99,6 @@ function MapWorkspace() {
       hydrateWorkspaceNodes();
     }
   }, [activeViewId, hydrateWorkspaceNodes]);
-
-  useEffect(() => {
-    return () => {
-      void clearActiveViewVisibility();
-    };
-  }, [clearActiveViewVisibility]);
 
   // 3. Sync the viewport only when the active view selection changes so metadata-only actions
   // do not reapply the stored camera state and cause a visible jump.

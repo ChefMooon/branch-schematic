@@ -23,7 +23,6 @@ export type CommitRecord = {
 
 export function RepositoryDetail({ isOpen, repo, onClose }: RepositoryDetailProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
-  const detailSessionIdRef = useRef<string | null>(null);
   const { handleMouseDown, handleMouseUp, handleMouseLeave, handleTouchStart, handleTouchEnd } = useBackdropDismiss(dialogRef, onClose, isOpen);
   const [commits, setCommits] = useState<CommitRecord[]>([]);
   const [selectedCommitHash, setSelectedCommitHash] = useState<string | null>(null);
@@ -82,8 +81,8 @@ export function RepositoryDetail({ isOpen, repo, onClose }: RepositoryDetailProp
     if (!isOpen || !repo) return;
 
     let disposed = false;
-    const sessionId = detailSessionIdRef.current ?? `${repo.id}-${Date.now()}-${Math.random()}`;
-    detailSessionIdRef.current = sessionId;
+    let detailSessionActive = false;
+    const sessionId = `${repo.id}-${Date.now()}-${Math.random()}`;
 
     const activateDetailSession = async () => {
       await invoke('ensure_repository_monitored_command', {
@@ -104,7 +103,7 @@ export function RepositoryDetail({ isOpen, repo, onClose }: RepositoryDetailProp
         });
         return;
       }
-      await invoke('request_repository_refresh_command', { pathId: repo.id });
+      detailSessionActive = true;
     };
 
     void activateDetailSession().catch((error) => {
@@ -113,6 +112,7 @@ export function RepositoryDetail({ isOpen, repo, onClose }: RepositoryDetailProp
 
     return () => {
       disposed = true;
+      if (!detailSessionActive) return;
       void Promise.resolve(
         invoke('set_repository_detail_active_command', {
           pathId: repo.id,

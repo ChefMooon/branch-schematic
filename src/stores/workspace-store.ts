@@ -168,7 +168,9 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
           );
         }
         void useWorkspaceStore.getState().hydrateFromBackend();
-        void useCanvasStore.getState().hydrateWorkspaceNodes();
+        if (useCanvasStore.getState().isBranchMapActive) {
+          void useCanvasStore.getState().hydrateWorkspaceNodes();
+        }
       }).then((unlisten) => {
         if (sharedSubscriberCount === 0) {
           unlisten();

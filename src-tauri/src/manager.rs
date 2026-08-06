@@ -403,7 +403,9 @@ impl WatcherManager {
             .get_mut(&path_id)
             .ok_or_else(|| "Repository is not monitored".to_string())?;
         entry.priority = Self::effective_priority(entry, Instant::now());
-        entry.trigger_reason = trigger_reason.to_string();
+        if !(entry.detail_active && trigger_reason == "on_demand") {
+            entry.trigger_reason = trigger_reason.to_string();
+        }
         if entry.running {
             entry.follow_up = true;
             self.state
@@ -455,12 +457,21 @@ impl WatcherManager {
             self.ensure_polling_fallback(path_id).await;
         }
         if detail_active {
-            self.request_refresh_with_reason(
-                path_id.to_string(),
-                RefreshPriority::Foreground,
-                "detail_active",
-            )
-            .await?;
+            let session_is_still_active = self
+                .state
+                .entries
+                .lock()
+                .await
+                .get(path_id)
+                .is_some_and(|entry| entry.detail_sessions.contains(session_id));
+            if session_is_still_active {
+                self.request_refresh_with_reason(
+                    path_id.to_string(),
+                    RefreshPriority::Foreground,
+                    "detail_active",
+                )
+                .await?;
+            }
         }
         Ok(())
     }
@@ -1116,6 +1127,39 @@ mod tests {
         let diagnostics = manager.diagnostics().await;
         assert_eq!(diagnostics.registration_attempts, 2);
         assert_eq!(diagnostics.coalesced_requests, 1);
+    }
+
+    #[tokio::test]
+    async fn generic_registration_keeps_siblings_background_when_detail_promotes_one_repository() {
+        let pool = SqlitePool::connect_lazy("sqlite::memory:").unwrap();
+        let manager = WatcherManager::new(pool, RepositoryCacheWriter::default());
+
+        for repository_id in ["repo-a", "repo-b"] {
+            manager
+                .ensure_monitored(
+                    repository_id.to_string(),
+                    "C:\\missing".to_string(),
+                    RefreshPriority::Background,
+                )
+                .await
+                .unwrap();
+        }
+
+        manager
+            .set_detail_session("repo-a", "dashboard-detail", true)
+            .await
+            .unwrap();
+        manager
+            .request_refresh("repo-a".to_string(), RefreshPriority::Foreground)
+            .await
+            .unwrap();
+
+        let entries = manager.state.entries.lock().await;
+        assert_eq!(entries["repo-a"].priority, RefreshPriority::Foreground);
+        assert_eq!(entries["repo-b"].priority, RefreshPriority::Background);
+        assert!(entries["repo-a"].startup_pin_until.is_none());
+        assert!(entries["repo-b"].startup_pin_until.is_none());
+        assert_eq!(entries["repo-a"].trigger_reason, "detail_active");
     }
 
     #[tokio::test]

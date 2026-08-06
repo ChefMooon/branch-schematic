@@ -391,7 +391,7 @@ async fn ensure_repository_monitored_command(
     absolute_path: String,
 ) -> Result<(), String> {
     manager
-        .ensure_monitored(path_id, absolute_path, manager::RefreshPriority::Visible)
+        .ensure_monitored(path_id, absolute_path, manager::RefreshPriority::Background)
         .await
 }
 

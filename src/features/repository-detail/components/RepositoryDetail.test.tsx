@@ -120,6 +120,66 @@ describe('RepositoryDetail', () => {
     expect(screen.queryByText('Loading commits…')).not.toBeInTheDocument();
   });
 
+  it('promotes only the open repository detail session and cleans it up on close', async () => {
+    invokeMock.mockResolvedValue([]);
+
+    const repo: TrackedPath = {
+      id: 'repo-detail',
+      display_name: 'Detail Repository',
+      absolute_path: '/tmp/detail-repository',
+      current_branch: 'main',
+      default_branch_name: 'main',
+      available_branches: ['main'],
+      ahead_count: 0,
+      behind_count: 0,
+      has_upstream: false,
+      uncommitted_changes_count: 0,
+      remote_url: null,
+      github_owner_login: null,
+      repo_origin_type: 'LOCAL_ONLY',
+      tags: [],
+    };
+
+    const { rerender, unmount } = render(<RepositoryDetail isOpen repo={repo} onClose={() => undefined} />);
+
+    await waitFor(() => {
+      expect(invokeMock).toHaveBeenCalledWith('ensure_repository_monitored_command', {
+        pathId: repo.id,
+        absolutePath: repo.absolute_path,
+      });
+      expect(invokeMock).toHaveBeenCalledWith('set_repository_detail_active_command', {
+        pathId: repo.id,
+        sessionId: expect.any(String),
+        active: true,
+      });
+    });
+
+    expect(invokeMock).not.toHaveBeenCalledWith('request_repository_refresh_command', {
+      pathId: repo.id,
+    });
+    expect(invokeMock).not.toHaveBeenCalledWith('set_branch_map_visible_repositories_command', expect.anything());
+
+    const detailActivationCalls = () => invokeMock.mock.calls.filter(
+      ([command, payload]) => command === 'set_repository_detail_active_command' && payload?.active === true,
+    );
+    const detailDeactivationCalls = () => invokeMock.mock.calls.filter(
+      ([command, payload]) => command === 'set_repository_detail_active_command' && payload?.active === false,
+    );
+    const firstSessionId = detailActivationCalls()[0][1].sessionId;
+
+    rerender(<RepositoryDetail isOpen={false} repo={repo} onClose={() => undefined} />);
+    await waitFor(() => expect(detailDeactivationCalls()).toHaveLength(1));
+
+    rerender(<RepositoryDetail isOpen repo={repo} onClose={() => undefined} />);
+    await waitFor(() => expect(detailActivationCalls()).toHaveLength(2));
+
+    expect(detailActivationCalls()[1][1].sessionId).not.toBe(firstSessionId);
+
+    unmount();
+
+    expect(detailDeactivationCalls()).toHaveLength(2);
+  });
+
   it('renders the commits and changes tabs and opens the compact repository summary popover', async () => {
     const repo: TrackedPath = {
       id: 'repo-1',

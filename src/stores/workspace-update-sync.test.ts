@@ -3,12 +3,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const listenMock = vi.hoisted(() => vi.fn());
 const invokeMock = vi.hoisted(() => vi.fn());
 const hydrateWorkspaceNodesMock = vi.hoisted(() => vi.fn());
+const branchMapActiveMock = vi.hoisted(() => ({ value: true }));
 
 vi.mock('@tauri-apps/api/event', () => ({ listen: listenMock }));
 vi.mock('@tauri-apps/api/core', () => ({ invoke: invokeMock }));
 vi.mock('./canvas-store', () => ({
   useCanvasStore: {
-    getState: () => ({ hydrateWorkspaceNodes: hydrateWorkspaceNodesMock }),
+    getState: () => ({
+      isBranchMapActive: branchMapActiveMock.value,
+      hydrateWorkspaceNodes: hydrateWorkspaceNodesMock,
+    }),
   },
 }));
 
@@ -17,6 +21,7 @@ import { parseWorkspaceUpdatedEvent, useWorkspaceStore } from './workspace-store
 describe('workspace update synchronization', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    branchMapActiveMock.value = true;
     invokeMock.mockResolvedValue([]);
   });
 
@@ -71,5 +76,35 @@ describe('workspace update synchronization', () => {
     expect(unlisten).not.toHaveBeenCalled();
     releaseSecond();
     expect(unlisten).toHaveBeenCalledTimes(1);
+  });
+
+  it('refreshes repository data without hydrating canvas nodes outside branch map', async () => {
+    let handler: ((event: { payload: unknown }) => void) | undefined;
+    const unlisten = vi.fn();
+    listenMock.mockImplementation(async (_eventName, nextHandler) => {
+      handler = nextHandler;
+      return unlisten;
+    });
+
+    const release = await useWorkspaceStore.getState().subscribeToWorkspaceUpdates();
+    branchMapActiveMock.value = false;
+    handler?.({
+      payload: {
+        version: 1,
+        eventId: 'event-dashboard',
+        revision: 2,
+        repositoryIds: ['repo-dashboard'],
+        triggerReason: 'detail_active',
+        batchIndex: 0,
+        batchCount: 1,
+        emittedAt: new Date().toISOString(),
+      },
+    });
+
+    await vi.waitFor(() => {
+      expect(invokeMock).toHaveBeenCalledWith('get_tracked_workspaces');
+    });
+    expect(hydrateWorkspaceNodesMock).not.toHaveBeenCalled();
+    release();
   });
 });
