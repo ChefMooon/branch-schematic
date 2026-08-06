@@ -47,6 +47,18 @@ const authLevelOptions: { value: AuthLevel; label: string }[] = [
   { value: 'full_oauth', label: 'Full OAuth' },
 ];
 
+const createProfileDraft: Partial<UserProfile> = {
+  display_name: '',
+  auth_level: 'basic',
+  repository_scope: [],
+  folder_scope: [],
+  api_base_url: '',
+  commit_name: '',
+  commit_email: '',
+};
+
+const newProfileDraftId = '__new-profile-draft__';
+
 export function ProfileManagementModal({
   isOpen,
   onClose,
@@ -58,12 +70,7 @@ export function ProfileManagementModal({
   onDeleteProfile,
   onSelectProfile,
 }: ProfileManagementModalProps) {
-  const [draft, setDraft] = useState<Partial<UserProfile>>({
-    display_name: 'New profile',
-    auth_level: 'basic',
-    repository_scope: [],
-    folder_scope: [],
-  });
+  const [draft, setDraft] = useState<Partial<UserProfile>>({ ...createProfileDraft });
   const [isBusy, setIsBusy] = useState(false);
   const [mode, setMode] = useState<'create' | 'edit'>('create');
   const [isHealthPopoverOpen, setIsHealthPopoverOpen] = useState(false);
@@ -96,15 +103,8 @@ export function ProfileManagementModal({
     }
 
     setMode('create');
-    setDraft({
-      display_name: 'New profile',
-      auth_level: 'basic',
-      repository_scope: [],
-      folder_scope: [],
-      api_base_url: '',
-      commit_name: '',
-      commit_email: '',
-    });
+    setSelectedProfileId(newProfileDraftId);
+    setDraft({ ...createProfileDraft });
   }, [isOpen, profile]);
 
   const healthSummary = useMemo(() => {
@@ -173,6 +173,26 @@ export function ProfileManagementModal({
     setProfileToDelete(null);
   };
 
+  const startCreatingProfile = () => {
+    setMode('create');
+    setSelectedProfileId(newProfileDraftId);
+    setDraft({ ...createProfileDraft });
+    onSelectProfile(null);
+  };
+
+  const discardNewProfileDraft = () => {
+    const nextProfile = profiles[0] ?? null;
+
+    if (!nextProfile) {
+      onClose();
+      return;
+    }
+
+    setMode('edit');
+    setSelectedProfileId(nextProfile.id);
+    onSelectProfile(nextProfile.id);
+  };
+
   const handleOverlayMouseDown = (event: React.MouseEvent<HTMLDivElement>) => {
     if (event.target === event.currentTarget) {
       setIsBackdropPressed(true);
@@ -219,7 +239,7 @@ export function ProfileManagementModal({
               <div style={styles.eyebrow}>Auth profile management</div>
               <h3 style={styles.title}>{mode === 'edit' ? 'Edit profile' : 'Create profile'}</h3>
               <div style={styles.headerHint}>
-                {profile
+                {mode === 'edit' && profile
                   ? `${profile.display_name} is open for editing without changing your active profile.`
                   : 'Create a new profile while keeping your current active profile intact.'}
               </div>
@@ -239,13 +259,29 @@ export function ProfileManagementModal({
                   {isWorkspaceCollapsed ? (
                     <div style={styles.workspaceDropdownWrapper}>
                       <Button type="button" variant="basic" onClick={() => setIsProfileMenuOpen((value) => !value)}>
-                        <span>{profile?.display_name ?? 'Select profile'}</span>
+                        <span>{mode === 'edit' ? profile?.display_name ?? 'Select profile' : 'New profile'}</span>
                         <CaretDownIcon size={14} />
                       </Button>
                       {isProfileMenuOpen && (
-                        <div style={styles.workspaceDropdownMenu}>
+                        <div style={styles.workspaceDropdownMenu} role="region" aria-label="Available profiles">
+                          {mode === 'create' ? (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSelectedProfileId(newProfileDraftId);
+                                setIsProfileMenuOpen(false);
+                              }}
+                              style={{ ...styles.workspaceDropdownItem, borderColor: selectedProfileId === newProfileDraftId ? 'var(--accent, #3b82f6)' : 'var(--app-border)' }}
+                            >
+                              <div style={styles.workspaceDropdownText}>
+                                <div style={styles.workspaceDropdownName}>New profile</div>
+                                <div style={styles.workspaceDropdownMeta}>Basic local • Unsaved draft</div>
+                              </div>
+                              {selectedProfileId === newProfileDraftId ? <CheckCircleIcon size={14} color="var(--accent, #3b82f6)" /> : null}
+                            </button>
+                          ) : null}
                           {profiles.map((entry) => {
-                            const isSelected = entry.id === profile?.id;
+                            const isSelected = mode === 'edit' && entry.id === (profile?.id ?? selectedProfileId);
                             return (
                               <button
                                 key={entry.id}
@@ -310,16 +346,53 @@ export function ProfileManagementModal({
                       )}
                     </div>
                   )}
-                  <Button type="button" variant="basic" onClick={() => onSelectProfile(null)}>
+                  <Button type="button" variant="basic" onClick={startCreatingProfile}>
                     <PlusCircleIcon size={14} weight="bold" />
                     <span>New</span>
                   </Button>
                 </div>
               </div>
               {!isWorkspaceCollapsed ? (
-                <div style={styles.profileList}>
+                <div style={styles.profileList} role="region" aria-label="Profile workspace">
+                  {mode === 'create' ? (
+                    <div
+                      style={{
+                        ...styles.draftProfileRow,
+                        borderColor: selectedProfileId === newProfileDraftId ? 'var(--accent, #3b82f6)' : 'var(--app-border)',
+                        backgroundColor: selectedProfileId === newProfileDraftId ? 'rgba(59, 130, 246, 0.14)' : 'var(--app-surface)',
+                      }}
+                    >
+                      <Button
+                        type="button"
+                        variant="basic"
+                        onClick={() => setSelectedProfileId(newProfileDraftId)}
+                        style={styles.draftProfileButton}
+                        aria-label="Select new profile draft"
+                      >
+                        <div style={styles.draftProfileAvatar}>
+                          <PlusCircleIcon size={16} weight="bold" />
+                        </div>
+                        <div style={styles.draftProfileText}>
+                          <div style={styles.draftProfileName}>New profile</div>
+                          <div style={styles.draftProfileMeta}>Basic local • Unsaved draft</div>
+                        </div>
+                      </Button>
+                      <Button
+                        type="button"
+                        onClick={discardNewProfileDraft}
+                        variant="danger"
+                        style={styles.draftProfileDeleteButton}
+                        title="Delete new profile draft"
+                        aria-label="Delete new profile draft"
+                      >
+                        <TrashIcon size={14} />
+                      </Button>
+                    </div>
+                  ) : null}
                   {profiles.map((entry) => {
-                    const isSelected = entry.id === (profile?.id ?? selectedProfileId);
+                    const isSelected = mode === 'edit'
+                      ? entry.id === (profile?.id ?? selectedProfileId)
+                      : entry.id === selectedProfileId;
                     const isFavorite = Number(entry.is_favorite ?? 0) === 1;
                     const status = tokenHealthMap[entry.id] ?? 'none';
                     return (
@@ -438,7 +511,7 @@ export function ProfileManagementModal({
           </div>
 
           <div style={styles.footer}>
-            {profile?.id ? (
+            {mode === 'edit' && profile?.id ? (
               <Button type="button" variant="danger" onClick={() => requestDeleteConfirmation(profile)} disabled={isBusy}>
                 <TrashIcon size={16} weight="bold" />
                 <span>Delete</span>
@@ -650,6 +723,7 @@ const styles: Record<string, React.CSSProperties> = {
     top: 'calc(100% + 6px)',
     left: 0,
     minWidth: '220px',
+    maxHeight: '280px',
     padding: '8px',
     borderRadius: '10px',
     border: '1px solid var(--app-border)',
@@ -658,6 +732,8 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     flexDirection: 'column',
     gap: '6px',
+    overflowY: 'auto',
+    overscrollBehavior: 'contain',
     zIndex: 90,
   },
   workspaceDropdownItem: {
@@ -690,6 +766,68 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     flexDirection: 'column',
     gap: '8px',
+    maxHeight: 'clamp(180px, 32vh, 320px)',
+    overflowY: 'auto',
+    overflowX: 'hidden',
+    overscrollBehavior: 'contain',
+    paddingRight: '4px',
+  },
+  draftProfileRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    border: '1px solid var(--app-border)',
+    borderRadius: '8px',
+    padding: '8px 10px',
+    minWidth: 0,
+    transition: 'border-color 120ms ease, background-color 120ms ease',
+  },
+  draftProfileButton: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    flex: 1,
+    minWidth: 0,
+    border: 'none',
+    borderRadius: '6px',
+    backgroundColor: 'transparent',
+    color: 'inherit',
+    cursor: 'pointer',
+    padding: '2px 0',
+    justifyContent: 'flex-start',
+    textAlign: 'left',
+  },
+  draftProfileAvatar: {
+    width: '28px',
+    height: '28px',
+    marginLeft: '2px',
+    borderRadius: '999px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    color: 'var(--accent, #3b82f6)',
+    backgroundColor: 'rgba(59, 130, 246, 0.12)',
+    flexShrink: 0,
+  },
+  draftProfileText: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '2px',
+    minWidth: 0,
+  },
+  draftProfileName: {
+    fontWeight: 600,
+    fontSize: '13px',
+  },
+  draftProfileMeta: {
+    fontSize: '12px',
+    color: 'var(--app-text-muted, #64748b)',
+  },
+  draftProfileDeleteButton: {
+    width: '30px',
+    height: '30px',
+    padding: 0,
+    flexShrink: 0,
   },
   profileListItem: {
     display: 'flex',

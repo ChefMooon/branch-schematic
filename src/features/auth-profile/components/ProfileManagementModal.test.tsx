@@ -143,8 +143,37 @@ describe('ProfileManagementModal', () => {
     expect(selectButton.getAttribute('style')).toContain('background-color: transparent');
   });
 
-  it('keeps the current profile highlighted when switching to create mode', async () => {
+  it('bounds the expanded profile workspace when many profiles are present', () => {
+    const manyProfiles = Array.from({ length: 20 }, (_, index) => ({
+      ...profile,
+      id: `profile-${index + 1}`,
+      display_name: `Profile ${index + 1}`,
+    }));
+
+    render(
+      <ProfileManagementModal
+        isOpen
+        onClose={vi.fn()}
+        profile={manyProfiles[0]}
+        profiles={manyProfiles}
+        tokenHealthMap={{}}
+        onCreateProfile={vi.fn()}
+        onSaveProfile={vi.fn()}
+        onDeleteProfile={vi.fn()}
+        onSelectProfile={vi.fn()}
+      />
+    );
+
+    const workspace = screen.getByRole('region', { name: /profile workspace/i });
+
+    expect(workspace.getAttribute('style')).toContain('max-height: clamp(180px, 32vh, 320px)');
+    expect(workspace.getAttribute('style')).toContain('overflow-y: auto');
+    expect(screen.getByRole('button', { name: /select profile profile 20/i })).toBeInTheDocument();
+  });
+
+  it('clears the current selection and starts a blank draft when switching to create mode', async () => {
     const user = userEvent.setup();
+    const onSelectProfile = vi.fn();
 
     render(
       <ProfileManagementModal
@@ -156,7 +185,7 @@ describe('ProfileManagementModal', () => {
         onCreateProfile={vi.fn()}
         onSaveProfile={vi.fn()}
         onDeleteProfile={vi.fn()}
-        onSelectProfile={vi.fn()}
+        onSelectProfile={onSelectProfile}
       />
     );
 
@@ -166,7 +195,49 @@ describe('ProfileManagementModal', () => {
 
     await user.click(screen.getByRole('button', { name: /^new$/i }));
 
-    expect(selectedRow?.getAttribute('style')).toContain('border-color: var(--accent, #3b82f6)');
+    expect(onSelectProfile).toHaveBeenCalledWith(null);
+    expect(selectedRow?.getAttribute('style')).toContain('border-color: var(--app-border)');
+    const draftRow = screen.getByRole('button', { name: /select new profile draft/i }).parentElement;
+    expect(draftRow?.getAttribute('style')).toContain('border-color: var(--accent, #3b82f6)');
+    expect(screen.getByText(/Unsaved draft/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /delete new profile draft/i })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /create profile/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /create profile/i })).toBeInTheDocument();
+    expect(screen.getByLabelText(/display name/i)).toHaveValue('');
+    expect(screen.getByLabelText(/username/i)).toHaveValue('');
+    expect(screen.getByLabelText(/email/i)).toHaveValue('');
+    expect(screen.getByLabelText(/auth level/i)).toHaveValue('basic');
+
+    await user.click(screen.getByTitle(/collapse profile workspace/i));
+    await user.click(screen.getByRole('button', { name: /new profile/i }));
+
+    expect(screen.queryByRole('button', { name: /select new profile draft/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /new profile basic local.*unsaved draft/i }).getAttribute('style')).toContain('border-color: var(--accent, #3b82f6)');
+    expect(screen.getByText(/Basic local • Unsaved draft/)).toBeInTheDocument();
+  });
+
+  it('selects the first existing profile after deleting the unsaved draft', async () => {
+    const user = userEvent.setup();
+    const onSelectProfile = vi.fn();
+
+    render(
+      <ProfileManagementModal
+        isOpen
+        onClose={vi.fn()}
+        profile={null}
+        profiles={profiles}
+        tokenHealthMap={{}}
+        onCreateProfile={vi.fn()}
+        onSaveProfile={vi.fn()}
+        onDeleteProfile={vi.fn()}
+        onSelectProfile={onSelectProfile}
+      />
+    );
+
+    await user.click(screen.getByRole('button', { name: /delete new profile draft/i }));
+
+    expect(onSelectProfile).toHaveBeenCalledWith('profile-1');
+    expect(screen.queryByRole('button', { name: /delete new profile draft/i })).not.toBeInTheDocument();
   });
 
   it('asks for confirmation before deleting the active profile from the footer action', async () => {

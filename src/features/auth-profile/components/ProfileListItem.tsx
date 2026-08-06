@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { GithubLogo, Star, Trash, UserCircle } from '@phosphor-icons/react';
+import { Button } from '../../../components/button/Button';
 import type { TokenHealthStatus, UserProfile } from '../types';
 import { getProfileAvatarUrl } from '../utils/profileAvatar';
 
@@ -56,7 +57,6 @@ export function ProfileListItem({
   onDeleteProfile,
 }: ProfileListItemProps) {
   const [isMainHovered, setIsMainHovered] = useState(false);
-  const [hoveredAction, setHoveredAction] = useState<'favorite' | 'delete' | null>(null);
   const avatarUrl = getProfileAvatarUrl(profile);
   const isFullOauth = profile.auth_level === 'full_oauth';
   const statusInfo = getStatusInfo(status);
@@ -81,8 +81,9 @@ export function ProfileListItem({
         backgroundColor: isSelected ? 'rgba(59, 130, 246, 0.14)' : (isMainHovered ? 'var(--app-surface-muted, #f5f5f5)' : 'var(--app-surface)'),
       }}
     >
-      <button
+      <Button
         type="button"
+        variant="basic"
         onClick={() => onSelectProfile(profile.id)}
         onMouseEnter={() => setIsMainHovered(true)}
         onMouseLeave={() => setIsMainHovered(false)}
@@ -112,45 +113,37 @@ export function ProfileListItem({
             </span>
           </div>
         </div>
-      </button>
+      </Button>
       <div style={styles.actions}>
-        <button
+        <Button
           type="button"
+          variant="basic"
           onClick={(event) => {
             event.stopPropagation();
             void onToggleFavorite(profile.id, !isFavorite);
           }}
-          onMouseEnter={() => setHoveredAction('favorite')}
-          onMouseLeave={() => setHoveredAction(null)}
           style={{
             ...styles.iconButton,
-            color: isFavorite ? '#f59e0b' : (hoveredAction === 'favorite' ? 'var(--app-text)' : 'var(--app-text-muted, #64748b)'),
-            backgroundColor: hoveredAction === 'favorite' ? 'rgba(245, 158, 11, 0.12)' : 'transparent',
-            borderColor: hoveredAction === 'favorite' ? 'rgba(245, 158, 11, 0.28)' : 'var(--app-border-strong, #cbd5e1)',
+            color: isFavorite ? '#f59e0b' : 'var(--app-text-muted, #64748b)',
           }}
           title={isFavorite ? `Unfavorite profile ${profile.display_name}` : `Favorite profile ${profile.display_name}`}
           aria-label={isFavorite ? `Unfavorite profile ${profile.display_name}` : `Favorite profile ${profile.display_name}`}
         >
           <Star size={14} weight={isFavorite ? 'fill' : 'regular'} />
-        </button>
-        <button
+        </Button>
+        <Button
           type="button"
+          variant="danger"
           onClick={(event) => {
             event.stopPropagation();
             void onDeleteProfile(profile);
           }}
-          onMouseEnter={() => setHoveredAction('delete')}
-          onMouseLeave={() => setHoveredAction(null)}
-          style={{
-            ...styles.iconButton,
-            color: hoveredAction === 'delete' ? '#f43f5e' : '#ef4444',
-            backgroundColor: hoveredAction === 'delete' ? 'rgba(239, 68, 68, 0.12)' : 'transparent',
-            borderColor: hoveredAction === 'delete' ? 'rgba(239, 68, 68, 0.28)' : 'var(--app-border-strong, #cbd5e1)',
-          }}
+          style={styles.iconButton}
           title={`Delete profile ${profile.display_name}`}
+          aria-label={`Delete profile ${profile.display_name}`}
         >
           <Trash size={14} />
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -265,18 +258,9 @@ const styles: Record<string, React.CSSProperties> = {
     flexShrink: 0,
   },
   iconButton: {
-    border: '1px solid var(--app-border)',
-    borderRadius: '999px',
     width: '30px',
     height: '30px',
-    backgroundColor: 'transparent',
-    color: 'inherit',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    cursor: 'pointer',
-    outline: 'none',
+    padding: 0,
     flexShrink: 0,
-    transition: 'background-color 120ms ease, border-color 120ms ease, color 120ms ease',
   },
 };
