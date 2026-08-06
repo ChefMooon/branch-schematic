@@ -454,6 +454,23 @@
   padding-right: 4px;
 }
 
+.repository-view-status-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.repository-view-refresh-button {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border-radius: 5px;
+}
+
+.repository-view-refresh-button.is-refreshing svg {
+  animation: spin-kf 1s linear infinite;
+}
+
 .repository-view-changes-group {
   border: 1px solid var(--app-border);
   border-radius: 8px;

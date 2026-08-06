@@ -73,6 +73,7 @@ export function RepositoryDetailChangesTab({ repo }: RepositoryDetailChangesTabP
           splitRatio={splitRatio}
           isLoading={isLoading}
           isRefreshing={isRefreshing}
+          isBusy={isBusy}
           error={error}
           snapshot={snapshot}
           statusMessage={statusMessage}
@@ -84,6 +85,7 @@ export function RepositoryDetailChangesTab({ repo }: RepositoryDetailChangesTabP
           onSelectPath={setSelectedPath}
           onStage={(paths) => void handleAction('stage', paths)}
           onUnstage={(paths) => void handleAction('unstage', paths)}
+          onRefresh={() => void loadChanges()}
         >
           <RepositoryCommitComposer
             title={title}
@@ -93,7 +95,6 @@ export function RepositoryDetailChangesTab({ repo }: RepositoryDetailChangesTabP
             isBusy={isBusy}
             onTitleChange={setTitle}
             onBodyChange={setBody}
-            onRefresh={() => void loadChanges()}
             onCommit={() => void handleAction('commit')}
           />
         </RepositoryChangesListPanel>

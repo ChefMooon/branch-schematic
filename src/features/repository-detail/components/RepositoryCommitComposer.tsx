@@ -1,4 +1,3 @@
-import { ArrowClockwise } from '@phosphor-icons/react';
 import { Button } from '../../../components/button/Button';
 
 interface RepositoryCommitComposerProps {
@@ -9,7 +8,6 @@ interface RepositoryCommitComposerProps {
   isBusy: boolean;
   onTitleChange: (title: string) => void;
   onBodyChange: (body: string) => void;
-  onRefresh: () => void;
   onCommit: () => void;
 }
 
@@ -21,7 +19,6 @@ export function RepositoryCommitComposer({
   isBusy,
   onTitleChange,
   onBodyChange,
-  onRefresh,
   onCommit,
 }: RepositoryCommitComposerProps) {
   const commitDisabled = isBusy || !title.trim() || stagedCount === 0;
@@ -49,10 +46,6 @@ export function RepositoryCommitComposer({
       </label>
 
       <div className="repository-view-commit-actions">
-        <Button type="button" variant="basic" onClick={onRefresh} disabled={isBusy}>
-          <ArrowClockwise size={14} />
-          Refresh
-        </Button>
         <Button type="button" variant="basic" onClick={onCommit} disabled={commitDisabled || isBusy}>
           {isBusy ? 'Working…' : 'Create commit'}
         </Button>

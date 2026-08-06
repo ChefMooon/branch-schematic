@@ -1,4 +1,5 @@
-import { GitBranch, WarningCircle } from '@phosphor-icons/react';
+import { ArrowClockwise, GitBranch, WarningCircle } from '@phosphor-icons/react';
+import { Button } from '../../../components/button/Button';
 import type { RepositoryChangeItem, RepositoryChangesSnapshot, TrackedPath } from '../../../types/git';
 import { CHANGE_GROUPS, type ChangeGroupKey, type GroupedChanges } from '../types/repositoryChanges';
 import { RepositoryChangeGroup } from './RepositoryChangeGroup';
@@ -8,6 +9,7 @@ interface RepositoryChangesListPanelProps {
   splitRatio: number;
   isLoading: boolean;
   isRefreshing: boolean;
+  isBusy: boolean;
   error: string | null;
   snapshot: RepositoryChangesSnapshot | null;
   statusMessage: string | null;
@@ -19,6 +21,7 @@ interface RepositoryChangesListPanelProps {
   onSelectPath: (path: string) => void;
   onStage: (paths: string[]) => void;
   onUnstage: (paths: string[]) => void;
+  onRefresh: () => void;
   children: React.ReactNode;
 }
 
@@ -27,6 +30,7 @@ export function RepositoryChangesListPanel({
   splitRatio,
   isLoading,
   isRefreshing,
+  isBusy,
   error,
   snapshot,
   statusMessage,
@@ -38,6 +42,7 @@ export function RepositoryChangesListPanel({
   onSelectPath,
   onStage,
   onUnstage,
+  onRefresh,
   children,
 }: RepositoryChangesListPanelProps) {
   return (
@@ -74,7 +79,18 @@ export function RepositoryChangesListPanel({
               </div>
             ) : null}
             <div className="repository-view-status-meta">
-              {isRefreshing ? 'Refreshing…' : lastVerifiedAt ? `Verified ${new Date(lastVerifiedAt).toLocaleTimeString()}` : 'Waiting for verification'}
+              <Button
+                type="button"
+                variant="basic"
+                className={`repository-view-refresh-button${isRefreshing ? ' is-refreshing' : ''}`}
+                onClick={onRefresh}
+                disabled={isBusy || isRefreshing}
+                aria-label={isRefreshing ? 'Refreshing changes' : 'Refresh changes'}
+                title={isRefreshing ? 'Refreshing changes' : 'Refresh changes'}
+              >
+                <ArrowClockwise size={14} aria-hidden="true" />
+              </Button>
+              {lastVerifiedAt ? `Verified ${new Date(lastVerifiedAt).toLocaleTimeString()}` : 'Waiting for verification'}
             </div>
 
             <div className="repository-view-changes-groups" role="list">

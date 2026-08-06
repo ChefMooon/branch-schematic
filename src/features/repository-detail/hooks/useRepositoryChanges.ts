@@ -24,6 +24,8 @@ interface RepositoryChangesInvalidatedEvent {
   triggerReason: string;
 }
 
+const MIN_REFRESH_INDICATOR_MS = 300;
+
 function snapshotsEqual(left: RepositoryChangesSnapshot | null, right: RepositoryChangesSnapshot) {
   if (!left || left.isInProgressOperation !== right.isInProgressOperation || left.operationMessage !== right.operationMessage) {
     return false;
@@ -78,6 +80,7 @@ export function useRepositoryChanges(repo: TrackedPath | null) {
     const generation = requestGeneration.current;
 
     const hasSnapshot = snapshotRef.current !== null;
+    const refreshStartedAt = hasSnapshot ? Date.now() : null;
     if (hasSnapshot) {
       setIsRefreshing(true);
     } else {
@@ -102,6 +105,11 @@ export function useRepositoryChanges(repo: TrackedPath | null) {
           setError(loadError instanceof Error ? loadError.message : 'Unable to load repository changes.');
         }
       } finally {
+        const refreshElapsed = refreshStartedAt === null ? MIN_REFRESH_INDICATOR_MS : Date.now() - refreshStartedAt;
+        const refreshDelay = refreshStartedAt === null ? 0 : Math.max(0, MIN_REFRESH_INDICATOR_MS - refreshElapsed);
+        if (refreshDelay > 0) {
+          await new Promise<void>((resolve) => setTimeout(resolve, refreshDelay));
+        }
         if (generation === requestGeneration.current) {
           setIsLoading(false);
           setIsRefreshing(false);
