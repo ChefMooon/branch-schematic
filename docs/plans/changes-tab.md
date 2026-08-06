@@ -201,10 +201,14 @@ This should be treated as a first-class mode of the page, not as an edge-case fa
 - If the selected file is removed or no longer exists after an action, the selection should be cleared or moved to a safe fallback.
 - The UI should avoid stale state by reloading the change snapshot after any successful action and by disabling overlapping actions while a request is in flight.
 - The detail view should subscribe to the manager-owned `repository-changes-invalidated` event while mounted instead of running an independent short-interval polling loop.
-- The event should carry only a versioned repository ID and runtime revision; the frontend should fetch authoritative status through a revision-aware `get_repository_changes_if_changed` command.
+- The event is metadata-only and carries a versioned repository ID, runtime revision, trigger reason, event ID, and timestamp; the frontend fetches authoritative status through the revision-aware `get_repository_changes_if_changed` command.
 - A slower reconciliation read should remain enabled as a fallback for missed filesystem events, watcher degradation, sleep/wake recovery, and external tools with unreliable notifications.
 - An unchanged or semantically identical snapshot must not replace the mounted list, selected diff, scroll position, collapsed groups, or commit composer.
 - Background refreshes must preserve the last successful snapshot and surface errors without blanking the changes workspace.
+- Opening repository details starts one manager-owned foreground `Status` refresh before watcher registration completes; the Changes tab waits on that same snapshot instead of starting a second Git status walk.
+- Concurrent detail activation and Changes reads join an in-flight status refresh, while a completed snapshot is reused under the manager lock to close the completion race.
+- Detail activation supersedes an in-flight startup `Full` refresh so branch-history work cannot delay the initial changes snapshot; ref and verification triggers retain the `Full` path and schedule a status follow-up when detail is active.
+- Closing the final detail session invalidates pending status work, wakes waiting readers, and clears the detail-scoped snapshot so a later detail session cannot consume stale data.
 
 ### Diff preview resilience
 - The preview pane should support a fallback message for binary or unsupported content.
@@ -243,3 +247,9 @@ The feature is successful when a user can:
 - This should remain local-first and should not depend on remote GitHub operations for the basic workflow.
 - The first version should focus on clarity and reliability rather than advanced Git features.
 - Since this app already has repository-level Git status support, the changes page should build on that foundation rather than introduce a separate Git model.
+
+## Implementation Status
+- Implemented transient detail-scoped changes snapshots in `WatcherManager` with revision-aware reads, targeted status refresh routing, blocking-pool Git scans, post-action publication, stale-write protection, and cache cleanup when detail closes.
+- Detail activation now starts the shared status prefetch, supersedes the initial startup full-refresh generation, and coalesces concurrent detail/read requests. Ref and verification events still use full refreshes; active detail sessions receive a status follow-up afterward.
+- The frontend opens the detail session before the user switches to Changes, while selected-file diffs remain lazy and independent from list loading. Added regressions for detail lifecycle behavior and rendering the change list before a slow selected-file diff.
+- Validation: the focused repository-detail suite passed 19/19; the full frontend suite passed 30 files and 113 tests; `npm run build`, `cargo check`, `cargo fmt -- --check`, and `cargo test --lib --no-run` passed. Launching the compiled Rust test binary remains blocked by the Windows environment with `STATUS_ENTRYPOINT_NOT_FOUND` before tests execute.

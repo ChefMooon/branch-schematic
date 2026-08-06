@@ -396,6 +396,18 @@ async fn ensure_repository_monitored_command(
 }
 
 #[tauri::command]
+async fn begin_repository_detail_session_command(
+    manager: tauri::State<'_, manager::WatcherManager>,
+    path_id: String,
+    absolute_path: String,
+    session_id: String,
+) -> Result<(), String> {
+    manager
+        .begin_detail_session(path_id, absolute_path, session_id)
+        .await
+}
+
+#[tauri::command]
 async fn request_repository_refresh_command(
     manager: tauri::State<'_, manager::WatcherManager>,
     path_id: String,
@@ -420,7 +432,9 @@ async fn set_repository_detail_active_command(
     session_id: String,
     active: bool,
 ) -> Result<(), String> {
-    manager.set_detail_session(&path_id, &session_id, active).await
+    manager
+        .set_detail_session(&path_id, &session_id, active)
+        .await
 }
 
 #[tauri::command]
@@ -1190,6 +1204,7 @@ pub fn run() {
             mark_all_notifications_read,
             archive_all_notifications,
             ensure_repository_monitored_command,
+            begin_repository_detail_session_command,
             request_repository_refresh_command,
             stop_repository_monitoring_command,
             set_repository_detail_active_command,

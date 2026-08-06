@@ -131,6 +131,50 @@ Manages path indexing profiles.
 * **Payload / Arguments:** `{ absolutePath: string, displayName: string }`
 * **Response Type:** `TrackedPath`
 
+### 2.4 Repository Changes & Detail Sessions
+
+These commands share the manager-owned, transient repository changes snapshot. The snapshot is not stored in SQLite and is only retained while a repository detail session is active.
+
+#### `begin_repository_detail_session_command`
+
+* **Description:** Opens a detail session, promotes the repository to foreground priority, and starts or joins one status-only prefetch for the Changes tab.
+* **Payload / Arguments:** `{ pathId: string, absolutePath: string, sessionId: string }`
+* **Response Type:** `void`
+
+#### `set_repository_detail_active_command`
+
+* **Description:** Registers or closes a detail session. Closing the final session cancels pending status work and clears the transient changes snapshot.
+* **Payload / Arguments:** `{ pathId: string, sessionId: string, active: boolean }`
+* **Response Type:** `void`
+
+#### `get_repository_changes_if_changed`
+
+* **Description:** Reads the manager-owned status snapshot. A matching non-zero revision returns `unchanged`; otherwise the command waits for or returns the shared current snapshot.
+* **Payload / Arguments:** `{ pathId: string, absolutePath: string, knownRevision: number | null }`
+* **Response Type:**
+
+```typescript
+interface RepositoryChangesRead {
+  revision: number;
+  unchanged: boolean;
+  snapshot: RepositoryChangesSnapshot | null;
+}
+```
+
+#### `stage_repository_paths`, `unstage_repository_paths`, and `create_commit`
+
+* **Description:** Apply the requested Git action, collect the resulting status snapshot, and publish it through the active detail session's manager entry.
+* **Payload / Arguments:** Action-specific; all include `absolutePath`. Stage and unstage include `paths: string[]`; commit includes `title: string` and optional `body: string | null`.
+* **Response Type:** `RepositoryChangesSnapshot`
+
+```typescript
+interface RepositoryChangesSnapshot {
+  entries: RepositoryChangeItem[];
+  isInProgressOperation: boolean;
+  operationMessage: string | null;
+}
+```
+
 ---
 
 ## 3. Tauri Async Events (Rust $\rightarrow$ React)
@@ -181,6 +225,21 @@ Managed watcher refreshes emit this versioned invalidation event after the autho
 ```
 
 The workspace store owns one shared listener, ignores duplicate repository revisions, and schedules reconciliation when a payload is malformed or a revision gap is detected. Legacy watcher mode does not depend on this event contract.
+
+### 3.4 `repository-changes-invalidated`
+
+Emitted after a successful manager-owned status refresh or after a stage, unstage, or commit action publishes a new detail-scoped snapshot. The event is metadata only; the frontend must call `get_repository_changes_if_changed` to obtain the snapshot.
+
+```typescript
+{
+  version: 1;
+  eventId: string;
+  repositoryId: string;
+  revision: number;
+  triggerReason: string;
+  emittedAt: string; // ISO-8601 timestamp
+}
+```
 
 ---
 

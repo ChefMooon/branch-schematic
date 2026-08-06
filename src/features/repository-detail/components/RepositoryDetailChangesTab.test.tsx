@@ -111,6 +111,30 @@ describe('RepositoryDetailChangesTab', () => {
     expect(screen.getByLabelText('split diff')).toHaveTextContent('new');
   });
 
+  it('renders the change list before a slow selected-file diff resolves', async () => {
+    let resolveDiff: ((value: typeof fileDiff) => void) | undefined;
+    const diffPromise = new Promise<typeof fileDiff>((resolve) => {
+      resolveDiff = resolve;
+    });
+    invokeMock.mockImplementation((command: string) => {
+      if (command === 'get_repository_changes_if_changed') {
+        return Promise.resolve({ revision: 2, unchanged: false, snapshot: modifiedSnapshot });
+      }
+      if (command === 'get_repository_file_diff') return diffPromise;
+      return Promise.resolve(modifiedSnapshot);
+    });
+
+    render(<RepositoryDetailChangesTab repo={repo} />);
+
+    expect(await screen.findByText('src/App.tsx', { selector: '.repository-view-change-path' })).toBeInTheDocument();
+    expect(invokeMock.mock.calls.filter(([command]) => command === 'get_repository_changes_if_changed')).toHaveLength(1);
+    expect(invokeMock.mock.calls.filter(([command]) => command === 'get_repository_file_diff')).toHaveLength(1);
+    expect(screen.queryByLabelText('unified diff')).not.toBeInTheDocument();
+
+    resolveDiff?.(fileDiff);
+    expect(await screen.findByLabelText('unified diff')).toHaveTextContent('new');
+  });
+
   it('keeps the changes list as the vertical scroll container', async () => {
     mockChanges({
       entries: Array.from({ length: 30 }, (_, index) => ({ path: `src/file-${index}.tsx`, status: 'modified', staged: false })),

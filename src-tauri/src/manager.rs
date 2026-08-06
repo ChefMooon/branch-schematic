@@ -1,6 +1,9 @@
 use crate::db::TrackedPathRow;
+use crate::git::{collect_repository_changes, RepositoryChangesSnapshot};
 use crate::health;
-use crate::layout::{classify_watch_trigger, resolve_repository_layout, watch_targets};
+use crate::layout::{
+    classify_watch_trigger, resolve_repository_layout, watch_targets, WatchTrigger,
+};
 use crate::refresh::{refresh_repository_full, RefreshOutcome, RepositoryCacheWriter};
 use notify::{Event, RecommendedWatcher, Watcher};
 use serde::Serialize;
@@ -13,7 +16,7 @@ use std::sync::{
 };
 use std::time::{Duration, Instant};
 use tauri::Emitter;
-use tokio::sync::{Mutex, Semaphore};
+use tokio::sync::{Mutex, Notify, Semaphore};
 use uuid::Uuid;
 
 pub const WORKSPACE_UPDATED_EVENT: &str = "workspace-updated";
@@ -60,6 +63,26 @@ pub enum RefreshPriority {
     Background,
     Visible,
     Foreground,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum RefreshKind {
+    Status,
+    Full,
+}
+
+enum RefreshResult {
+    Status(RepositoryChangesSnapshot),
+    Full(RefreshOutcome),
+}
+
+fn refresh_kind_for_watch_trigger(trigger: WatchTrigger) -> RefreshKind {
+    match trigger {
+        WatchTrigger::Status => RefreshKind::Status,
+        WatchTrigger::Metadata | WatchTrigger::Full | WatchTrigger::Verification => {
+            RefreshKind::Full
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -147,7 +170,13 @@ struct RuntimeEntry {
     follow_up: bool,
     failure_count: u32,
     trigger_reason: String,
+    refresh_kind: RefreshKind,
+    pending_refresh_kind: Option<RefreshKind>,
     changes_revision: u64,
+    changes_snapshot: Option<RepositoryChangesSnapshot>,
+    changes_status_in_flight: bool,
+    changes_status_error: Option<String>,
+    changes_status_ready: Arc<Notify>,
 }
 
 struct ManagerState {
@@ -185,7 +214,9 @@ impl WatcherManager {
         if entry.detail_active || entry.explicitly_selected {
             RefreshPriority::Foreground
         } else if entry.visible_in_active_view
-            || entry.startup_pin_until.is_some_and(|expires_at| expires_at > now)
+            || entry
+                .startup_pin_until
+                .is_some_and(|expires_at| expires_at > now)
         {
             RefreshPriority::Visible
         } else {
@@ -313,7 +344,13 @@ impl WatcherManager {
                 follow_up: false,
                 failure_count: 0,
                 trigger_reason: "startup".to_string(),
+                refresh_kind: RefreshKind::Full,
+                pending_refresh_kind: None,
                 changes_revision: 0,
+                changes_snapshot: None,
+                changes_status_in_flight: false,
+                changes_status_error: None,
+                changes_status_ready: Arc::new(Notify::new()),
             },
         );
         drop(entries);
@@ -322,6 +359,113 @@ impl WatcherManager {
         }
         self.spawn_refresh(path_id, 1);
         Ok(())
+    }
+
+    async fn ensure_changes_entry(
+        &self,
+        path_id: String,
+        absolute_path: String,
+    ) -> Result<(), String> {
+        if self.state.shutting_down.load(Ordering::Acquire) {
+            return Err("Watcher manager is shutting down".to_string());
+        }
+
+        self.state
+            .registration_attempts
+            .fetch_add(1, Ordering::Relaxed);
+        let visible_in_active_view = self
+            .state
+            .active_view_visible_ids
+            .lock()
+            .await
+            .contains(&path_id);
+        let mut entries = self.state.entries.lock().await;
+        if let Some(entry) = entries.get_mut(&path_id) {
+            entry.absolute_path = absolute_path;
+            entry.visible_in_active_view = visible_in_active_view;
+            return Ok(());
+        }
+
+        entries.insert(
+            path_id.clone(),
+            RuntimeEntry {
+                absolute_path,
+                generation: 0,
+                priority: RefreshPriority::Foreground,
+                visible_in_active_view,
+                detail_active: false,
+                detail_sessions: HashSet::new(),
+                explicitly_selected: false,
+                startup_pin_until: None,
+                running: false,
+                follow_up: false,
+                failure_count: 0,
+                trigger_reason: "changes_prefetch".to_string(),
+                refresh_kind: RefreshKind::Status,
+                pending_refresh_kind: None,
+                changes_revision: 0,
+                changes_snapshot: None,
+                changes_status_in_flight: false,
+                changes_status_error: None,
+                changes_status_ready: Arc::new(Notify::new()),
+            },
+        );
+        drop(entries);
+        Ok(())
+    }
+
+    async fn restart_watch_scope(&self, path_id: &str) {
+        if let Some(task) = self.state.watcher_tasks.lock().await.remove(path_id) {
+            task.abort();
+            self.record_watcher_stop().await;
+        }
+        if let Some(task) = self.state.polling_tasks.lock().await.remove(path_id) {
+            task.abort();
+        }
+        if !self.ensure_watcher(path_id).await {
+            self.ensure_polling_fallback(path_id).await;
+        }
+    }
+
+    pub async fn begin_detail_session(
+        &self,
+        path_id: String,
+        absolute_path: String,
+        session_id: String,
+    ) -> Result<(), String> {
+        if session_id.trim().is_empty() {
+            return Err("Detail session ID cannot be empty".to_string());
+        }
+
+        self.ensure_changes_entry(path_id.clone(), absolute_path)
+            .await?;
+        {
+            let mut entries = self.state.entries.lock().await;
+            let entry = entries
+                .get_mut(&path_id)
+                .ok_or_else(|| "Repository is not monitored".to_string())?;
+            if entry.running
+                && entry.refresh_kind == RefreshKind::Full
+                && entry.trigger_reason == "startup"
+            {
+                entry.generation = entry.generation.wrapping_add(1);
+                entry.running = false;
+                entry.follow_up = false;
+                entry.pending_refresh_kind = None;
+            }
+            entry.detail_sessions.insert(session_id);
+            entry.detail_active = true;
+            entry.priority = RefreshPriority::Foreground;
+        }
+        let refresh_result = self
+            .request_refresh_with_reason_and_kind(
+                path_id.clone(),
+                "detail_active",
+                RefreshKind::Status,
+            )
+            .await;
+        self.restart_watch_scope(&path_id).await;
+        refresh_result
     }
 
     pub async fn set_visible_repositories(
@@ -336,12 +480,7 @@ impl WatcherManager {
             .into_iter()
             .filter(|repository_id| !repository_id.trim().is_empty())
             .collect::<HashSet<_>>();
-        let previous_visible_ids = self
-            .state
-            .active_view_visible_ids
-            .lock()
-            .await
-            .clone();
+        let previous_visible_ids = self.state.active_view_visible_ids.lock().await.clone();
         *self.state.active_view_visible_ids.lock().await = visible_ids.clone();
 
         let mut entries = self.state.entries.lock().await;
@@ -397,11 +536,7 @@ impl WatcherManager {
         Ok(())
     }
 
-    pub async fn set_pinned_repository(
-        &self,
-        path_id: &str,
-        pinned: bool,
-    ) -> Result<(), String> {
+    pub async fn set_pinned_repository(&self, path_id: &str, pinned: bool) -> Result<(), String> {
         let mut entries = self.state.entries.lock().await;
         let Some(entry) = entries.get_mut(path_id) else {
             return Ok(());
@@ -421,13 +556,69 @@ impl WatcherManager {
             .await
     }
 
-    pub async fn changes_revision(&self, path_id: &str) -> Option<u64> {
-        self.state
-            .entries
-            .lock()
-            .await
-            .get(path_id)
-            .map(|entry| entry.changes_revision)
+    pub async fn wait_for_changes_snapshot(
+        &self,
+        path_id: &str,
+        absolute_path: &str,
+        known_revision: Option<u64>,
+    ) -> Result<(u64, bool, Option<RepositoryChangesSnapshot>), String> {
+        self.ensure_changes_entry(path_id.to_string(), absolute_path.to_string())
+            .await?;
+
+        loop {
+            let (notified, should_start) = {
+                let entries = self.state.entries.lock().await;
+                let entry = entries
+                    .get(path_id)
+                    .ok_or_else(|| "Repository is not monitored".to_string())?;
+                if known_revision.is_some_and(|known| {
+                    known > 0 && known == entry.changes_revision && entry.changes_snapshot.is_some()
+                }) {
+                    return Ok((entry.changes_revision, true, None));
+                }
+                if let Some(snapshot) = entry.changes_snapshot.clone() {
+                    return Ok((entry.changes_revision, false, Some(snapshot)));
+                }
+
+                let should_start = !entry.changes_status_in_flight;
+                let notified = entry.changes_status_ready.clone().notified_owned();
+                (notified, should_start)
+            };
+
+            if should_start {
+                self.request_refresh_with_reason_and_kind(
+                    path_id.to_string(),
+                    "changes_read",
+                    RefreshKind::Status,
+                )
+                .await?;
+                continue;
+            }
+            notified.await;
+        }
+    }
+
+    pub async fn publish_changes_snapshot_for_path(
+        &self,
+        absolute_path: &str,
+        snapshot: RepositoryChangesSnapshot,
+        trigger_reason: &str,
+    ) {
+        let published = {
+            let mut entries = self.state.entries.lock().await;
+            entries
+                .iter_mut()
+                .find(|(_, entry)| entry.absolute_path == absolute_path && entry.detail_active)
+                .map(|(repository_id, entry)| {
+                    entry.changes_revision = entry.changes_revision.wrapping_add(1);
+                    entry.changes_snapshot = Some(snapshot);
+                    (repository_id.clone(), entry.changes_revision)
+                })
+        };
+
+        if let Some((repository_id, revision)) = published {
+            self.emit_repository_changes_invalidated(&repository_id, revision, trigger_reason);
+        }
     }
 
     async fn request_refresh_with_reason(
@@ -436,21 +627,58 @@ impl WatcherManager {
         _priority: RefreshPriority,
         trigger_reason: &str,
     ) -> Result<(), String> {
+        self.request_refresh_with_reason_and_kind(path_id, trigger_reason, RefreshKind::Full)
+            .await
+    }
+
+    async fn request_refresh_with_reason_and_kind(
+        &self,
+        path_id: String,
+        trigger_reason: &str,
+        refresh_kind: RefreshKind,
+    ) -> Result<(), String> {
         let mut entries = self.state.entries.lock().await;
         let entry = entries
             .get_mut(&path_id)
             .ok_or_else(|| "Repository is not monitored".to_string())?;
-        entry.priority = Self::effective_priority(entry, Instant::now());
+        if refresh_kind == RefreshKind::Status
+            && trigger_reason == "changes_read"
+            && entry.changes_snapshot.is_some()
+        {
+            return Ok(());
+        }
+        if entry.detail_active || entry.explicitly_selected {
+            entry.priority = RefreshPriority::Foreground;
+        }
         if !(entry.detail_active && trigger_reason == "on_demand") {
             entry.trigger_reason = trigger_reason.to_string();
         }
+        if refresh_kind == RefreshKind::Status {
+            entry.changes_status_in_flight = true;
+            entry.changes_status_error = None;
+        }
         if entry.running {
+            let same_status_read_is_running = refresh_kind == RefreshKind::Status
+                && entry.refresh_kind == RefreshKind::Status
+                && entry.changes_status_in_flight
+                && matches!(trigger_reason, "changes_read" | "detail_active");
+            if same_status_read_is_running {
+                return Ok(());
+            }
+            entry.pending_refresh_kind = Some(
+                entry
+                    .pending_refresh_kind
+                    .unwrap_or(RefreshKind::Status)
+                    .max(refresh_kind),
+            );
             entry.follow_up = true;
             self.state
                 .coalesced_requests
                 .fetch_add(1, Ordering::Relaxed);
             return Ok(());
         }
+        entry.refresh_kind = refresh_kind;
+        entry.pending_refresh_kind = None;
         entry.running = true;
         entry.generation = entry.generation.wrapping_add(1);
         let generation = entry.generation;
@@ -469,6 +697,7 @@ impl WatcherManager {
             return Err("Detail session ID cannot be empty".to_string());
         }
 
+        let mut status_ready = None;
         let mut entries = self.state.entries.lock().await;
         let entry = entries
             .get_mut(path_id)
@@ -480,20 +709,33 @@ impl WatcherManager {
         }
         entry.detail_active = !entry.detail_sessions.is_empty();
         entry.priority = Self::effective_priority(entry, Instant::now());
+        if !active && !entry.detail_active {
+            entry.generation = entry.generation.wrapping_add(1);
+            entry.running = false;
+            entry.follow_up = false;
+            entry.pending_refresh_kind = None;
+            entry.changes_status_in_flight = false;
+            entry.changes_status_error = Some("Repository detail session closed".to_string());
+            status_ready = Some(entry.changes_status_ready.clone());
+        }
+        if active
+            && entry.running
+            && entry.refresh_kind == RefreshKind::Full
+            && entry.trigger_reason == "startup"
+        {
+            entry.generation = entry.generation.wrapping_add(1);
+            entry.running = false;
+            entry.follow_up = false;
+            entry.pending_refresh_kind = None;
+        }
+        if !entry.detail_active {
+            entry.changes_snapshot = None;
+        }
 
         let detail_active = entry.detail_active;
         drop(entries);
 
-        if let Some(task) = self.state.watcher_tasks.lock().await.remove(path_id) {
-            task.abort();
-            self.record_watcher_stop().await;
-        }
-        if let Some(task) = self.state.polling_tasks.lock().await.remove(path_id) {
-            task.abort();
-        }
-        if !self.ensure_watcher(path_id).await {
-            self.ensure_polling_fallback(path_id).await;
-        }
+        self.restart_watch_scope(path_id).await;
         if detail_active {
             let session_is_still_active = self
                 .state
@@ -503,13 +745,16 @@ impl WatcherManager {
                 .get(path_id)
                 .is_some_and(|entry| entry.detail_sessions.contains(session_id));
             if session_is_still_active {
-                self.request_refresh_with_reason(
+                self.request_refresh_with_reason_and_kind(
                     path_id.to_string(),
-                    RefreshPriority::Foreground,
                     "detail_active",
+                    RefreshKind::Status,
                 )
                 .await?;
             }
+        }
+        if let Some(status_ready) = status_ready {
+            status_ready.notify_waiters();
         }
         Ok(())
     }
@@ -662,32 +907,32 @@ impl WatcherManager {
             .map(|(repository_id, entry)| {
                 let effective_priority = Self::effective_priority(entry, Instant::now());
                 RepositoryDebugEntry {
-                repository_id: repository_id.clone(),
-                priority: match effective_priority {
-                    RefreshPriority::Background => "background",
-                    RefreshPriority::Visible => "visible",
-                    RefreshPriority::Foreground => "foreground",
-                }
-                .to_string(),
-                visible_in_active_view: entry.visible_in_active_view,
-                explicitly_selected: entry.explicitly_selected,
-                startup_pin_active: entry
-                    .startup_pin_until
-                    .is_some_and(|expires_at| expires_at > Instant::now()),
-                detail_active: entry.detail_active,
-                running: entry.running,
-                follow_up: entry.follow_up,
-                failure_count: entry.failure_count,
-                trigger_reason: entry.trigger_reason.clone(),
-                monitor_mode: if watcher_ids.contains_key(repository_id) {
-                    "watcher"
-                } else if polling_ids.contains_key(repository_id) {
-                    "polling"
-                } else {
-                    "pending"
-                }
-                .to_string(),
-                generation: entry.generation,
+                    repository_id: repository_id.clone(),
+                    priority: match effective_priority {
+                        RefreshPriority::Background => "background",
+                        RefreshPriority::Visible => "visible",
+                        RefreshPriority::Foreground => "foreground",
+                    }
+                    .to_string(),
+                    visible_in_active_view: entry.visible_in_active_view,
+                    explicitly_selected: entry.explicitly_selected,
+                    startup_pin_active: entry
+                        .startup_pin_until
+                        .is_some_and(|expires_at| expires_at > Instant::now()),
+                    detail_active: entry.detail_active,
+                    running: entry.running,
+                    follow_up: entry.follow_up,
+                    failure_count: entry.failure_count,
+                    trigger_reason: entry.trigger_reason.clone(),
+                    monitor_mode: if watcher_ids.contains_key(repository_id) {
+                        "watcher"
+                    } else if polling_ids.contains_key(repository_id) {
+                        "polling"
+                    } else {
+                        "pending"
+                    }
+                    .to_string(),
+                    generation: entry.generation,
                 }
             })
             .collect::<Vec<_>>();
@@ -779,6 +1024,7 @@ impl WatcherManager {
         let task = tauri::async_runtime::spawn(async move {
             let _watcher = watcher;
             let mut pending_since = None;
+            let mut pending_refresh_kind = RefreshKind::Status;
             let mut interval = tokio::time::interval(Duration::from_millis(50));
             loop {
                 interval.tick().await;
@@ -786,28 +1032,41 @@ impl WatcherManager {
                 while let Ok(result) = receiver.try_recv() {
                     match result {
                         Ok(event) => {
-                            if event.paths.iter().any(|path| {
-                                classify_watch_trigger(&layout, path, detail_active).is_some()
-                            }) {
+                            let event_kind = event
+                                .paths
+                                .iter()
+                                .filter_map(|path| {
+                                    classify_watch_trigger(&layout, path, detail_active)
+                                })
+                                .map(refresh_kind_for_watch_trigger)
+                                .max();
+                            if let Some(event_kind) = event_kind {
                                 pending_since.get_or_insert_with(Instant::now);
+                                pending_refresh_kind = pending_refresh_kind.max(event_kind);
                             }
                         }
-                        Err(_) => force_flush = true,
+                        Err(_) => {
+                            force_flush = true;
+                            pending_refresh_kind = RefreshKind::Full;
+                        }
                     }
                 }
                 if force_flush {
                     pending_since = Some(Instant::now() - Duration::from_secs(1));
+                    pending_refresh_kind = RefreshKind::Full;
                 }
                 if pending_since.is_some_and(|started| {
                     started.elapsed() >= Duration::from_millis(200)
                         || started.elapsed() >= Duration::from_secs(1)
                 }) {
                     pending_since = None;
+                    let refresh_kind = pending_refresh_kind;
+                    pending_refresh_kind = RefreshKind::Status;
                     let _ = manager
-                        .request_refresh_with_reason(
+                        .request_refresh_with_reason_and_kind(
                             task_path_id.clone(),
-                            RefreshPriority::Background,
                             "filesystem",
+                            refresh_kind,
                         )
                         .await;
                 }
@@ -837,11 +1096,20 @@ impl WatcherManager {
                 if manager.state.shutting_down.load(Ordering::Acquire) {
                     break;
                 }
+                let refresh_kind = manager
+                    .state
+                    .entries
+                    .lock()
+                    .await
+                    .get(&task_path_id)
+                    .filter(|entry| entry.detail_active)
+                    .map(|_| RefreshKind::Status)
+                    .unwrap_or(RefreshKind::Full);
                 let _ = manager
-                    .request_refresh_with_reason(
+                    .request_refresh_with_reason_and_kind(
                         task_path_id.clone(),
-                        RefreshPriority::Background,
                         "polling_fallback",
+                        refresh_kind,
                     )
                     .await;
                 let priority = manager
@@ -886,21 +1154,13 @@ impl WatcherManager {
             Err(_) => return,
         };
         let tier_slot = match priority {
-            RefreshPriority::Foreground => self
-                .state
-                .foreground_refresh_slots
-                .clone()
-                .acquire_owned(),
-            RefreshPriority::Visible => self
-                .state
-                .visible_refresh_slots
-                .clone()
-                .acquire_owned(),
-            RefreshPriority::Background => self
-                .state
-                .background_refresh_slots
-                .clone()
-                .acquire_owned(),
+            RefreshPriority::Foreground => {
+                self.state.foreground_refresh_slots.clone().acquire_owned()
+            }
+            RefreshPriority::Visible => self.state.visible_refresh_slots.clone().acquire_owned(),
+            RefreshPriority::Background => {
+                self.state.background_refresh_slots.clone().acquire_owned()
+            }
         };
         let _tier_slot = match tier_slot.await {
             Ok(permit) => permit,
@@ -909,17 +1169,33 @@ impl WatcherManager {
 
         tokio::time::sleep(Self::refresh_delay(priority)).await;
 
-        let trigger_reason = {
+        let (trigger_reason, refresh_kind) = {
             let entries = self.state.entries.lock().await;
             entries
                 .get(&path_id)
-                .map(|entry| entry.trigger_reason.clone())
-                .unwrap_or_else(|| "unknown".to_string())
+                .map(|entry| (entry.trigger_reason.clone(), entry.refresh_kind))
+                .unwrap_or_else(|| ("unknown".to_string(), RefreshKind::Full))
         };
 
         let refresh_started = Instant::now();
-        let refresh_result: Result<RefreshOutcome, String> =
-            refresh_repository_full(&self.pool, &self.writer, &path_id, &absolute_path).await;
+        let refresh_result = match refresh_kind {
+            RefreshKind::Status => {
+                let status_path = absolute_path.clone();
+                match tauri::async_runtime::spawn_blocking(move || {
+                    collect_repository_changes(&status_path)
+                })
+                .await
+                {
+                    Ok(result) => result.map(RefreshResult::Status),
+                    Err(error) => Err(format!("Failed to join repository status refresh: {error}")),
+                }
+            }
+            RefreshKind::Full => {
+                refresh_repository_full(&self.pool, &self.writer, &path_id, &absolute_path)
+                    .await
+                    .map(RefreshResult::Full)
+            }
+        };
         let refresh_failed = refresh_result.is_err();
         self.record_refresh(refresh_failed, refresh_started.elapsed())
             .await;
@@ -944,19 +1220,46 @@ impl WatcherManager {
         if entry.generation != generation {
             return;
         }
-        let changes_revision = if refresh_result.is_ok() && entry.detail_active {
-            entry.changes_revision = entry.changes_revision.wrapping_add(1);
-            Some(entry.changes_revision)
-        } else {
-            None
+        let mut status_ready = None;
+        let changes_revision = match &refresh_result {
+            Ok(RefreshResult::Status(snapshot)) => {
+                entry.changes_snapshot = Some(snapshot.clone());
+                entry.changes_revision = entry.changes_revision.wrapping_add(1);
+                entry.changes_status_in_flight = false;
+                entry.changes_status_error = None;
+                status_ready = Some(entry.changes_status_ready.clone());
+                entry.detail_active.then_some(entry.changes_revision)
+            }
+            Ok(RefreshResult::Full(_)) if entry.detail_active => {
+                entry.changes_status_in_flight = true;
+                entry.changes_status_error = None;
+                entry.pending_refresh_kind = Some(
+                    entry
+                        .pending_refresh_kind
+                        .unwrap_or(RefreshKind::Status)
+                        .max(RefreshKind::Status),
+                );
+                entry.follow_up = true;
+                None
+            }
+            Err(error) if refresh_kind == RefreshKind::Status => {
+                entry.changes_status_in_flight = false;
+                entry.changes_status_error = Some(error.clone());
+                status_ready = Some(entry.changes_status_ready.clone());
+                None
+            }
+            _ => None,
         };
-        if let Ok(outcome) = &refresh_result {
+        if let Ok(RefreshResult::Full(outcome)) = &refresh_result {
             self.queue_workspace_updated(&outcome.path_id, &trigger_reason)
                 .await;
         }
         drop(entries);
         if let Some(changes_revision) = changes_revision {
             self.emit_repository_changes_invalidated(&path_id, changes_revision, &trigger_reason);
+        }
+        if let Some(status_ready) = status_ready {
+            status_ready.notify_waiters();
         }
         let mut entries = self.state.entries.lock().await;
         let Some(entry) = entries.get_mut(&path_id) else {
@@ -976,6 +1279,13 @@ impl WatcherManager {
             && !self.state.shutting_down.load(Ordering::Acquire)
         {
             entry.follow_up = false;
+            if let Some(next_refresh_kind) = entry.pending_refresh_kind.take() {
+                entry.refresh_kind = next_refresh_kind;
+            }
+            if entry.refresh_kind == RefreshKind::Status {
+                entry.changes_status_in_flight = true;
+                entry.changes_status_error = None;
+            }
             let next_generation = entry.generation;
             drop(entries);
             if let Some(delay_seconds) = retry_delay {
@@ -1176,6 +1486,36 @@ mod tests {
         assert!(first < POLLING_INTERVAL);
         assert!(second < POLLING_INTERVAL);
         assert_ne!(first, second);
+    }
+
+    #[tokio::test]
+    async fn concurrent_changes_reads_share_one_status_refresh() {
+        let directory = tempfile::tempdir().unwrap();
+        git2::Repository::init(directory.path()).unwrap();
+        std::fs::write(directory.path().join("notes.txt"), "pending change").unwrap();
+
+        let pool = SqlitePool::connect_lazy("sqlite::memory:").unwrap();
+        let manager = WatcherManager::new(pool, RepositoryCacheWriter::default());
+        let absolute_path = directory.path().to_string_lossy().into_owned();
+
+        let first = manager.wait_for_changes_snapshot("repo", &absolute_path, None);
+        let second = manager.wait_for_changes_snapshot("repo", &absolute_path, None);
+        let (first, second) = tokio::join!(first, second);
+        let first = first.unwrap();
+        let second = second.unwrap();
+
+        assert!(!first.1);
+        assert!(!second.1);
+        assert_eq!(first.0, 1);
+        assert_eq!(second.0, 1);
+        assert_eq!(first.2.as_ref().unwrap().entries.len(), 1);
+        assert_eq!(second.2.as_ref().unwrap().entries.len(), 1);
+        assert_eq!(
+            manager.state.entries.lock().await["repo"].changes_revision,
+            1
+        );
+
+        manager.stop_monitored("repo").await.unwrap();
     }
 
     #[tokio::test]
@@ -1384,12 +1724,24 @@ mod tests {
             .await
             .unwrap();
 
-        manager.set_detail_session("repo", "one", true).await.unwrap();
-        manager.set_detail_session("repo", "two", true).await.unwrap();
-        manager.set_detail_session("repo", "one", false).await.unwrap();
+        manager
+            .set_detail_session("repo", "one", true)
+            .await
+            .unwrap();
+        manager
+            .set_detail_session("repo", "two", true)
+            .await
+            .unwrap();
+        manager
+            .set_detail_session("repo", "one", false)
+            .await
+            .unwrap();
         assert!(manager.state.entries.lock().await["repo"].detail_active);
 
-        manager.set_detail_session("repo", "two", false).await.unwrap();
+        manager
+            .set_detail_session("repo", "two", false)
+            .await
+            .unwrap();
         assert!(!manager.state.entries.lock().await["repo"].detail_active);
     }
 

@@ -143,14 +143,10 @@ describe('RepositoryDetail', () => {
     const { rerender, unmount } = render(<RepositoryDetail isOpen repo={repo} onClose={() => undefined} />);
 
     await waitFor(() => {
-      expect(invokeMock).toHaveBeenCalledWith('ensure_repository_monitored_command', {
+      expect(invokeMock).toHaveBeenCalledWith('begin_repository_detail_session_command', {
         pathId: repo.id,
         absolutePath: repo.absolute_path,
-      });
-      expect(invokeMock).toHaveBeenCalledWith('set_repository_detail_active_command', {
-        pathId: repo.id,
         sessionId: expect.any(String),
-        active: true,
       });
     });
 
@@ -159,21 +155,21 @@ describe('RepositoryDetail', () => {
     });
     expect(invokeMock).not.toHaveBeenCalledWith('set_branch_map_visible_repositories_command', expect.anything());
 
-    const detailActivationCalls = () => invokeMock.mock.calls.filter(
-      ([command, payload]) => command === 'set_repository_detail_active_command' && payload?.active === true,
+    const detailSessionStarts = () => invokeMock.mock.calls.filter(
+      ([command]) => command === 'begin_repository_detail_session_command',
     );
     const detailDeactivationCalls = () => invokeMock.mock.calls.filter(
       ([command, payload]) => command === 'set_repository_detail_active_command' && payload?.active === false,
     );
-    const firstSessionId = detailActivationCalls()[0][1].sessionId;
+    const firstSessionId = detailSessionStarts()[0][1].sessionId;
 
     rerender(<RepositoryDetail isOpen={false} repo={repo} onClose={() => undefined} />);
     await waitFor(() => expect(detailDeactivationCalls()).toHaveLength(1));
 
     rerender(<RepositoryDetail isOpen repo={repo} onClose={() => undefined} />);
-    await waitFor(() => expect(detailActivationCalls()).toHaveLength(2));
+    await waitFor(() => expect(detailSessionStarts()).toHaveLength(2));
 
-    expect(detailActivationCalls()[1][1].sessionId).not.toBe(firstSessionId);
+    expect(detailSessionStarts()[1][1].sessionId).not.toBe(firstSessionId);
 
     unmount();
 

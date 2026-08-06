@@ -2530,11 +2530,10 @@ fn unstage_path(repo: &Repository, relative_path: &str) -> Result<(), String> {
     Ok(())
 }
 
-#[tauri::command]
-pub async fn get_repository_changes(
-    absolute_path: String,
+pub fn collect_repository_changes(
+    absolute_path: &str,
 ) -> Result<RepositoryChangesSnapshot, String> {
-    let repo = Repository::open(&absolute_path)
+    let repo = Repository::open(absolute_path)
         .map_err(|error| format!("Failed to open Git repository: {error}"))?;
 
     let mut options = git2::StatusOptions::new();
@@ -2563,6 +2562,24 @@ pub async fn get_repository_changes(
     })
 }
 
+async fn collect_repository_changes_async(
+    absolute_path: String,
+) -> Result<RepositoryChangesSnapshot, String> {
+    match tauri::async_runtime::spawn_blocking(move || collect_repository_changes(&absolute_path))
+        .await
+    {
+        Ok(result) => result,
+        Err(error) => Err(format!("Failed to join repository changes read: {error}")),
+    }
+}
+
+#[tauri::command]
+pub async fn get_repository_changes(
+    absolute_path: String,
+) -> Result<RepositoryChangesSnapshot, String> {
+    collect_repository_changes_async(absolute_path).await
+}
+
 #[tauri::command]
 pub async fn get_repository_changes_if_changed(
     manager: tauri::State<'_, WatcherManager>,
@@ -2570,27 +2587,20 @@ pub async fn get_repository_changes_if_changed(
     absolute_path: String,
     known_revision: Option<u64>,
 ) -> Result<RepositoryChangesRead, String> {
-    let revision = manager
-        .changes_revision(&path_id)
-        .await
-        .ok_or_else(|| "Repository is not monitored".to_string())?;
-    if known_revision.is_some_and(|known| known > 0 && known == revision) {
-        return Ok(RepositoryChangesRead {
-            revision,
-            unchanged: true,
-            snapshot: None,
-        });
-    }
+    let (revision, unchanged, snapshot) = manager
+        .wait_for_changes_snapshot(&path_id, &absolute_path, known_revision)
+        .await?;
 
     Ok(RepositoryChangesRead {
         revision,
-        unchanged: false,
-        snapshot: Some(get_repository_changes(absolute_path).await?),
+        unchanged,
+        snapshot,
     })
 }
 
 #[tauri::command]
 pub async fn stage_repository_paths(
+    manager: tauri::State<'_, WatcherManager>,
     absolute_path: String,
     paths: Vec<String>,
 ) -> Result<RepositoryChangesSnapshot, String> {
@@ -2609,11 +2619,16 @@ pub async fn stage_repository_paths(
         stage_path(&repo, &relative_path)?;
     }
 
-    get_repository_changes(absolute_path).await
+    let snapshot = collect_repository_changes_async(absolute_path.clone()).await?;
+    manager
+        .publish_changes_snapshot_for_path(&absolute_path, snapshot.clone(), "stage")
+        .await;
+    Ok(snapshot)
 }
 
 #[tauri::command]
 pub async fn unstage_repository_paths(
+    manager: tauri::State<'_, WatcherManager>,
     absolute_path: String,
     paths: Vec<String>,
 ) -> Result<RepositoryChangesSnapshot, String> {
@@ -2632,11 +2647,16 @@ pub async fn unstage_repository_paths(
         unstage_path(&repo, &relative_path)?;
     }
 
-    get_repository_changes(absolute_path).await
+    let snapshot = collect_repository_changes_async(absolute_path.clone()).await?;
+    manager
+        .publish_changes_snapshot_for_path(&absolute_path, snapshot.clone(), "unstage")
+        .await;
+    Ok(snapshot)
 }
 
 #[tauri::command]
 pub async fn create_commit(
+    manager: tauri::State<'_, WatcherManager>,
     absolute_path: String,
     title: String,
     body: Option<String>,
@@ -2688,7 +2708,11 @@ pub async fn create_commit(
         .map_err(|error| format!("Failed to create commit: {error}"))?;
     }
 
-    get_repository_changes(absolute_path).await
+    let snapshot = collect_repository_changes_async(absolute_path.clone()).await?;
+    manager
+        .publish_changes_snapshot_for_path(&absolute_path, snapshot.clone(), "commit")
+        .await;
+    Ok(snapshot)
 }
 
 pub(crate) async fn refresh_and_cache_git_status(

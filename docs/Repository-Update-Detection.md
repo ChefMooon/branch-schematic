@@ -17,7 +17,7 @@ After a successful managed cache commit, Rust emits a version 1 `workspace-updat
 The app uses two complementary manager-owned mechanisms:
 
 1. Background filesystem watching
-   - `WatcherManager` registers repositories, resolves layout-aware metadata scopes, debounces hints, runs the authoritative full-refresh engine, and emits `workspace-updated` after the cache transaction succeeds. The scheduler routes accepted hints through full refresh; targeted metadata/status execution remains a later optimization.
+   - `WatcherManager` registers repositories, resolves layout-aware metadata scopes, debounces hints, and routes each hint through a typed refresh kind. Status hints use a blocking-pool Git status scan when detail is active; metadata, full, verification, and watcher-error paths use the authoritative full-refresh engine and emit `workspace-updated` after the cache transaction succeeds.
 
 2. Active view polling
    - The branch map relies on the shared invalidation listener and does not run a page-level polling loop.
@@ -25,7 +25,7 @@ The app uses two complementary manager-owned mechanisms:
 
 ### Repository changes invalidation
 
-The repository detail changes view uses the same manager-owned monitoring path rather than creating a second short-interval watcher. While a detail session is active, a successful manager refresh increments a runtime changes revision and emits a version 1 `repository-changes-invalidated` event containing:
+The repository detail changes view uses the same manager-owned monitoring path rather than creating a second short-interval watcher. While a detail session is active, a successful manager `Status` refresh publishes a transient `RepositoryChangesSnapshot`, increments a runtime changes revision, and emits a version 1 `repository-changes-invalidated` event containing:
 
 - `repositoryId`
 - `revision`
@@ -34,6 +34,8 @@ The repository detail changes view uses the same manager-owned monitoring path r
 - `emittedAt`
 
 The event is an invalidation signal only. It does not contain the changed-file list. The frontend responds by calling `get_repository_changes_if_changed` with the repository ID, absolute path, and its known revision. The command returns an explicit `unchanged` result when the known revision is current, or an authoritative `RepositoryChangesSnapshot` when a refresh is needed.
+
+Opening repository details calls `begin_repository_detail_session_command` before the user selects the Changes tab. The manager creates or reuses the runtime entry, supersedes an in-flight startup full refresh, and schedules one foreground status refresh. A Changes read waits for that same in-flight refresh or reuses the published snapshot, so opening the tab does not launch a duplicate Git status scan. Full refreshes retain the last successful changes snapshot and schedule a status follow-up while detail is active. Closing the final detail session invalidates pending status work, wakes waiting readers, and clears the detail-scoped snapshot.
 
 The changes view also keeps a slower 30-second reconciliation read as a safety net for missed filesystem events, sleep/wake recovery, degraded watcher operation, and editors that save through notification-unfriendly atomic replacement patterns. Filesystem events remain hints; Git status remains authoritative. The frontend compares snapshot content before replacing mounted UI state, so a successful invalidation with no meaningful file-list change does not reset selection, diff context, scroll position, collapsed groups, or the commit composer.
 

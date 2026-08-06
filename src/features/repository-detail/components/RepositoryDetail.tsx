@@ -85,15 +85,10 @@ export function RepositoryDetail({ isOpen, repo, onClose }: RepositoryDetailProp
     const sessionId = `${repo.id}-${Date.now()}-${Math.random()}`;
 
     const activateDetailSession = async () => {
-      await invoke('ensure_repository_monitored_command', {
+      await invoke('begin_repository_detail_session_command', {
         pathId: repo.id,
         absolutePath: repo.absolute_path,
-      });
-      if (disposed) return;
-      await invoke('set_repository_detail_active_command', {
-        pathId: repo.id,
         sessionId,
-        active: true,
       });
       if (disposed) {
         await invoke('set_repository_detail_active_command', {
