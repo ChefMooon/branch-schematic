@@ -71,6 +71,7 @@ export interface WorkspaceNodeRecord {
   path_id?: string;
   display_name?: string | null;
   explode_branches: number;
+  is_explicit_branch: number;
   branch_id: string;
   branch_name: string;
   is_head: number;
@@ -183,6 +184,7 @@ interface CanvasState {
   moveViewOrder: (viewId: string, direction: -1 | 1) => Promise<void>;
   togglePathVisibility: (viewId: string, repoPathId: string, visible: boolean) => Promise<CanvasViewScopeState | null>;
   toggleBranchVisibility: (viewId: string, branchId: string, visible: boolean) => Promise<CanvasViewScopeState | null>;
+  setRepositoryScope: (viewId: string, repoPathId: string, visible: boolean, branchVisibility: Record<string, boolean>) => Promise<CanvasViewScopeState | null>;
   snapshotBaselineViewport: (viewId: string, zoom: number, x: number, y: number) => Promise<void>;
   saveCardState: (viewId: string, cardStateJson: string) => Promise<void>;
   initializeBranchMapSession: () => Promise<void>;
@@ -198,6 +200,7 @@ interface CanvasState {
 export const useCanvasStore = create<CanvasState>((set, get) => {
   let hydrationGeneration = 0;
   let visibilityUpdate = Promise.resolve();
+  let scopeVisibilityUpdate = Promise.resolve();
 
   const publishVisibleRepositories = (repositoryIds: string[]) => {
     const nextUpdate = visibilityUpdate.then(() =>
@@ -577,6 +580,45 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
     }
   },
 
+  setRepositoryScope: async (viewId, repoPathId, visible, branchVisibility) => {
+    const operation = scopeVisibilityUpdate.then(async () => {
+      try {
+        await invoke('set_canvas_view_path_visibility', {
+          viewId,
+          repoPathId,
+          visible,
+        });
+
+        for (const [branchId, branchVisible] of Object.entries(branchVisibility)) {
+          await invoke('set_canvas_view_branch_visibility', {
+            viewId,
+            branchId,
+            visible: branchVisible,
+          });
+        }
+
+        const scope = await invoke<CanvasViewScopeState>('get_canvas_view_scope', { viewId });
+        if (get().activeViewId === viewId) {
+          await get().hydrateWorkspaceNodes();
+        }
+        return scope;
+      } catch (error) {
+        console.error('Failed updating repository scope state:', error);
+        if (get().activeViewId === viewId) {
+          try {
+            await get().hydrateWorkspaceNodes();
+          } catch (hydrationError) {
+            console.error('Failed hydrating workspace after scope update:', hydrationError);
+          }
+        }
+        return null;
+      }
+    });
+
+    scopeVisibilityUpdate = operation.then(() => undefined, () => undefined);
+    return operation;
+  },
+
   snapshotBaselineViewport: async (viewId, zoom, x, y) => {
     try {
       await invoke('snapshot_canvas_view_baseline_viewport', {
@@ -713,7 +755,8 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
       const formattedNodes: BranchCardNode[] = dbNodes.map((record, index) => {
         const repoPathId = getNodeRepoPathId(record);
         const normalizedBranchName = normalizeBranchName(record.branch_name);
-        const nodeId = record.explode_branches === 1 && record.branch_name
+        const isBranchNode = (record.explode_branches === 1 || record.is_explicit_branch === 1) && record.branch_name;
+        const nodeId = isBranchNode
           ? `${repoPathId}__${normalizedBranchName}`
           : repoPathId;
 
@@ -727,7 +770,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
         const storedY = record.pos_y ?? 0;
         const hasStoredPosition = Number.isFinite(storedX) && Number.isFinite(storedY) &&
           !(Math.abs(storedX - 100) < 1e-6 && Math.abs(storedY - 100) < 1e-6);
-        const isExplodedChildNode = record.explode_branches === 1 && nodeId !== repoPathId;
+        const isExplodedChildNode = Boolean(isBranchNode && nodeId !== repoPathId);
         const exactNodeMatch = currentInMemoryNodes.find((node) => node.id === nodeId);
         const repoAnchorMatch = isExplodedChildNode
           ? undefined
@@ -821,10 +864,12 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
         const targetNode = dbNodes.find((node) => normalizeBranchName(node.branch_name) === cleanTgt);
 
         if (sourceNode && targetNode) {
-          const sourceNodeId = sourceNode.explode_branches === 1 && sourceNode.branch_name
+          const sourceIsBranchNode = (sourceNode.explode_branches === 1 || sourceNode.is_explicit_branch === 1) && sourceNode.branch_name;
+          const sourceNodeId = sourceIsBranchNode
             ? `${getNodeRepoPathId(sourceNode)}__${normalizeBranchName(sourceNode.branch_name)}`
             : getNodeRepoPathId(sourceNode);
-          const targetNodeId = targetNode.explode_branches === 1 && targetNode.branch_name
+          const targetIsBranchNode = (targetNode.explode_branches === 1 || targetNode.is_explicit_branch === 1) && targetNode.branch_name;
+          const targetNodeId = targetIsBranchNode
             ? `${getNodeRepoPathId(targetNode)}__${normalizeBranchName(targetNode.branch_name)}`
             : getNodeRepoPathId(targetNode);
 

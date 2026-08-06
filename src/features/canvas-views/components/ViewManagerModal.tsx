@@ -1,26 +1,28 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { X } from '@phosphor-icons/react';
-import { useCanvasStore } from '../../../stores/canvas-store';
+import { Button } from '../../../components/button/Button';
+import { ConfirmationModal } from '../../../components/Modal/ConfirmationModal';
+import { TextInputModal } from '../../../components/Modal/TextInputModal';
+import { useBackdropDismiss } from '../../../hooks/useBackdropDismiss';
+import { useCanvasStore, sortCanvasViews, type CanvasViewRecord } from '../../../stores/canvas-store';
 import { ViewManagerSidebar } from './ViewManagerSidebar';
 import { ViewDetailsConfigurator } from './ViewDetailsConfigurator';
-import { Button } from '../../../components/button/Button';
-
-function sortViews(views: ReturnType<typeof useCanvasStore.getState>['views']) {
-  return [...views].sort((left, right) => {
-    const favoriteDelta = (right.is_favorite ?? 0) - (left.is_favorite ?? 0);
-    if (favoriteDelta !== 0) return favoriteDelta;
-
-    const displayOrderDelta = (left.display_order ?? 0) - (right.display_order ?? 0);
-    if (displayOrderDelta !== 0) return displayOrderDelta;
-
-    return left.name.localeCompare(right.name);
-  });
-}
+import './canvasViews.css';
 
 type ViewManagerModalProps = {
   isDark: boolean;
   isOpen: boolean;
   onClose: () => void;
+};
+
+type InputDialogState = {
+  mode: 'create' | 'rename' | 'duplicate';
+  title: string;
+  description: string;
+  inputLabel: string;
+  confirmLabel: string;
+  value: string;
+  viewId?: string;
 };
 
 export function ViewManagerModal({ isDark, isOpen, onClose }: ViewManagerModalProps) {
@@ -34,32 +36,104 @@ export function ViewManagerModal({ isDark, isOpen, onClose }: ViewManagerModalPr
   const setViewFavorite = useCanvasStore((state) => state.setViewFavorite);
   const moveViewOrder = useCanvasStore((state) => state.moveViewOrder);
 
+  const dialogRef = useRef<HTMLDivElement | null>(null);
   const [selectedViewId, setSelectedViewId] = useState<string | null>(activeViewId);
+  const [inputDialog, setInputDialog] = useState<InputDialogState | null>(null);
+  const [viewToDelete, setViewToDelete] = useState<CanvasViewRecord | null>(null);
+
+  const backdropDismiss = useBackdropDismiss(dialogRef, onClose, isOpen);
+  const orderedViews = useMemo(() => sortCanvasViews(views), [views]);
+  const selectedView = orderedViews.find((view) => view.id === selectedViewId) ?? null;
 
   useEffect(() => {
     if (!isOpen) return;
-    if (activeViewId) {
+
+    if (activeViewId && views.some((view) => view.id === activeViewId)) {
       setSelectedViewId(activeViewId);
       return;
     }
-    if (views.length > 0) {
-      setSelectedViewId(views[0].id);
-    }
-  }, [isOpen, activeViewId, views]);
 
-  const orderedViews = useMemo(() => sortViews(views), [views]);
+    setSelectedViewId(orderedViews[0]?.id ?? null);
+  }, [activeViewId, isOpen, orderedViews, views]);
 
-  const selectedView = useMemo(
-    () => orderedViews.find((view) => view.id === selectedViewId) ?? null,
-    [orderedViews, selectedViewId],
-  );
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const previousOverflow = document.body.style.overflow;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      if (inputDialog || viewToDelete) return;
+      onClose();
+    };
+
+    document.body.style.overflow = 'hidden';
+    document.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [inputDialog, isOpen, onClose, viewToDelete]);
 
   if (!isOpen) return null;
 
-  const handleCreate = async () => {
-    const name = window.prompt('Enter a name for your new canvas view layer:');
-    if (!name || !name.trim()) return;
-    await createNewView({ name: name.trim() });
+  const handleCreate = () => {
+    setInputDialog({
+      mode: 'create',
+      title: 'Create view',
+      description: 'Add a named canvas environment with the current repository scope defaults.',
+      inputLabel: 'View name',
+      confirmLabel: 'Create view',
+      value: '',
+    });
+  };
+
+  const handleRename = (view: CanvasViewRecord) => {
+    setInputDialog({
+      mode: 'rename',
+      title: 'Rename view',
+      description: 'Choose a clear name for this saved canvas environment.',
+      inputLabel: 'View name',
+      confirmLabel: 'Save name',
+      value: view.name,
+      viewId: view.id,
+    });
+  };
+
+  const handleDuplicate = (view: CanvasViewRecord) => {
+    setInputDialog({
+      mode: 'duplicate',
+      title: 'Duplicate view',
+      description: 'Create a copy of this view, including its scope and viewport settings.',
+      inputLabel: 'New view name',
+      confirmLabel: 'Duplicate view',
+      value: `${view.name} Copy`,
+      viewId: view.id,
+    });
+  };
+
+  const handleInputConfirm = async (value: string) => {
+    if (!inputDialog) return;
+
+    if (inputDialog.mode === 'create') {
+      await createNewView({ name: value });
+    } else if (inputDialog.mode === 'rename' && inputDialog.viewId) {
+      await renameView(inputDialog.viewId, value);
+    } else if (inputDialog.mode === 'duplicate' && inputDialog.viewId) {
+      await duplicateView(inputDialog.viewId, value);
+    }
+
+    setInputDialog(null);
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!viewToDelete || views.length <= 1) return;
+
+    await deleteView(viewToDelete.id);
+    setViewToDelete(null);
+
+    const nextViews = sortCanvasViews(useCanvasStore.getState().views);
+    setSelectedViewId(nextViews[0]?.id ?? null);
   };
 
   const handleSelect = async (viewId: string) => {
@@ -67,97 +141,71 @@ export function ViewManagerModal({ isDark, isOpen, onClose }: ViewManagerModalPr
     await setActiveView(viewId);
   };
 
-  const handleDelete = async (view: { id: string; name: string }) => {
-    if (!window.confirm(`Delete view "${view.name}"?`)) return;
-    await deleteView(view.id);
-    const remaining = views.filter((v) => v.id !== view.id);
-    setSelectedViewId(remaining[0]?.id ?? null);
-  };
-
-  const handleDuplicate = async (view: { id: string; name: string }) => {
-    const suggested = `${view.name} Copy`;
-    const entered = window.prompt('Enter a name for the duplicated view:', suggested);
-    if (!entered || !entered.trim()) return;
-    await duplicateView(view.id, entered.trim());
-  };
-
   return (
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        zIndex: 30,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: 16,
-        background: 'rgba(15, 23, 42, 0.52)',
-      }}
-      onClick={onClose}
-    >
+    <>
       <div
-        style={{
-          width: 'min(1100px, 96vw)',
-          height: 'min(520px, 80vh)',
-          borderRadius: 14,
-          overflow: 'hidden',
-          background: isDark ? '#0d0d0f' : '#ffffff',
-          border: `1px solid ${isDark ? '#262626' : '#e2e8f0'}`,
-          boxShadow: '0 30px 70px -30px rgba(15, 23, 42, 0.65)',
-          display: 'grid',
-          gridTemplateRows: 'auto 1fr',
-        }}
-        onClick={(event) => event.stopPropagation()}
+        className="canvas-view-manager-overlay"
+        {...backdropDismiss}
       >
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 14px', borderBottom: `1px solid ${isDark ? '#262626' : '#e2e8f0'}` }}>
-          <div>
-            <h2 style={{ margin: 0, fontSize: 16, color: isDark ? '#f5f5f5' : '#0f172a' }}>View Manager</h2>
-            <p style={{ margin: '4px 0 0', fontSize: 12, color: isDark ? '#a3a3a3' : '#64748b' }}>
-              Configure decoupled environments with baseline viewport and scoped visibility.
-            </p>
-          </div>
-          <Button
-            onClick={onClose}
-            variant="close"
-            aria-label="Close modal"
-            title="Close"
-          >
-            <X size={18} weight="bold" />
-          </Button>
-        </div>
-
         <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: 'minmax(220px, clamp(220px, 30vw, 320px)) minmax(0, 1fr)',
-            height: '100%',
-            minHeight: 0,
-            minWidth: 0,
-          }}
+          ref={dialogRef}
+          className="canvas-view-manager"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="canvas-view-manager-title"
+          data-theme-mode={isDark ? 'dark' : 'light'}
         >
-          <ViewManagerSidebar
-            isDark={isDark}
-            views={orderedViews}
-            selectedViewId={selectedViewId}
-            onSelect={(viewId) => void handleSelect(viewId)}
-            onCreate={() => void handleCreate()}
-            onRename={renameView}
-            onDuplicate={(view) => void handleDuplicate(view)}
-            onDelete={(view) => handleDelete(view)}
-            onToggleFavorite={async (viewId, favorite) => {
-              await setViewFavorite(viewId, favorite);
-            }}
-            onMoveUp={async (viewId) => {
-              await moveViewOrder(viewId, -1);
-            }}
-            onMoveDown={async (viewId) => {
-              await moveViewOrder(viewId, 1);
-            }}
-          />
+          <header className="canvas-view-manager__header">
+            <div>
+              <p className="canvas-view-manager__eyebrow">Canvas environments</p>
+              <h1 className="canvas-view-manager__title" id="canvas-view-manager-title">View manager</h1>
+              <p className="canvas-view-manager__description">
+                Organize saved canvases, baseline viewports, and the repositories or branches each environment shows.
+              </p>
+            </div>
+            <Button type="button" variant="close" onClick={onClose} aria-label="Close view manager" title="Close">
+              <X size={17} weight="bold" />
+            </Button>
+          </header>
 
-          <ViewDetailsConfigurator isDark={isDark} view={selectedView} />
+          <div className="canvas-view-manager__body">
+            <ViewManagerSidebar
+              views={orderedViews}
+              selectedViewId={selectedViewId}
+              onSelect={(viewId) => void handleSelect(viewId)}
+              onCreate={handleCreate}
+              onRename={handleRename}
+              onDuplicate={handleDuplicate}
+              onDelete={setViewToDelete}
+              onToggleFavorite={(viewId, favorite) => setViewFavorite(viewId, favorite)}
+              onMoveUp={(viewId) => moveViewOrder(viewId, -1)}
+              onMoveDown={(viewId) => moveViewOrder(viewId, 1)}
+            />
+            <ViewDetailsConfigurator isDark={isDark} view={selectedView} />
+          </div>
         </div>
       </div>
-    </div>
+
+      <TextInputModal
+        isOpen={inputDialog !== null}
+        title={inputDialog?.title ?? ''}
+        description={inputDialog?.description}
+        inputLabel={inputDialog?.inputLabel}
+        inputValue={inputDialog?.value ?? ''}
+        confirmLabel={inputDialog?.confirmLabel}
+        onConfirm={handleInputConfirm}
+        onCancel={() => setInputDialog(null)}
+      />
+
+      <ConfirmationModal
+        isOpen={viewToDelete !== null}
+        title="Delete view?"
+        message={viewToDelete ? `Delete “${viewToDelete.name}”? This removes the saved environment and its layout.` : null}
+        confirmLabel="Delete view"
+        variant="danger"
+        onConfirm={handleDeleteConfirm}
+        onCancel={() => setViewToDelete(null)}
+      />
+    </>
   );
 }

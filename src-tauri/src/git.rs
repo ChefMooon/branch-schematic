@@ -885,6 +885,7 @@ pub async fn list_remote_branches(
 #[tauri::command]
 pub async fn clone_remote_repository(
     state: tauri::State<'_, DbState>,
+    manager: tauri::State<'_, WatcherManager>,
     profile_id: Option<String>,
     owner: Option<String>,
     repo_name: Option<String>,
@@ -989,6 +990,14 @@ pub async fn clone_remote_repository(
             .await
             .map_err(|error| format!("Failed to resolve tracked repository id: {}", error))?
             .ok_or_else(|| "The cloned repository could not be tracked.".to_string())?;
+
+    manager
+        .ensure_monitored(
+            path_id.clone(),
+            target_path_string.clone(),
+            RefreshPriority::Foreground,
+        )
+        .await?;
 
     Ok(CloneRemoteRepositoryResult {
         path_id,
@@ -1500,9 +1509,20 @@ async fn track_repository_path(
 #[tauri::command]
 pub async fn add_new_tracked_path(
     state: tauri::State<'_, DbState>,
+    manager: tauri::State<'_, WatcherManager>,
     absolute_path: String,
 ) -> Result<RepositoryTrackResult, String> {
-    track_repository_path(state.inner().pool(), &absolute_path, None).await
+    let result = track_repository_path(state.inner().pool(), &absolute_path, None).await?;
+    let path_id = db::fetch_tracked_path_id_by_absolute_path(state.inner().pool(), &absolute_path)
+        .await
+        .map_err(|error| format!("Failed to resolve tracked repository id: {error}"))?
+        .ok_or_else(|| "The tracked repository id could not be resolved.".to_string())?;
+
+    manager
+        .ensure_monitored(path_id, absolute_path, RefreshPriority::Foreground)
+        .await?;
+
+    Ok(result)
 }
 
 #[tauri::command]

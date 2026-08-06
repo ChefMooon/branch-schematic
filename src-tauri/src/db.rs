@@ -52,6 +52,7 @@ pub struct WorkspaceNodeRow {
     pub repo_path_id: String,
     pub display_name: String,
     pub explode_branches: i64,
+    pub is_explicit_branch: i64,
     pub branch_id: String,
     pub branch_name: String,
     pub is_head: i64,
@@ -920,7 +921,13 @@ pub async fn fetch_workspace_nodes(
                 cached_git_branches.is_head,
                 cached_git_branches.ahead_count,
                 cached_git_branches.behind_count,
-                cached_git_branches.last_commit_hash
+                cached_git_branches.last_commit_hash,
+                CASE
+                    WHEN visible_branches.branch_id IS NOT NULL
+                     AND cached_git_branches.id != head_branch.id
+                    THEN 1
+                    ELSE 0
+                END AS is_explicit_branch
             FROM tracked_paths
             LEFT JOIN cached_git_branches
                 ON cached_git_branches.path_id = tracked_paths.id
@@ -939,22 +946,26 @@ pub async fn fetch_workspace_nodes(
                 tracked_paths.is_active = 1
                 AND tracked_paths.archived_at IS NULL
                 AND (
-                    NOT EXISTS(
-                        SELECT 1 FROM canvas_view_visible_paths visibility_seed WHERE visibility_seed.view_id = ?
-                    )
-                    OR COALESCE(visible_paths.is_visible, 0) = 1
+                    COALESCE(visible_paths.is_visible, 1) = 1
                 )
                 AND COALESCE(visible_branches.is_visible, 1) = 1
                 AND (
                     (COALESCE(card_layout.explode_branches, 0) = 1 AND cached_git_branches.id IS NOT NULL)
-                    OR
-                    (COALESCE(card_layout.explode_branches, 0) = 0 AND (cached_git_branches.id IS NULL OR cached_git_branches.id = head_branch.id))
+                    OR (
+                        COALESCE(card_layout.explode_branches, 0) = 0
+                        AND (
+                            cached_git_branches.id IS NULL
+                            OR cached_git_branches.id = head_branch.id
+                            OR visible_branches.branch_id IS NOT NULL
+                        )
+                    )
                 )
         )
         SELECT
             selected_branches.path_id AS repo_path_id,
             COALESCE(tracked_paths.display_name, selected_branches.path_id) AS display_name,
             COALESCE(card_layout.explode_branches, 0) AS explode_branches,
+            selected_branches.is_explicit_branch AS is_explicit_branch,
             COALESCE(selected_branches.branch_id, '') AS branch_id,
             COALESCE(selected_branches.branch_name, '') AS branch_name,
             COALESCE(selected_branches.is_head, 0) AS is_head,
@@ -963,13 +974,15 @@ pub async fn fetch_workspace_nodes(
             COALESCE(selected_branches.last_commit_hash, '') AS last_commit_hash,
             commits.commit_message,
             CASE
-                WHEN COALESCE(card_layout.explode_branches, 0) = 1
-                    THEN COALESCE(branch_layout.pos_x, card_layout.pos_x, 100.0)
+                                WHEN COALESCE(card_layout.explode_branches, 0) = 1
+                                    OR selected_branches.is_explicit_branch = 1
+                                        THEN COALESCE(branch_layout.pos_x, card_layout.pos_x, 100.0)
                 ELSE COALESCE(card_layout.pos_x, 100.0)
             END AS pos_x,
             CASE
-                WHEN COALESCE(card_layout.explode_branches, 0) = 1
-                    THEN COALESCE(branch_layout.pos_y, card_layout.pos_y, 100.0)
+                                WHEN COALESCE(card_layout.explode_branches, 0) = 1
+                                    OR selected_branches.is_explicit_branch = 1
+                                        THEN COALESCE(branch_layout.pos_y, card_layout.pos_y, 100.0)
                 ELSE COALESCE(card_layout.pos_y, 100.0)
             END AS pos_y,
             COALESCE(card_layout.view_mode, 'EXPANDED') AS view_mode,

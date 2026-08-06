@@ -1,24 +1,22 @@
-import { useMemo, useState } from 'react';
-import { ArrowDown, ArrowUp, Check, CopySimple, PencilSimple, Star, Trash, X } from '@phosphor-icons/react';
+import { ArrowDown, ArrowUp, CopySimple, PencilSimple, Star, Trash } from '@phosphor-icons/react';
 import type { CanvasViewRecord } from '../../../stores/canvas-store';
 import { Button } from '../../../components/button/Button';
+import './canvasViews.css';
 
 type ViewManagerSidebarProps = {
-  isDark: boolean;
   views: CanvasViewRecord[];
   selectedViewId: string | null;
   onSelect: (viewId: string) => void;
   onCreate: () => void;
   onDuplicate: (view: CanvasViewRecord) => void;
-  onRename: (viewId: string, newName: string) => Promise<void>;
-  onDelete: (view: CanvasViewRecord) => Promise<void>;
+  onRename: (view: CanvasViewRecord) => void;
+  onDelete: (view: CanvasViewRecord) => void;
   onToggleFavorite: (viewId: string, favorite: boolean) => Promise<void>;
   onMoveUp: (viewId: string) => Promise<void>;
   onMoveDown: (viewId: string) => Promise<void>;
 };
 
 export function ViewManagerSidebar({
-  isDark,
   views,
   selectedViewId,
   onSelect,
@@ -30,344 +28,135 @@ export function ViewManagerSidebar({
   onMoveUp,
   onMoveDown,
 }: ViewManagerSidebarProps) {
-  const [editingViewId, setEditingViewId] = useState<string | null>(null);
-  const [draftName, setDraftName] = useState('');
-
-  const selectedView = useMemo(
-    () => views.find((view) => view.id === selectedViewId) ?? null,
-    [views, selectedViewId],
-  );
-
-  const startEditing = (view: CanvasViewRecord) => {
-    setEditingViewId(view.id);
-    setDraftName(view.name);
-  };
-
-  const cancelEditing = () => {
-    setEditingViewId(null);
-    setDraftName('');
-  };
-
-  const saveRename = async (viewId: string) => {
-    const trimmed = draftName.trim();
-    if (!trimmed) return;
-    await onRename(viewId, trimmed);
-    cancelEditing();
-  };
+  const selectedView = views.find((view) => view.id === selectedViewId) ?? null;
+  const canDelete = views.length > 1;
 
   return (
-    <aside
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        minHeight: 0,
-        minWidth: 0,
-        borderRight: `1px solid ${isDark ? '#262626' : '#e2e8f0'}`,
-        background: isDark ? '#101010' : '#f8fafc',
-      }}
-    >
-      <div style={{ padding: '14px 14px 10px', borderBottom: `1px solid ${isDark ? '#262626' : '#e2e8f0'}` }}>
-        <Button
-          onClick={onCreate}
-          variant="submit"
-          style={{ width: '100%' }}
-        >
-          + Create View
+    <aside className="canvas-view-manager__sidebar">
+      <div className="canvas-view-manager__sidebar-header">
+        <Button type="button" variant="submit" className="canvas-view-manager__create-button" onClick={onCreate}>
+          Create view
         </Button>
       </div>
 
-      <div
-        style={{
-          flex: 1,
-          minHeight: 0,
-          overflowY: 'auto',
-          overflowX: 'hidden',
-          padding: 10,
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 8,
-          scrollbarGutter: 'stable',
-        }}
-      >
+      <div className="canvas-view-manager__view-list">
         {views.length === 0 && (
-          <div style={{ borderRadius: 8, padding: 10, color: isDark ? '#a3a3a3' : '#64748b', fontSize: 12 }}>
-            No views available.
-          </div>
+          <div className="canvas-view-manager__empty">No saved views are available.</div>
         )}
 
         {views.map((view, index) => {
           const selected = view.id === selectedViewId;
-          const isEditing = editingViewId === view.id;
           const isFavorite = (view.is_favorite ?? 0) === 1;
           const canMoveUp = index > 0;
           const canMoveDown = index < views.length - 1;
-          const nameColor = selected
-            ? (isDark ? '#f5f5f5' : '#0f172a')
-            : (isDark ? '#e5e5e5' : '#1e293b');
+          const zoom = (view.baseline_zoom ?? view.zoom_level).toFixed(2);
 
           return (
-            <div
+            <article
+              className={`canvas-view-manager__view-card${selected ? ' is-selected' : ''}`}
               key={view.id}
-              style={{
-                border: `1px solid ${selected ? '#6366f1' : (isDark ? '#262626' : '#dbe3ef')}`,
-                borderRadius: 10,
-                background: selected ? (isDark ? '#191b2f' : '#eef2ff') : (isDark ? '#151515' : '#fff'),
-                padding: '12px 14px',
-                overflow: 'hidden',
-                flexShrink: 0,
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 8,
+              aria-current={selected ? 'true' : undefined}
+              aria-label={`Open view ${view.name}`}
+              role="button"
+              tabIndex={0}
+              onClick={() => onSelect(view.id)}
+              onKeyDown={(event) => {
+                if (event.target !== event.currentTarget) return;
+                if (event.key !== 'Enter' && event.key !== ' ') return;
+                event.preventDefault();
+                onSelect(view.id);
               }}
             >
-              {isEditing ? (
-                <div style={{ display: 'flex', gap: 6 }}>
-                  <input
-                    value={draftName}
-                    onChange={(event) => setDraftName(event.target.value)}
-                    autoFocus
-                    style={{
-                      flex: 1,
-                      borderRadius: 6,
-                      border: `1px solid ${isDark ? '#3f3f46' : '#cbd5e1'}`,
-                      background: isDark ? '#0f0f10' : '#fff',
-                      color: isDark ? '#fafafa' : '#0f172a',
-                      padding: '6px 8px',
-                      fontSize: 12,
-                    }}
-                  />
-                  <button
-                    onClick={() => void saveRename(view.id)}
-                    title="Save"
-                    style={{ border: 'none', background: 'transparent', color: '#10b981', cursor: 'pointer' }}
-                  >
-                    <Check size={16} />
-                  </button>
-                  <button
-                    onClick={cancelEditing}
-                    title="Cancel"
-                    style={{ border: 'none', background: 'transparent', color: '#ef4444', cursor: 'pointer' }}
-                  >
-                    <X size={16} />
-                  </button>
+              <div className="canvas-view-manager__view-card-header">
+                <div className="canvas-view-manager__view-summary">
+                  <span className="canvas-view-manager__view-name">{view.name}</span>
+                  <span className="canvas-view-manager__view-meta">Baseline zoom {zoom}</span>
                 </div>
-              ) : (
-                <>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', minWidth: 0 }}>
-                    <button
-                      onClick={() => onSelect(view.id)}
-                      style={{
-                        display: 'block',
-                        width: '100%',
-                        border: 'none',
-                        background: 'transparent',
-                        textAlign: 'left',
-                        padding: 0,
-                        cursor: 'pointer',
-                        minWidth: 0,
-                      }}
-                    >
-                      <div
-                        style={{
-                          fontSize: '14px',
-                          fontWeight: 700,
-                          color: nameColor,
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
-                        }}
-                      >
-                        {view.name}
-                      </div>
-                      <div
-                        style={{
-                          fontSize: '11px',
-                          fontWeight: 500,
-                          color: isDark ? '#a3a3a3' : '#64748b',
-                          marginTop: 0,
-                        }}
-                      >
-                        Zoom: {(view.baseline_zoom ?? view.zoom_level).toFixed(2)}
-                      </div>
-                    </button>
-                  </div>
+                <Button
+                  type="button"
+                  variant="basic"
+                  className={`canvas-view-manager__icon-button${isFavorite ? ' is-favorite' : ''}`}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    void onToggleFavorite(view.id, !isFavorite);
+                  }}
+                  onKeyDown={(event) => event.stopPropagation()}
+                  title={isFavorite ? `Remove ${view.name} from favorites` : `Favorite ${view.name}`}
+                  aria-label={isFavorite ? `Remove ${view.name} from favorites` : `Favorite ${view.name}`}
+                  aria-pressed={isFavorite}
+                >
+                  <Star size={16} weight={isFavorite ? 'fill' : 'regular'} />
+                </Button>
+              </div>
 
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 2, flexShrink: 0 }}>
-                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-                      <button
-                        onClick={() => void onToggleFavorite(view.id, !isFavorite)}
-                        title={isFavorite ? 'Unfavorite view' : 'Favorite view'}
-                        style={{
-                          border: 'none',
-                          background: isFavorite ? (isDark ? '#2d1b00' : '#fef3c7') : (isDark ? '#18181b' : '#f1f5f9'),
-                          color: isFavorite ? '#f59e0b' : (isDark ? '#d4d4d8' : '#475569'),
-                          cursor: 'pointer',
-                          borderRadius: 8,
-                          width: 28,
-                          height: 28,
-                          padding: 0,
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          transition: 'background-color 140ms ease, transform 140ms ease',
-                          flexShrink: 0,
-                          lineHeight: 0,
-                        }}
-                      >
-                        <Star size={16} weight={isFavorite ? 'fill' : 'regular'} style={{ display: 'block' }} />
-                      </button>
-                      <button
-                        onClick={() => void onMoveUp(view.id)}
-                        title={`Move ${view.name} up`}
-                        disabled={!canMoveUp}
-                        style={{
-                          border: 'none',
-                          background: isDark ? '#18181b' : '#f1f5f9',
-                          color: canMoveUp ? (isDark ? '#d4d4d8' : '#475569') : (isDark ? '#52525b' : '#94a3b8'),
-                          cursor: canMoveUp ? 'pointer' : 'not-allowed',
-                          borderRadius: 8,
-                          width: 28,
-                          height: 28,
-                          padding: 0,
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          transition: 'background-color 140ms ease, transform 140ms ease',
-                          flexShrink: 0,
-                          lineHeight: 0,
-                          opacity: canMoveUp ? 1 : 0.55,
-                        }}
-                      >
-                        <ArrowUp size={16} weight="bold" style={{ display: 'block' }} />
-                      </button>
-                      <button
-                        onClick={() => void onMoveDown(view.id)}
-                        title={`Move ${view.name} down`}
-                        disabled={!canMoveDown}
-                        style={{
-                          border: 'none',
-                          background: isDark ? '#18181b' : '#f1f5f9',
-                          color: canMoveDown ? (isDark ? '#d4d4d8' : '#475569') : (isDark ? '#52525b' : '#94a3b8'),
-                          cursor: canMoveDown ? 'pointer' : 'not-allowed',
-                          borderRadius: 8,
-                          width: 28,
-                          height: 28,
-                          padding: 0,
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          transition: 'background-color 140ms ease, transform 140ms ease',
-                          flexShrink: 0,
-                          lineHeight: 0,
-                          opacity: canMoveDown ? 1 : 0.55,
-                        }}
-                      >
-                        <ArrowDown size={16} weight="bold" style={{ display: 'block' }} />
-                      </button>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-                      <button
-                        onClick={() => onDuplicate(view)}
-                        title={`Duplicate ${view.name}`}
-                        onMouseEnter={(event) => {
-                          event.currentTarget.style.backgroundColor = isDark ? '#27272a' : '#e2e8f0';
-                          event.currentTarget.style.transform = 'translateY(-1px)';
-                        }}
-                        onMouseLeave={(event) => {
-                          event.currentTarget.style.backgroundColor = isDark ? '#18181b' : '#f1f5f9';
-                          event.currentTarget.style.transform = 'translateY(0)';
-                        }}
-                        style={{
-                          border: 'none',
-                          background: isDark ? '#18181b' : '#f1f5f9',
-                          color: isDark ? '#d4d4d8' : '#475569',
-                          cursor: 'pointer',
-                          borderRadius: 8,
-                          width: 28,
-                          height: 28,
-                          padding: 0,
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          transition: 'background-color 140ms ease, transform 140ms ease',
-                          flexShrink: 0,
-                          lineHeight: 0,
-                        }}
-                      >
-                        <CopySimple size={16} weight="bold" style={{ display: 'block' }} />
-                      </button>
-                      <button
-                        onClick={() => startEditing(view)}
-                        title={`Rename ${view.name}`}
-                        onMouseEnter={(event) => {
-                          event.currentTarget.style.backgroundColor = isDark ? '#27272a' : '#e2e8f0';
-                          event.currentTarget.style.transform = 'translateY(-1px)';
-                        }}
-                        onMouseLeave={(event) => {
-                          event.currentTarget.style.backgroundColor = isDark ? '#18181b' : '#f1f5f9';
-                          event.currentTarget.style.transform = 'translateY(0)';
-                        }}
-                        style={{
-                          border: 'none',
-                          background: isDark ? '#18181b' : '#f1f5f9',
-                          color: isDark ? '#d4d4d8' : '#475569',
-                          cursor: 'pointer',
-                          borderRadius: 8,
-                          width: 28,
-                          height: 28,
-                          padding: 0,
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          transition: 'background-color 140ms ease, transform 140ms ease',
-                          flexShrink: 0,
-                          lineHeight: 0,
-                        }}
-                      >
-                        <PencilSimple size={16} weight="bold" style={{ display: 'block' }} />
-                      </button>
-                      <button
-                        onClick={() => void onDelete(view)}
-                        title={`Delete ${view.name}`}
-                        onMouseEnter={(event) => {
-                          event.currentTarget.style.backgroundColor = isDark ? '#3f1d22' : '#fee2e2';
-                          event.currentTarget.style.transform = 'translateY(-1px)';
-                        }}
-                        onMouseLeave={(event) => {
-                          event.currentTarget.style.backgroundColor = isDark ? '#2b1418' : '#fff1f2';
-                          event.currentTarget.style.transform = 'translateY(0)';
-                        }}
-                        style={{
-                          border: 'none',
-                          background: isDark ? '#2b1418' : '#fff1f2',
-                          color: '#ef4444',
-                          cursor: 'pointer',
-                          borderRadius: 8,
-                          width: 28,
-                          height: 28,
-                          padding: 0,
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          transition: 'background-color 140ms ease, transform 140ms ease',
-                          flexShrink: 0,
-                          lineHeight: 0,
-                        }}
-                      >
-                        <Trash size={16} weight="bold" style={{ display: 'block' }} />
-                      </button>
-                    </div>
-                  </div>
-                </>
-              )}
-            </div>
+              <div
+                className="canvas-view-manager__view-actions"
+                aria-label={`Actions for ${view.name}`}
+                onClick={(event) => event.stopPropagation()}
+                onKeyDown={(event) => event.stopPropagation()}
+              >
+                <Button
+                  type="button"
+                  variant="basic"
+                  className="canvas-view-manager__icon-button"
+                  onClick={() => void onMoveUp(view.id)}
+                  disabled={!canMoveUp}
+                  title={`Move ${view.name} up`}
+                  aria-label={`Move ${view.name} up`}
+                >
+                  <ArrowUp size={15} weight="bold" />
+                </Button>
+                <Button
+                  type="button"
+                  variant="basic"
+                  className="canvas-view-manager__icon-button"
+                  onClick={() => void onMoveDown(view.id)}
+                  disabled={!canMoveDown}
+                  title={`Move ${view.name} down`}
+                  aria-label={`Move ${view.name} down`}
+                >
+                  <ArrowDown size={15} weight="bold" />
+                </Button>
+                <Button
+                  type="button"
+                  variant="basic"
+                  className="canvas-view-manager__icon-button"
+                  onClick={() => onDuplicate(view)}
+                  title={`Duplicate ${view.name}`}
+                  aria-label={`Duplicate ${view.name}`}
+                >
+                  <CopySimple size={15} weight="bold" />
+                </Button>
+                <Button
+                  type="button"
+                  variant="basic"
+                  className="canvas-view-manager__icon-button"
+                  onClick={() => onRename(view)}
+                  title={`Rename ${view.name}`}
+                  aria-label={`Rename ${view.name}`}
+                >
+                  <PencilSimple size={15} weight="bold" />
+                </Button>
+                <Button
+                  type="button"
+                  variant="danger"
+                  className="canvas-view-manager__icon-button is-danger"
+                  onClick={() => onDelete(view)}
+                  disabled={!canDelete}
+                  title={canDelete ? `Delete ${view.name}` : 'At least one view must remain'}
+                  aria-label={canDelete ? `Delete ${view.name}` : 'Delete unavailable because this is the only view'}
+                >
+                  <Trash size={15} weight="bold" />
+                </Button>
+              </div>
+            </article>
           );
         })}
       </div>
 
       {selectedView && (
-        <div style={{ borderTop: `1px solid ${isDark ? '#262626' : '#e2e8f0'}`, padding: 10, fontSize: 11, color: isDark ? '#a3a3a3' : '#64748b' }}>
-          Active: {selectedView.name}
+        <div className="canvas-view-manager__sidebar-footer">
+          <span className="canvas-view-manager__active-label">Selected: {selectedView.name}</span>
         </div>
       )}
     </aside>
