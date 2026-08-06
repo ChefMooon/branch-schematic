@@ -1080,13 +1080,13 @@ pub async fn fetch_branch_commits(
     limit: i64,
 ) -> Result<Vec<CachedCommitRow>, sqlx::Error> {
     let query_str = if limit <= 0 {
-        "SELECT c.commit_hash, c.author_name, c.commit_message, strftime('%Y-%m-%d %H:%M:%S', c.committed_at) as committed_at, c.signature_status 
+        "SELECT c.commit_hash, c.author_name, c.commit_message, strftime('%Y-%m-%dT%H:%M:%SZ', c.committed_at) as committed_at, c.signature_status
          FROM cached_git_commits c
          JOIN cached_git_commit_branches m ON m.commit_hash = c.commit_hash
          WHERE m.branch_id = ?
          ORDER BY c.committed_at DESC"
     } else {
-        "SELECT c.commit_hash, c.author_name, c.commit_message, strftime('%Y-%m-%d %H:%M:%S', c.committed_at) as committed_at, c.signature_status 
+        "SELECT c.commit_hash, c.author_name, c.commit_message, strftime('%Y-%m-%dT%H:%M:%SZ', c.committed_at) as committed_at, c.signature_status
          FROM cached_git_commits c
          JOIN cached_git_commit_branches m ON m.commit_hash = c.commit_hash
          WHERE m.branch_id = ?

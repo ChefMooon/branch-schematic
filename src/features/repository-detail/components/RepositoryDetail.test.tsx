@@ -21,14 +21,14 @@ describe('RepositoryDetail', () => {
         commit_hash: 'abc123',
         author_name: 'Ada Lovelace',
         commit_message: 'Initial commit',
-        committed_at: '2024-01-01 10:00:00',
+        committed_at: '2024-01-01T10:00:00Z',
         signature_status: 'verified',
       },
       {
         commit_hash: 'def456',
         author_name: 'Grace Hopper',
         commit_message: 'Add repository detail modal',
-        committed_at: '2024-01-02 11:00:00',
+        committed_at: '2024-01-02T11:00:00Z',
         signature_status: null,
       },
     ]);
@@ -83,7 +83,7 @@ describe('RepositoryDetail', () => {
         commit_hash: 'abc123',
         author_name: 'Ada Lovelace',
         commit_message: 'Initial commit',
-        committed_at: '2024-01-01 10:00:00',
+        committed_at: '2024-01-01T10:00:00Z',
         signature_status: 'verified',
       },
     ];

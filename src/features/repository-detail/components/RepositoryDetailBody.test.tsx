@@ -1,6 +1,6 @@
 import { act } from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { RepositoryDetailBody } from './RepositoryDetailBody';
 import type { TrackedPath } from '../../../types/git';
 import type { CommitRecord } from './RepositoryDetail';
@@ -16,7 +16,14 @@ describe('RepositoryDetailBody', () => {
   beforeEach(() => {
     invokeMock.mockReset();
   });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   it('renders repository summary details and commit history state', () => {
+    vi.stubEnv('TZ', 'America/Los_Angeles');
+
     const repo: TrackedPath = {
       id: 'repo-1',
       display_name: 'Branch Schematic',
@@ -39,7 +46,7 @@ describe('RepositoryDetailBody', () => {
         commit_hash: 'abc123',
         author_name: 'Ada Lovelace',
         commit_message: 'Initial commit',
-        committed_at: '2024-01-01 10:00:00',
+        committed_at: '2024-01-01T10:00:00Z',
         signature_status: 'verified',
       },
     ];
@@ -61,6 +68,12 @@ describe('RepositoryDetailBody', () => {
     expect(screen.getByRole('button', { name: /initial commit/i })).toBeInTheDocument();
     expect(screen.getByText('Author')).toBeInTheDocument();
     expect(screen.getAllByText('abc123').length).toBeGreaterThan(0);
+
+    const expectedLocalDate = new Date('2024-01-01T10:00:00Z').toLocaleString(undefined, {
+      dateStyle: 'medium',
+      timeStyle: 'short',
+    });
+    expect(screen.getAllByText(expectedLocalDate)).toHaveLength(2);
   });
 
   it('prevents text selection while resizing the changes layout', async () => {
