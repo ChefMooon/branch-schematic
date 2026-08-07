@@ -33,6 +33,7 @@ export function ViewActionsDropdown({
   const [renameValue, setRenameValue] = useState('');
   const [menuPosition, setMenuPosition] = useState<{ top: number; left: number } | null>(null);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
+  const [isRestoreConfirmOpen, setIsRestoreConfirmOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const isOpen = isOpenProp ?? internalOpen;
 
@@ -55,6 +56,10 @@ export function ViewActionsDropdown({
   const moveViewOrder = useCanvasStore((state) => state.moveViewOrder);
   const snapshotBaselineViewport = useCanvasStore((state) => state.snapshotBaselineViewport);
   const saveCardState = useCanvasStore((state) => state.saveCardState);
+  const getSavedCardLocationSnapshot = useCanvasStore((state) => state.getSavedCardLocationSnapshot);
+  const restoreSavedCardLocations = useCanvasStore((state) => state.restoreSavedCardLocations);
+  const undoSavedCardLocationRestore = useCanvasStore((state) => state.undoSavedCardLocationRestore);
+  const canUndoSavedCardLocationRestore = useCanvasStore((state) => state.canUndoSavedCardLocationRestore);
 
   const canDelete = (views.length ?? 0) > 1;
   const orderedViews = useMemo(() => {
@@ -128,6 +133,8 @@ export function ViewActionsDropdown({
 
   const cardStatePayload = useMemo(() => {
     return JSON.stringify({
+      schemaVersion: 1,
+      viewId: activeView?.id ?? null,
       viewport: {
         zoom: viewport.zoom,
         x: viewport.x,
@@ -146,9 +153,18 @@ export function ViewActionsDropdown({
         themeColorHex: node.data.themeColorHex,
         explodeBranches: node.data.explodeBranches,
       })),
+      locations: nodes.map((node) => ({
+        kind: node.data.branchId && node.id !== node.data.repoPathId ? 'branch' : 'repository',
+        repoPathId: node.data.repoPathId,
+        branchId: node.data.branchId,
+        x: node.position.x,
+        y: node.position.y,
+      })),
       capturedAt: new Date().toISOString(),
     });
-  }, [nodes, viewport.x, viewport.y, viewport.zoom]);
+  }, [activeView?.id, nodes, viewport.x, viewport.y, viewport.zoom]);
+
+  const hasSavedCardLocations = Boolean(activeView && getSavedCardLocationSnapshot(activeView.id));
 
   const handleDuplicate = async () => {
     if (!activeView) return;
@@ -212,6 +228,20 @@ export function ViewActionsDropdown({
     if (!activeView) return;
     await saveCardState(activeView.id, cardStatePayload);
     setIsOpen(false);
+  };
+
+  const handleRestoreConfirm = async () => {
+    if (!activeView) return;
+    const restored = await restoreSavedCardLocations(activeView.id);
+    if (restored) {
+      setIsRestoreConfirmOpen(false);
+      setIsOpen(false);
+    }
+  };
+
+  const handleUndoRestore = async () => {
+    const undone = await undoSavedCardLocationRestore();
+    if (undone) setIsOpen(false);
   };
 
   return (
@@ -385,6 +415,28 @@ export function ViewActionsDropdown({
             Save Card State
           </Button>
 
+          <Button
+            type="button"
+            variant="menu-item"
+            onClick={() => setIsRestoreConfirmOpen(true)}
+            style={menuButtonStyle()}
+            disabled={!activeView || !hasSavedCardLocations}
+            title={hasSavedCardLocations ? 'Restore saved repository and branch card locations' : 'Save Card State first'}
+          >
+            Restore Saved Card Locations
+          </Button>
+
+          {canUndoSavedCardLocationRestore && (
+            <Button
+              type="button"
+              variant="menu-item"
+              onClick={handleUndoRestore}
+              style={menuButtonStyle()}
+            >
+              Undo Restore
+            </Button>
+          )}
+
           <div
             style={{
               height: '1px',
@@ -421,6 +473,23 @@ export function ViewActionsDropdown({
         variant="danger"
         onConfirm={handleDeleteConfirm}
         onCancel={() => setIsDeleteConfirmOpen(false)}
+      />
+
+      <ConfirmationModal
+        isOpen={isRestoreConfirmOpen}
+        title="Restore saved card locations"
+        message={
+          <>
+            Restore the saved repository and branch card locations for{' '}
+            <strong>{activeView?.name ?? 'this view'}</strong>? The current card positions will be
+            replaced. The viewport and card settings will not change.
+          </>
+        }
+        confirmLabel="Restore locations"
+        cancelLabel="Cancel"
+        variant="danger"
+        onConfirm={handleRestoreConfirm}
+        onCancel={() => setIsRestoreConfirmOpen(false)}
       />
     </div>
   );

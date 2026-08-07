@@ -27,6 +27,54 @@ export interface CanvasViewRecord {
   baseline_pan_y?: number;
 }
 
+export type SavedCardLocation = {
+  kind: 'repository' | 'branch';
+  repoPathId: string;
+  branchId?: string;
+  x: number;
+  y: number;
+};
+
+type SavedCardLocationSnapshot = {
+  schemaVersion: 1;
+  viewId: string;
+  locations: SavedCardLocation[];
+};
+
+function parseSavedCardLocationSnapshot(
+  viewId: string,
+  cardStateJson?: string,
+): SavedCardLocationSnapshot | null {
+  if (!cardStateJson) return null;
+
+  try {
+    const parsed = JSON.parse(cardStateJson) as Partial<SavedCardLocationSnapshot>;
+    if (parsed.schemaVersion !== 1 || parsed.viewId !== viewId || !Array.isArray(parsed.locations)) {
+      return null;
+    }
+
+    const locations: SavedCardLocation[] = [];
+    const keys = new Set<string>();
+    for (const entry of parsed.locations) {
+      if (!entry || (entry.kind !== 'repository' && entry.kind !== 'branch')) return null;
+      if (typeof entry.repoPathId !== 'string' || !entry.repoPathId) return null;
+      if (!Number.isFinite(entry.x) || !Number.isFinite(entry.y)) return null;
+
+      const branchId = entry.kind === 'branch' ? entry.branchId : undefined;
+      if (entry.kind === 'branch' && (typeof branchId !== 'string' || !branchId)) return null;
+
+      const key = entry.kind === 'branch' ? `branch:${branchId}` : `repository:${entry.repoPathId}`;
+      if (keys.has(key)) return null;
+      keys.add(key);
+      locations.push({ kind: entry.kind, repoPathId: entry.repoPathId, branchId, x: entry.x, y: entry.y });
+    }
+
+    return { schemaVersion: 1, viewId, locations };
+  } catch {
+    return null;
+  }
+}
+
 type ViewportState = {
   zoom: number;
   x: number;
@@ -187,9 +235,15 @@ interface CanvasState {
   setRepositoryScope: (viewId: string, repoPathId: string, visible: boolean, branchVisibility: Record<string, boolean>) => Promise<CanvasViewScopeState | null>;
   snapshotBaselineViewport: (viewId: string, zoom: number, x: number, y: number) => Promise<void>;
   saveCardState: (viewId: string, cardStateJson: string) => Promise<void>;
+  getSavedCardLocationSnapshot: (viewId: string) => SavedCardLocationSnapshot | null;
+  restoreSavedCardLocations: (viewId: string) => Promise<boolean>;
+  undoSavedCardLocationRestore: () => Promise<boolean>;
+  canUndoSavedCardLocationRestore: boolean;
+  savedCardLocationUndo: { viewId: string; locations: SavedCardLocation[] } | null;
+  invalidateSavedCardLocationUndo: () => void;
   initializeBranchMapSession: () => Promise<void>;
   hydrateViewsList: () => Promise<void>;
-  hydrateWorkspaceNodes: () => Promise<void>;
+  hydrateWorkspaceNodes: (options?: { preserveInMemoryPositions?: boolean }) => Promise<void>;
   setBranchMapActive: (active: boolean) => Promise<void>;
   clearActiveViewVisibility: () => Promise<void>;
   updateNodeConfig: (repoPathId: string, viewMode: 'COMPACT' | 'EXPANDED', density: number, hex: string, explodeBranches: boolean) => Promise<void>;
@@ -199,6 +253,7 @@ interface CanvasState {
 
 export const useCanvasStore = create<CanvasState>((set, get) => {
   let hydrationGeneration = 0;
+  let restoreGeneration = 0;
   let visibilityUpdate = Promise.resolve();
   let scopeVisibilityUpdate = Promise.resolve();
 
@@ -222,6 +277,8 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
   nodes: [],
   edges: [],
   activeTagFilters: [],
+  canUndoSavedCardLocationRestore: false,
+  savedCardLocationUndo: null,
   
   onNodesChange: (changes) => {
     // Explicitly process structural changes (like position updates from dragging) directly into store state
@@ -395,6 +452,10 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
 
     const isSwitchingViews = get().activeViewId !== null && !isSameView;
 
+    if (isSwitchingViews) {
+      restoreGeneration += 1;
+    }
+
     const sessionViewport = get().sessionViewportByViewId[viewId];
     const hasOpenedView = Boolean(get().openedViewIds[viewId]);
 
@@ -411,6 +472,10 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
     set({
       activeViewId: viewId,
       isViewHydrating: true,
+      canUndoSavedCardLocationRestore: isSwitchingViews
+        ? false
+        : get().canUndoSavedCardLocationRestore,
+      savedCardLocationUndo: isSwitchingViews ? null : get().savedCardLocationUndo,
       nodes: isSwitchingViews ? [] : get().nodes,
       edges: isSwitchingViews ? [] : get().edges,
       sessionViewportByViewId: {
@@ -667,7 +732,71 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
     }
   },
   
-  hydrateWorkspaceNodes: async () => {
+  getSavedCardLocationSnapshot: (viewId) => {
+    const view = get().views.find((candidate) => candidate.id === viewId);
+    return parseSavedCardLocationSnapshot(viewId, view?.card_state_json);
+  },
+
+  restoreSavedCardLocations: async (viewId) => {
+    if (get().activeViewId !== viewId) return false;
+    const snapshot = get().getSavedCardLocationSnapshot(viewId);
+    if (!snapshot) return false;
+
+    const inverseLocations: SavedCardLocation[] = get().nodes.map((node) => ({
+      kind: node.data.branchId && node.id !== node.data.repoPathId ? 'branch' : 'repository',
+      repoPathId: node.data.repoPathId,
+      branchId: node.data.branchId,
+      x: node.position.x,
+      y: node.position.y,
+    }));
+    const operationGeneration = ++restoreGeneration;
+
+    try {
+      const result = await invoke<{ restored: number; skipped: number }>('restore_saved_card_locations', {
+        viewId,
+        locations: snapshot.locations,
+      });
+      if (get().activeViewId !== viewId || operationGeneration !== restoreGeneration) return false;
+
+      set({
+        canUndoSavedCardLocationRestore: result.restored > 0,
+        savedCardLocationUndo: result.restored > 0 ? { viewId, locations: inverseLocations } : null,
+      });
+      await get().hydrateWorkspaceNodes({ preserveInMemoryPositions: false });
+      return result.restored > 0;
+    } catch (error) {
+      console.error('Failed to restore saved card locations:', error);
+      return false;
+    }
+  },
+
+  undoSavedCardLocationRestore: async () => {
+    const undo = get().savedCardLocationUndo;
+    if (!undo || get().activeViewId !== undo.viewId) return false;
+
+    const operationGeneration = ++restoreGeneration;
+    try {
+      const result = await invoke<{ restored: number; skipped: number }>('restore_saved_card_locations', {
+        viewId: undo.viewId,
+        locations: undo.locations,
+      });
+      if (get().activeViewId !== undo.viewId || operationGeneration !== restoreGeneration) return false;
+
+      set({ canUndoSavedCardLocationRestore: false, savedCardLocationUndo: null });
+      await get().hydrateWorkspaceNodes({ preserveInMemoryPositions: false });
+      return result.restored > 0;
+    } catch (error) {
+      console.error('Failed to undo saved card location restore:', error);
+      return false;
+    }
+  },
+
+  invalidateSavedCardLocationUndo: () => {
+    restoreGeneration += 1;
+    set({ canUndoSavedCardLocationRestore: false, savedCardLocationUndo: null });
+  },
+
+  hydrateWorkspaceNodes: async (options) => {
     if (!get().isBranchMapActive) return;
 
     const viewId = get().activeViewId;
@@ -734,7 +863,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
       })();
 
       const topology = topologyLookup.relation ? [topologyLookup.relation] : [];
-      const currentInMemoryNodes = get().nodes;
+      const currentInMemoryNodes = options?.preserveInMemoryPositions === false ? [] : get().nodes;
       const activeTagFilters = get().activeTagFilters;
 
       const getNodeRepoPathId = (record: WorkspaceNodeRecord) => record.repo_path_id || record.path_id || record.branch_id || '';
@@ -958,6 +1087,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
   updateNodeConfig: async (repoPathId, viewMode, density, hex, explodeBranches) => {
     const viewId = get().activeViewId;
     if (!viewId) return;
+    get().invalidateSavedCardLocationUndo();
 
     set({
       nodes: get().nodes.map((node) => 

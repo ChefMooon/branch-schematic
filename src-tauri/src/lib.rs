@@ -750,6 +750,17 @@ async fn update_card_position(
 }
 
 #[tauri::command]
+async fn restore_saved_card_locations(
+    state: tauri::State<'_, DbState>,
+    view_id: String,
+    locations: Vec<db::SavedCardLocation>,
+) -> Result<db::RestoreCardLocationsResult, String> {
+    db::restore_saved_card_locations(state.inner().pool(), &view_id, &locations)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 async fn get_manual_edges(
     state: tauri::State<'_, DbState>,
     view_id: String,
@@ -1138,6 +1149,7 @@ pub fn run() {
             get_canvas_view_scope,
             get_workspace_nodes,
             update_card_position,
+            restore_saved_card_locations,
             get_manual_edges,
             save_manual_edge,
             delete_manual_edge,

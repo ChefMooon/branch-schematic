@@ -57,6 +57,7 @@ function MapWorkspace() {
   const initializeBranchMapSession = useCanvasStore((state) => state.initializeBranchMapSession);
   const hydrateWorkspaceNodes = useCanvasStore((state) => state.hydrateWorkspaceNodes);
   const setBranchMapActive = useCanvasStore((state) => state.setBranchMapActive);
+  const invalidateSavedCardLocationUndo = useCanvasStore((state) => state.invalidateSavedCardLocationUndo);
 
   const nodes = useCanvasStore((state) => state.nodes);
   const edges = useCanvasStore((state) => state.edges);
@@ -151,8 +152,10 @@ function MapWorkspace() {
   const handleNodeDragStop: OnNodeDrag<BranchCardNode> = async (_event, node) => {
     if (!activeViewId) return;
 
+    invalidateSavedCardLocationUndo();
+
     const repoPathId = node.data.repoPathId || node.id;
-    const isExplodedChildNode = node.data.explodeBranches && node.id !== repoPathId;
+    const isExplodedChildNode = Boolean(node.data.branchId && node.id !== repoPathId);
     const positionKey = isExplodedChildNode
       ? (node.data.branchId || repoPathId)
       : repoPathId;

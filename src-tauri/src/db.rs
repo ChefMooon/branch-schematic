@@ -47,6 +47,23 @@ pub struct CanvasViewScopeState {
     pub branch_visibility: HashMap<String, bool>,
 }
 
+#[derive(Debug, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct SavedCardLocation {
+    pub kind: String,
+    pub repo_path_id: String,
+    pub branch_id: Option<String>,
+    pub x: f64,
+    pub y: f64,
+}
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct RestoreCardLocationsResult {
+    pub restored: u64,
+    pub skipped: u64,
+}
+
 #[derive(Debug, Serialize, Clone, FromRow)]
 pub struct WorkspaceNodeRow {
     pub repo_path_id: String,
@@ -1157,6 +1174,78 @@ pub async fn update_canvas_card_position(
     }
 
     Ok(())
+}
+
+pub async fn restore_saved_card_locations(
+    pool: &SqlitePool,
+    view_id: &str,
+    locations: &[SavedCardLocation],
+) -> Result<RestoreCardLocationsResult, sqlx::Error> {
+    ensure_canvas_view_exists(pool, view_id, "Workspace View").await?;
+    let mut transaction = pool.begin().await?;
+    let mut restored = 0;
+    let mut skipped = 0;
+
+    for location in locations {
+        if !location.x.is_finite() || !location.y.is_finite() {
+            skipped += 1;
+            continue;
+        }
+
+        let result = match location.kind.as_str() {
+            "repository" => {
+                sqlx::query(
+                    "UPDATE canvas_view_cards
+                     SET pos_x = ?, pos_y = ?
+                     WHERE view_id = ? AND repo_path_id = ?;",
+                )
+                .bind(location.x)
+                .bind(location.y)
+                .bind(view_id)
+                .bind(&location.repo_path_id)
+                .execute(&mut *transaction)
+                .await?
+            }
+            "branch" => {
+                let Some(branch_id) = location.branch_id.as_deref() else {
+                    skipped += 1;
+                    continue;
+                };
+
+                sqlx::query(
+                    "UPDATE canvas_view_branch_cards
+                     SET pos_x = ?, pos_y = ?
+                     WHERE view_id = ? AND branch_id = ?
+                       AND EXISTS (
+                         SELECT 1 FROM cached_git_branches
+                         WHERE cached_git_branches.id = ?
+                           AND cached_git_branches.path_id = ?
+                       );",
+                )
+                .bind(location.x)
+                .bind(location.y)
+                .bind(view_id)
+                .bind(branch_id)
+                .bind(branch_id)
+                .bind(&location.repo_path_id)
+                .execute(&mut *transaction)
+                .await?
+            }
+            _ => {
+                skipped += 1;
+                continue;
+            }
+        };
+
+        if result.rows_affected() == 0 {
+            skipped += 1;
+        } else {
+            restored += 1;
+        }
+    }
+
+    transaction.commit().await?;
+    Ok(RestoreCardLocationsResult { restored, skipped })
 }
 
 pub async fn update_canvas_card_config(

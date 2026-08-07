@@ -11,6 +11,9 @@ const snapshotBaselineViewport = vi.fn();
 const saveCardState = vi.fn();
 const duplicateView = vi.fn();
 const renameView = vi.fn();
+const getSavedCardLocationSnapshot = vi.fn();
+const restoreSavedCardLocations = vi.fn();
+const undoSavedCardLocationRestore = vi.fn();
 
 vi.mock('../../../stores/canvas-store', () => ({
   useCanvasStore: (selector: (state: any) => unknown) =>
@@ -22,6 +25,7 @@ vi.mock('../../../stores/canvas-store', () => ({
           name: 'Primary',
           is_favorite: 0,
           display_order: 0,
+          card_state_json: JSON.stringify({ schemaVersion: 1, viewId: 'view-1', locations: [] }),
         },
         {
           id: 'view-2',
@@ -37,6 +41,10 @@ vi.mock('../../../stores/canvas-store', () => ({
       moveViewOrder,
       snapshotBaselineViewport,
       saveCardState,
+      getSavedCardLocationSnapshot,
+      restoreSavedCardLocations,
+      undoSavedCardLocationRestore,
+      canUndoSavedCardLocationRestore: false,
     }),
 }));
 
@@ -57,6 +65,7 @@ function ControlledViewActionsDropdown() {
 describe('ViewActionsDropdown', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    getSavedCardLocationSnapshot.mockReturnValue({ schemaVersion: 1, viewId: 'view-1', locations: [] });
   });
 
   it('closes when clicking outside the menu', async () => {
@@ -109,5 +118,35 @@ describe('ViewActionsDropdown', () => {
 
     expect(screen.getByRole('dialog')).toHaveTextContent(/delete view/i);
     expect(screen.getByRole('dialog')).toHaveTextContent(/this action cannot be undone/i);
+  });
+
+  it('opens a confirmation modal before restoring saved card locations', async () => {
+    const user = userEvent.setup();
+
+    render(
+      <ViewActionsDropdown
+        activeView={{ id: 'view-1', name: 'Primary', is_favorite: 0, display_order: 0 } as any}
+        viewport={{ zoom: 1, x: 0, y: 0 }}
+        onOpenManager={() => undefined}
+        isOpen
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: /view actions/i }));
+    await user.click(screen.getByRole('button', { name: /restore saved card locations/i }));
+
+    expect(screen.getByRole('dialog')).toHaveTextContent(/restore saved card locations/i);
+    expect(screen.getByRole('dialog')).toHaveTextContent(/viewport and card settings will not change/i);
+  });
+
+  it('disables restore when no saved location snapshot exists', async () => {
+    getSavedCardLocationSnapshot.mockReturnValue(null);
+    const user = userEvent.setup();
+
+    render(<ControlledViewActionsDropdown />);
+
+    await user.click(screen.getByRole('button', { name: /view actions/i }));
+
+    expect(screen.getByRole('button', { name: /restore saved card locations/i })).toBeDisabled();
   });
 });

@@ -31,3 +31,5 @@ Connections map the genealogical lineage of how branches sprouted from one anoth
     - The collection of specific projects and branches explicitly added to that workspace.
     - The exact canvas zoom coefficient and panning center coordinates.
     - Individual card UI parameters (Active Theme Colors, View Modes, and Commit Density configurations).
+- **Saved Card Locations:** `Save Card State` records a versioned snapshot of the visible repository and branch card locations for that view. `Restore Saved Card Locations` restores only those X/Y positions; it does not change the viewport, card settings, visibility, or manual edges.
+- **Stale Snapshot Entries:** Cards that no longer exist or no longer have a matching layout row are skipped. Cards that are currently absent from the snapshot retain their current positions. A restore confirmation is required, and the most recent successful restore can be undone for the current application session until the view or card layout changes.
