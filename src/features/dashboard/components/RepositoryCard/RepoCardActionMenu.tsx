@@ -11,9 +11,9 @@ import {
   Info,
   PushPin,
 } from "@phosphor-icons/react";
-import { ConfirmationModal } from "../../../../components/Modal/ConfirmationModal";
+import { ConfirmationModal } from "../../../../components/Modal/ConfirmationModal.tsx";
 import { RepoThemeModal } from "./RepoThemeModal.tsx";
-import { getViewportSafeMenuPosition } from "./menuPosition";
+import { getViewportSafeMenuPosition } from "./menuPosition.ts";
 
 type RepoCardOverflowMenuProps = {
   isFavorite: boolean;

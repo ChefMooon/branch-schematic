@@ -1,7 +1,7 @@
 # Codebase Context Snapshot
 
 =========================================
-📅 **Snapshot Updated:** Aug 7, 2026, 1:07 AM
+📅 **Snapshot Updated:** Aug 7, 2026, 11:56 AM
 📦 **Key Dependencies:**
   - `react`: ^19.1.0
   - `react-dom`: ^19.1.0
@@ -115,26 +115,7 @@ branch-schematic/
 │   │   │       ├── ViewManagerModal.tsx
 │   │   │       ├── ViewManagerSidebar.test.tsx
 │   │   │       └── ViewManagerSidebar.tsx
-│   │   ├── github-auth
-│   │   │   ├── api
-│   │   │   │   ├── fetchInstallations.test.ts
-│   │   │   │   ├── fetchInstallations.ts
-│   │   │   │   ├── fetchPublicCollaboratorRepositories.test.ts
-│   │   │   │   ├── fetchPublicCollaboratorRepositories.ts
-│   │   │   │   ├── fetchRepositories.test.ts
-│   │   │   │   ├── fetchRepositories.ts
-│   │   │   │   └── githubClient.ts
-│   │   │   ├── hooks
-│   │   │   │   ├── useGithubRepositories.test.tsx
-│   │   │   │   └── useGithubRepositories.ts
-│   │   │   └── types
-│   │   │       └── index.ts
-│   │   ├── icon
-│   │   │   ├── components
-│   │   │   │   └── IconSelector.tsx
-│   │   │   └── utils
-│   │   │       └── iconRegistry.ts
-│   │   ├── index
+│   │   ├── dashboard
 │   │   │   ├── components
 │   │   │   │   ├── BulkActionToolbar.tsx
 │   │   │   │   ├── common
@@ -159,6 +140,7 @@ branch-schematic/
 │   │   │   │   │   ├── RepoGroupMenu.tsx
 │   │   │   │   │   ├── RepoTagSelectionMenu.test.tsx
 │   │   │   │   │   ├── RepoTagSelectionMenu.tsx
+│   │   │   │   │   ├── RepoThemeModal.test.tsx
 │   │   │   │   │   └── RepoThemeModal.tsx
 │   │   │   │   ├── RepositoryCard.test.tsx
 │   │   │   │   ├── RepositoryCard.tsx
@@ -166,6 +148,25 @@ branch-schematic/
 │   │   │   └── hooks
 │   │   │       ├── useResolveRepoOrigin.ts
 │   │   │       └── useVerifyRepositories.ts
+│   │   ├── github-auth
+│   │   │   ├── api
+│   │   │   │   ├── fetchInstallations.test.ts
+│   │   │   │   ├── fetchInstallations.ts
+│   │   │   │   ├── fetchPublicCollaboratorRepositories.test.ts
+│   │   │   │   ├── fetchPublicCollaboratorRepositories.ts
+│   │   │   │   ├── fetchRepositories.test.ts
+│   │   │   │   ├── fetchRepositories.ts
+│   │   │   │   └── githubClient.ts
+│   │   │   ├── hooks
+│   │   │   │   ├── useGithubRepositories.test.tsx
+│   │   │   │   └── useGithubRepositories.ts
+│   │   │   └── types
+│   │   │       └── index.ts
+│   │   ├── icon
+│   │   │   ├── components
+│   │   │   │   └── IconSelector.tsx
+│   │   │   └── utils
+│   │   │       └── iconRegistry.ts
 │   │   ├── management
 │   │   │   └── components
 │   │   │       ├── SettingsManagementModal.test.tsx

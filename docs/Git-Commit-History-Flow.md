@@ -23,7 +23,7 @@ The app uses a hybrid model:
 
 ### Frontend: repository actions and rendering
 
-- Repository cards and branch actions invoke Tauri commands from the React app, especially in [src/features/index/components/RepositoryCard.tsx](src/features/index/components/RepositoryCard.tsx)
+- Repository cards and branch actions invoke Tauri commands from the React app, especially in [src/features/dashboard/components/RepositoryCard.tsx](src/features/dashboard/components/RepositoryCard.tsx)
 - The workspace store consumes status data from the backend in [src/stores/workspace-store.ts](src/stores/workspace-store.ts)
 - The branch map / canvas views use cached branch metadata from the database layer in [src/features/branch-map](src/features/branch-map)
 
