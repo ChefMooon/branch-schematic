@@ -15,16 +15,19 @@ interface RepositoryDetailChangesTabProps {
 export function RepositoryDetailChangesTab({ repo }: RepositoryDetailChangesTabProps) {
   const {
     snapshot,
+    latestCommit,
     selectedPath,
     setSelectedPath,
     isLoading,
     isRefreshing,
     isBusy,
+    isUndoing,
     error,
     statusMessage,
     lastVerifiedAt,
     loadChanges,
     runAction,
+    undoLatestCommit,
   } = useRepositoryChanges(repo);
   const { containerRef, splitRatio, handleResizeStart } = useResizableChangesPanels();
   const [title, setTitle] = useState('');
@@ -93,9 +96,12 @@ export function RepositoryDetailChangesTab({ repo }: RepositoryDetailChangesTabP
             stagedCount={stagedCount}
             unstagedCount={unstagedCount}
             isBusy={isBusy}
+            latestCommit={latestCommit}
+            isUndoing={isUndoing}
             onTitleChange={setTitle}
             onBodyChange={setBody}
             onCommit={() => void handleAction('commit')}
+            onUndo={() => void undoLatestCommit()}
           />
         </RepositoryChangesListPanel>
 

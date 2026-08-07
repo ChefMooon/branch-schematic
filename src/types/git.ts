@@ -165,6 +165,16 @@ export interface RepositoryChangesSnapshot {
   operationMessage?: string | null;
 }
 
+export interface LatestCommitInfo {
+  hash: string;
+  authorName: string;
+  message: string;
+  subject: string;
+  committedAt: number;
+  canUndo: boolean;
+  undoReason?: string | null;
+}
+
 export interface RepositoryFileDiff {
   path: string;
   oldPath?: string | null;

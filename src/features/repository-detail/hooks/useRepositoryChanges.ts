@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
-import type { RepositoryChangesSnapshot, TrackedPath } from '../../../types/git';
+import type { LatestCommitInfo, RepositoryChangesSnapshot, TrackedPath } from '../../../types/git';
 import { groupChanges } from '../types/repositoryChanges';
 
 type RepositoryChangesAction = 'stage' | 'unstage' | 'commit';
@@ -50,10 +50,12 @@ function snapshotsEqual(left: RepositoryChangesSnapshot | null, right: Repositor
 
 export function useRepositoryChanges(repo: TrackedPath | null) {
   const [snapshot, setSnapshot] = useState<RepositoryChangesSnapshot | null>(null);
+  const [latestCommit, setLatestCommit] = useState<LatestCommitInfo | null>(null);
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isBusy, setIsBusy] = useState(false);
+  const [isUndoing, setIsUndoing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [lastVerifiedAt, setLastVerifiedAt] = useState<string | null>(null);
@@ -73,6 +75,15 @@ export function useRepositoryChanges(repo: TrackedPath | null) {
     ));
   };
 
+  const loadLatestCommit = async () => {
+    if (!repo?.absolute_path) return null;
+    const nextLatestCommit = await invoke<LatestCommitInfo | null>('get_latest_commit', {
+      absolutePath: repo.absolute_path,
+    });
+    setLatestCommit(nextLatestCommit);
+    return nextLatestCommit;
+  };
+
   const loadChanges = async () => {
     if (!repo?.absolute_path) return;
     if (activeRequest.current) return activeRequest.current;
@@ -89,12 +100,18 @@ export function useRepositoryChanges(repo: TrackedPath | null) {
     setError(null);
     const request = (async () => {
       try {
-        const result = await invoke<RepositoryChangesRead>('get_repository_changes_if_changed', {
-          pathId: repo.id,
-          absolutePath: repo.absolute_path,
-          knownRevision: revision.current,
-        });
+        const [result, nextLatestCommit] = await Promise.all([
+          invoke<RepositoryChangesRead>('get_repository_changes_if_changed', {
+            pathId: repo.id,
+            absolutePath: repo.absolute_path,
+            knownRevision: revision.current,
+          }),
+          invoke<LatestCommitInfo | null>('get_latest_commit', {
+            absolutePath: repo.absolute_path,
+          }),
+        ]);
         if (generation !== requestGeneration.current) return;
+        setLatestCommit(nextLatestCommit);
         revision.current = result.revision;
         if (!result.unchanged && result.snapshot && !snapshotsEqual(snapshotRef.current, result.snapshot)) {
           applySnapshot(result.snapshot);
@@ -125,6 +142,7 @@ export function useRepositoryChanges(repo: TrackedPath | null) {
     requestGeneration.current += 1;
     activeRequest.current = null;
     setSelectedPath(null);
+    setLatestCommit(null);
     revision.current = null;
     snapshotRef.current = null;
     setError(null);
@@ -200,6 +218,7 @@ export function useRepositoryChanges(repo: TrackedPath | null) {
       }
 
       applySnapshot(nextSnapshot);
+      await loadLatestCommit();
       return true;
     } catch (actionError) {
       setError(actionError instanceof Error ? actionError.message : `Unable to ${action} changes.`);
@@ -209,17 +228,43 @@ export function useRepositoryChanges(repo: TrackedPath | null) {
     }
   };
 
+  const undoLatestCommit = async () => {
+    if (!repo?.absolute_path || !repo.id || !latestCommit?.canUndo || isUndoing) return false;
+
+    setIsUndoing(true);
+    setError(null);
+    try {
+      const nextSnapshot = await invoke<RepositoryChangesSnapshot>('undo_latest_commit', {
+        pathId: repo.id,
+        absolutePath: repo.absolute_path,
+        expectedHash: latestCommit.hash,
+      });
+      applySnapshot(nextSnapshot);
+      await loadLatestCommit();
+      return true;
+    } catch (undoError) {
+      setError(undoError instanceof Error ? undoError.message : 'Unable to undo the latest commit.');
+      await loadLatestCommit().catch(() => undefined);
+      return false;
+    } finally {
+      setIsUndoing(false);
+    }
+  };
+
   return {
     snapshot,
+    latestCommit,
     selectedPath,
     setSelectedPath,
     isLoading,
     isRefreshing,
     isBusy,
+    isUndoing,
     error,
     statusMessage,
     lastVerifiedAt,
     loadChanges,
+    undoLatestCommit,
     runAction,
   };
 }

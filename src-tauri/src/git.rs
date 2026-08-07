@@ -4,7 +4,7 @@ use crate::manager::{RefreshPriority, WatcherManager};
 use crate::DbState;
 use git2::{
     AutotagOption, Branch, BranchType, Cred, CredentialType, FetchOptions, Oid, PushOptions,
-    RemoteCallbacks, Repository,
+    RemoteCallbacks, Repository, RepositoryState, ResetType,
 };
 use reqwest::header::{HeaderValue, ACCEPT, AUTHORIZATION, USER_AGENT};
 use serde::{Deserialize, Serialize};
@@ -15,6 +15,8 @@ use std::{
     path::{Component, Path, PathBuf},
 };
 use uuid::Uuid;
+
+static GIT_MUTATION_LOCK: Mutex<()> = Mutex::new(());
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct CommitLog {
@@ -60,6 +62,18 @@ pub struct RepositoryChangesRead {
     pub revision: u64,
     pub unchanged: bool,
     pub snapshot: Option<RepositoryChangesSnapshot>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct LatestCommitInfo {
+    pub hash: String,
+    pub author_name: String,
+    pub message: String,
+    pub subject: String,
+    pub committed_at: i64,
+    pub can_undo: bool,
+    pub undo_reason: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -2623,6 +2637,112 @@ pub async fn get_repository_changes_if_changed(
     })
 }
 
+fn latest_commit_info(repo: &Repository) -> Result<Option<LatestCommitInfo>, String> {
+    let head = match repo.head() {
+        Ok(head) => head,
+        Err(error) if error.code() == git2::ErrorCode::UnbornBranch => return Ok(None),
+        Err(error) => return Err(format!("Failed to inspect Git HEAD: {error}")),
+    };
+    let commit = match head.peel_to_commit() {
+        Ok(commit) => commit,
+        Err(error) if error.code() == git2::ErrorCode::UnbornBranch => return Ok(None),
+        Err(error) => return Err(format!("HEAD does not point to a commit: {error}")),
+    };
+    let message = commit.message().unwrap_or_default().to_string();
+    let subject = commit.summary().unwrap_or_default().to_string();
+    let author_name = commit.author().name().unwrap_or("Unknown").to_string();
+    let mut undo_reason = None;
+
+    if head.name().is_none() {
+        undo_reason = Some("Undo is unavailable while HEAD is detached.".to_string());
+    } else if repo.state() != RepositoryState::Clean {
+        undo_reason =
+            Some("Undo is unavailable while another Git operation is in progress.".to_string());
+    } else if commit.parent_count() == 0 {
+        undo_reason = Some("The initial commit cannot be undone.".to_string());
+    } else if commit.parent_count() > 1 {
+        undo_reason = Some("Merge commits cannot be undone here.".to_string());
+    } else {
+        let index = repo
+            .index()
+            .map_err(|error| format!("Failed to inspect Git index: {error}"))?;
+        if index.has_conflicts() {
+            undo_reason =
+                Some("Undo is unavailable while the Git index has conflicts.".to_string());
+        } else {
+            let statuses = repo
+                .statuses(Some(
+                    &mut git2::StatusOptions::new().include_untracked(true),
+                ))
+                .map_err(|error| format!("Failed to inspect repository changes: {error}"))?;
+            let staged = statuses.iter().any(|entry| {
+                entry.status().intersects(
+                    git2::Status::INDEX_NEW
+                        | git2::Status::INDEX_MODIFIED
+                        | git2::Status::INDEX_DELETED
+                        | git2::Status::INDEX_RENAMED
+                        | git2::Status::INDEX_TYPECHANGE,
+                )
+            });
+            if staged {
+                undo_reason =
+                    Some("Undo is unavailable while staged changes already exist.".to_string());
+            }
+        }
+    }
+
+    if undo_reason.is_none() {
+        let branch = head
+            .shorthand()
+            .and_then(|name| repo.find_branch(name, BranchType::Local).ok());
+        if let Some(branch) = branch {
+            match branch.upstream() {
+                Err(error) if error.code() == git2::ErrorCode::NotFound => {}
+                Err(_) => {
+                    undo_reason = Some(
+                        "Undo is unavailable because the configured upstream cannot be resolved."
+                            .to_string(),
+                    );
+                }
+                Ok(upstream) => match upstream.get().target() {
+                    Some(upstream_oid)
+                        if upstream_oid == commit.id()
+                            || repo
+                                .graph_descendant_of(upstream_oid, commit.id())
+                                .unwrap_or(false) =>
+                    {
+                        undo_reason = Some(
+                            "Undo is unavailable because this commit is already pushed."
+                                .to_string(),
+                        );
+                    }
+                    Some(_) => {}
+                    None => {
+                        undo_reason = Some("Undo is unavailable because the configured upstream cannot be resolved.".to_string());
+                    }
+                },
+            }
+        }
+    }
+
+    Ok(Some(LatestCommitInfo {
+        hash: commit.id().to_string(),
+        author_name,
+        message,
+        subject,
+        committed_at: commit.time().seconds(),
+        can_undo: undo_reason.is_none(),
+        undo_reason,
+    }))
+}
+
+#[tauri::command]
+pub async fn get_latest_commit(absolute_path: String) -> Result<Option<LatestCommitInfo>, String> {
+    let repo = Repository::open(&absolute_path)
+        .map_err(|error| format!("Failed to open Git repository: {error}"))?;
+    latest_commit_info(&repo)
+}
+
 #[tauri::command]
 pub async fn stage_repository_paths(
     manager: tauri::State<'_, WatcherManager>,
@@ -2737,6 +2857,59 @@ pub async fn create_commit(
     manager
         .publish_changes_snapshot_for_path(&absolute_path, snapshot.clone(), "commit")
         .await;
+    Ok(snapshot)
+}
+
+#[tauri::command]
+pub async fn undo_latest_commit(
+    manager: tauri::State<'_, WatcherManager>,
+    state: tauri::State<'_, DbState>,
+    path_id: String,
+    absolute_path: String,
+    expected_hash: String,
+) -> Result<RepositoryChangesSnapshot, String> {
+    let _mutation_guard = GIT_MUTATION_LOCK
+        .lock()
+        .map_err(|_| "Git mutation lock is unavailable.".to_string())?;
+    let repo = Repository::open(&absolute_path)
+        .map_err(|error| format!("Failed to open Git repository: {error}"))?;
+    let latest =
+        latest_commit_info(&repo)?.ok_or_else(|| "There is no commit to undo.".to_string())?;
+    if latest.hash != expected_hash {
+        return Err(
+            "The repository changed before Undo could run. Refresh and try again.".to_string(),
+        );
+    }
+    if !latest.can_undo {
+        return Err(latest
+            .undo_reason
+            .unwrap_or_else(|| "This commit cannot be undone.".to_string()));
+    }
+
+    {
+        let head = repo
+            .head()
+            .map_err(|error| format!("Failed to inspect Git HEAD: {error}"))?;
+        let commit = head
+            .peel_to_commit()
+            .map_err(|error| format!("HEAD does not point to a commit: {error}"))?;
+        let parent = commit
+            .parent(0)
+            .map_err(|error| format!("Failed to resolve the commit parent: {error}"))?;
+        repo.reset(parent.as_object(), ResetType::Soft, None)
+            .map_err(|error| format!("Failed to undo the latest commit: {error}"))?;
+    }
+    drop(repo);
+    drop(_mutation_guard);
+
+    let snapshot = collect_repository_changes_async(absolute_path.clone()).await?;
+    manager
+        .publish_changes_snapshot_for_path(&absolute_path, snapshot.clone(), "undo_commit")
+        .await;
+    refresh_and_cache_git_status(state.inner().pool(), &path_id, &absolute_path).await?;
+    manager
+        .request_refresh(path_id, RefreshPriority::Foreground)
+        .await?;
     Ok(snapshot)
 }
 

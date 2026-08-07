@@ -776,9 +776,52 @@
 
 .repository-view-commit-actions {
   display: flex;
-  justify-content: flex-end;
   gap: 5px;
   margin-top: 0;
+}
+
+.repository-view-commit-actions .app-btn {
+  width: 100%;
+}
+
+.repository-view-latest-commit {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  min-height: 28px;
+  margin-top: 2px;
+  padding-top: 5px;
+  border-top: 1px solid var(--app-border);
+}
+
+.repository-view-latest-commit-details {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  flex: 1;
+  font-size: 11px;
+}
+
+.repository-view-latest-commit-time {
+  flex-shrink: 0;
+  color: var(--app-muted);
+}
+
+.repository-view-latest-commit-subject {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--app-text);
+}
+
+.repository-view-latest-commit-undo {
+  flex-shrink: 0;
+  width: 28px;
+  height: 26px;
+  padding: 4px;
 }
 
 .repository-view-diff-preview {
