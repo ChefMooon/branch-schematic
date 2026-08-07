@@ -1,7 +1,7 @@
 # Codebase Context Snapshot
 
 =========================================
-📅 **Snapshot Updated:** Aug 7, 2026, 11:56 AM
+📅 **Snapshot Updated:** Aug 7, 2026, 5:04 PM
 📦 **Key Dependencies:**
   - `react`: ^19.1.0
   - `react-dom`: ^19.1.0
@@ -61,10 +61,14 @@ branch-schematic/
 │   │   │   ├── toast.tsx
 │   │   │   ├── toastLifecycle.test.ts
 │   │   │   └── toastLifecycle.ts
-│   │   └── search-bar
-│   │       ├── SearchBar.css
-│   │       ├── SearchBar.test.tsx
-│   │       └── SearchBar.tsx
+│   │   ├── search-bar
+│   │   │   ├── SearchBar.css
+│   │   │   ├── SearchBar.test.tsx
+│   │   │   └── SearchBar.tsx
+│   │   └── tabs
+│   │       ├── Tabs.css
+│   │       ├── Tabs.test.tsx
+│   │       └── Tabs.tsx
 │   ├── features
 │   │   ├── auth-profile
 │   │   │   ├── components
@@ -80,6 +84,7 @@ branch-schematic/
 │   │   │   │   ├── useOAuthFlow.ts
 │   │   │   │   └── useProfileContext.ts
 │   │   │   ├── stores
+│   │   │   │   ├── profileStore.test.ts
 │   │   │   │   └── profileStore.ts
 │   │   │   ├── types
 │   │   │   │   └── index.ts
@@ -150,13 +155,6 @@ branch-schematic/
 │   │   │       └── useVerifyRepositories.ts
 │   │   ├── github-auth
 │   │   │   ├── api
-│   │   │   │   ├── fetchInstallations.test.ts
-│   │   │   │   ├── fetchInstallations.ts
-│   │   │   │   ├── fetchPublicCollaboratorRepositories.test.ts
-│   │   │   │   ├── fetchPublicCollaboratorRepositories.ts
-│   │   │   │   ├── fetchRepositories.test.ts
-│   │   │   │   ├── fetchRepositories.ts
-│   │   │   │   └── githubClient.ts
 │   │   │   ├── hooks
 │   │   │   │   ├── useGithubRepositories.test.tsx
 │   │   │   │   └── useGithubRepositories.ts

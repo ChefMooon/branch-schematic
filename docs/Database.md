@@ -169,7 +169,6 @@ erDiagram
         TEXT github_username
         TEXT github_avatar_url
         TEXT api_base_url
-        TEXT oauth_token
     }
 
     profile_repo_scopes {

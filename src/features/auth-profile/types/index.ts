@@ -13,7 +13,6 @@ export interface UserProfile {
   folder_scope?: string[] | null;
   commit_name?: string | null;
   commit_email?: string | null;
-  token_value?: string | null;
   token_expires_at?: string | null;
   last_token_check_at?: string | null;
   is_active?: number | boolean;

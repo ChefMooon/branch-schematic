@@ -394,8 +394,7 @@ pub fn get_migrations() -> Vec<Migration> {
                 commit_email TEXT NOT NULL,
                 github_username TEXT,
                 github_avatar_url TEXT,
-                api_base_url TEXT NOT NULL DEFAULT 'https://api.github.com',
-                oauth_token TEXT
+                api_base_url TEXT NOT NULL DEFAULT 'https://api.github.com'
             );
             CREATE INDEX IF NOT EXISTS idx_auth_profiles_active ON auth_profiles(is_active);
 
@@ -417,8 +416,7 @@ pub fn get_migrations() -> Vec<Migration> {
                 commit_email,
                 github_username,
                 github_avatar_url,
-                api_base_url,
-                oauth_token
+                api_base_url
             ) VALUES (
                 'local-basic-profile',
                 'Local workspace',
@@ -429,8 +427,7 @@ pub fn get_migrations() -> Vec<Migration> {
                 'local@example.com',
                 NULL,
                 NULL,
-                'https://api.github.com',
-                NULL
+                'https://api.github.com'
             );
             PRAGMA user_version = 2;
             ",

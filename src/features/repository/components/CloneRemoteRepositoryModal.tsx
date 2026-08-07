@@ -203,15 +203,13 @@ export function CloneRemoteRepositoryModal({
 
 	const { addToast } = useNotifications();
 	const { hydrateFromBackend, hydrateQuickFilterMetadata } = useWorkspaceStore();
-	const { activeProfile, tokenHealthMap } = useProfileContext();
+	const { activeProfile } = useProfileContext();
 
-	const profileHealth = activeProfile ? tokenHealthMap[activeProfile.id] ?? 'none' : 'none';
 	const canUseRemoteClone =
 		Boolean(activeProfile) &&
-		activeProfile?.auth_level === 'full_oauth' &&
-		profileHealth === 'healthy';
+		activeProfile?.auth_level === 'full_oauth';
 	const githubRepositories = useGithubRepositories({
-		accessToken: activeProfile?.token_value ?? null,
+		profileId: activeProfile?.id ?? null,
 		apiBaseUrl: activeProfile?.api_base_url ?? undefined,
 		enabled: isOpen && activeTab === 'basic' && canUseRemoteClone,
 		pageSize: 30,

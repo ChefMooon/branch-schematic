@@ -22,7 +22,6 @@ pub struct AuthProfileRow {
     pub folder_scope: Option<Vec<String>>,
     pub commit_name: Option<String>,
     pub commit_email: Option<String>,
-    pub token_value: Option<String>,
     pub token_expires_at: Option<String>,
     pub last_token_check_at: Option<String>,
     pub is_active: i64,
@@ -45,7 +44,6 @@ pub struct AuthProfileInput {
     pub folder_scope: Option<Vec<String>>,
     pub commit_name: Option<String>,
     pub commit_email: Option<String>,
-    pub token_value: Option<String>,
     pub token_expires_at: Option<String>,
     pub last_token_check_at: Option<String>,
     pub is_active: Option<i64>,
@@ -85,11 +83,32 @@ pub struct GitHubUserProfilePayload {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct OAuthExchangeResponse {
-    pub token: String,
     pub username: Option<String>,
     pub email: Option<String>,
     pub display_name: Option<String>,
     pub avatar_url: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct RemoteAuthProfile {
+    pub id: String,
+    pub display_name: String,
+    pub auth_level: String,
+    pub username: Option<String>,
+    pub email: Option<String>,
+    pub avatar_url: Option<String>,
+    pub api_base_url: Option<String>,
+    pub repository_scope: Option<Vec<String>>,
+    pub folder_scope: Option<Vec<String>>,
+    pub commit_name: Option<String>,
+    pub commit_email: Option<String>,
+    pub token_value: Option<String>,
+    pub token_expires_at: Option<String>,
+    pub last_token_check_at: Option<String>,
+    pub is_active: i64,
+    pub is_favorite: i64,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
 }
 
 fn normalize_auth_level(value: &str) -> String {
@@ -201,34 +220,11 @@ fn determine_token_status(token_value: Option<&str>, token_expires_at: Option<&s
     "healthy".to_string()
 }
 
-fn select_access_token(
-    keyring_token: Option<String>,
-    database_token: Option<String>,
-) -> Option<String> {
-    let keyring_token = keyring_token.and_then(|value| {
+fn normalize_keyring_token(keyring_token: Option<String>) -> Option<String> {
+    keyring_token.and_then(|value| {
         let trimmed = value.trim();
         (!trimmed.is_empty()).then(|| trimmed.to_string())
-    });
-
-    keyring_token.or_else(|| {
-        database_token.and_then(|value| {
-            let trimmed = value.trim();
-            (!trimmed.is_empty()).then(|| trimmed.to_string())
-        })
     })
-}
-
-fn select_access_token_with_keyring_fallback(
-    keyring_token: Result<Option<String>, String>,
-    database_token: Option<String>,
-) -> Option<String> {
-    match keyring_token {
-        Ok(token) => select_access_token(token, database_token),
-        Err(error) => {
-            eprintln!("Unable to read token from keyring, falling back to database token: {error}");
-            select_access_token(None, database_token)
-        }
-    }
 }
 
 fn resolve_oauth_token_url(provider_url: Option<&str>, api_base_url: Option<&str>) -> String {
@@ -441,10 +437,10 @@ async fn exchange_code_with_provider(payload: &OAuthExchangePayload) -> Result<S
 
     if !response.status().is_success() {
         let status = response.status();
-        let body = response.text().await.unwrap_or_default();
+        let _ = response.text().await;
         return Err(format!(
-            "OAuth token exchange failed ({}): {}",
-            status, body
+            "OAuth token exchange failed ({})",
+            status
         ));
     }
 
@@ -472,7 +468,7 @@ async fn ensure_seed_profile(pool: &SqlitePool) -> Result<(), String> {
     }
 
     sqlx::query(
-        "INSERT INTO auth_profiles (id, profile_name, is_active, is_favorite, auth_level, commit_name, commit_email, github_username, github_avatar_url, api_base_url, oauth_token) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)",
+        "INSERT INTO auth_profiles (id, profile_name, is_active, is_favorite, auth_level, commit_name, commit_email, github_username, github_avatar_url, api_base_url) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)",
     )
     .bind("local-basic-profile")
     .bind("Local workspace")
@@ -484,7 +480,6 @@ async fn ensure_seed_profile(pool: &SqlitePool) -> Result<(), String> {
     .bind::<Option<String>>(None)
     .bind::<Option<String>>(None)
     .bind("https://api.github.com")
-    .bind::<Option<String>>(None)
     .execute(pool)
     .await
     .map_err(|error| error.to_string())?;
@@ -495,9 +490,9 @@ async fn ensure_seed_profile(pool: &SqlitePool) -> Result<(), String> {
 async fn fetch_profile_row(
     pool: &SqlitePool,
     profile_id: &str,
-) -> Result<Option<AuthProfileRow>, String> {
+) -> Result<Option<RemoteAuthProfile>, String> {
     let row = sqlx::query(
-        "SELECT id, profile_name AS display_name, is_active, is_favorite, auth_level, commit_name, commit_email, github_username, github_avatar_url, api_base_url, oauth_token FROM auth_profiles WHERE id = $1"
+        "SELECT id, profile_name AS display_name, is_active, is_favorite, auth_level, commit_name, commit_email, github_username, github_avatar_url, api_base_url FROM auth_profiles WHERE id = $1"
     )
     .bind(profile_id)
     .fetch_optional(pool)
@@ -513,11 +508,15 @@ async fn fetch_profile_row(
         row.get::<Option<String>, _>("api_base_url").as_deref(),
         None,
     );
-    let keyring_token = load_token_from_keyring(&profile_id, &provider_name).await;
-    let database_token = row.get::<Option<String>, _>("oauth_token");
-    let token_value = select_access_token_with_keyring_fallback(keyring_token, database_token);
+    let token_value = match load_token_from_keyring(&profile_id, &provider_name).await {
+        Ok(token) => normalize_keyring_token(token),
+        Err(error) => {
+            eprintln!("Unable to read token from keyring: {error}");
+            None
+        }
+    };
 
-    Ok(Some(AuthProfileRow {
+    Ok(Some(RemoteAuthProfile {
         id: row.get("id"),
         display_name: row.get("display_name"),
         auth_level: row.get("auth_level"),
@@ -529,7 +528,7 @@ async fn fetch_profile_row(
         folder_scope: Some(Vec::new()),
         commit_name: row.get("commit_name"),
         commit_email: row.get("commit_email"),
-        token_value: token_value.or_else(|| row.get("oauth_token")),
+        token_value,
         token_expires_at: None,
         last_token_check_at: None,
         is_active: row.get("is_active"),
@@ -537,6 +536,28 @@ async fn fetch_profile_row(
         created_at: None,
         updated_at: None,
     }))
+}
+
+fn public_profile(profile: RemoteAuthProfile) -> AuthProfileRow {
+    AuthProfileRow {
+        id: profile.id,
+        display_name: profile.display_name,
+        auth_level: profile.auth_level,
+        username: profile.username,
+        email: profile.email,
+        avatar_url: profile.avatar_url,
+        api_base_url: profile.api_base_url,
+        repository_scope: profile.repository_scope,
+        folder_scope: profile.folder_scope,
+        commit_name: profile.commit_name,
+        commit_email: profile.commit_email,
+        token_expires_at: profile.token_expires_at,
+        last_token_check_at: profile.last_token_check_at,
+        is_active: profile.is_active,
+        is_favorite: profile.is_favorite,
+        created_at: profile.created_at,
+        updated_at: profile.updated_at,
+    }
 }
 
 async fn load_repo_scopes(pool: &SqlitePool, profile_id: &str) -> Result<Vec<String>, String> {
@@ -598,7 +619,7 @@ pub async fn get_profiles(
     ensure_seed_profile(pool).await?;
 
     let rows = sqlx::query(
-        "SELECT id, profile_name AS display_name, is_active, is_favorite, auth_level, commit_name, commit_email, github_username, github_avatar_url, api_base_url, oauth_token FROM auth_profiles ORDER BY is_favorite DESC, is_active DESC, profile_name ASC"
+        "SELECT id FROM auth_profiles ORDER BY is_favorite DESC, is_active DESC, profile_name ASC"
     )
     .fetch_all(pool)
     .await
@@ -607,34 +628,9 @@ pub async fn get_profiles(
     let mut profiles = Vec::new();
     for row in rows {
         let profile_id: String = row.get("id");
-        let provider_name = resolve_provider_name(
-            row.get::<Option<String>, _>("api_base_url").as_deref(),
-            None,
-        );
-        let keyring_token = load_token_from_keyring(&profile_id, &provider_name).await;
-        let database_token = row.get::<Option<String>, _>("oauth_token");
-        let token_value = select_access_token_with_keyring_fallback(keyring_token, database_token);
-        let scopes = load_repo_scopes(pool, &profile_id).await?;
-        profiles.push(AuthProfileRow {
-            id: profile_id.clone(),
-            display_name: row.get("display_name"),
-            auth_level: row.get("auth_level"),
-            username: row.get("github_username"),
-            email: row.get("commit_email"),
-            avatar_url: row.get("github_avatar_url"),
-            api_base_url: row.get("api_base_url"),
-            repository_scope: Some(scopes),
-            folder_scope: Some(Vec::new()),
-            commit_name: row.get("commit_name"),
-            commit_email: row.get("commit_email"),
-            token_value,
-            token_expires_at: None,
-            last_token_check_at: None,
-            is_active: row.get("is_active"),
-            is_favorite: row.get("is_favorite"),
-            created_at: None,
-            updated_at: None,
-        });
+        if let Some(profile) = fetch_profile_row(pool, &profile_id).await? {
+            profiles.push(public_profile(profile));
+        }
     }
 
     Ok(profiles)
@@ -649,25 +645,14 @@ pub async fn add_profile(
     ensure_seed_profile(pool).await?;
 
     let profile_id = profile.id.unwrap_or_else(|| Uuid::new_v4().to_string());
-    let provider_name = resolve_provider_name(profile.api_base_url.as_deref(), None);
     let should_activate = profile.is_active.unwrap_or(0) == 1
         || sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM auth_profiles WHERE is_active = 1")
             .fetch_one(pool)
             .await
             .map_err(|error| error.to_string())?
             == 0;
-    let persist_token = profile
-        .token_value
-        .as_deref()
-        .filter(|value| !value.trim().is_empty())
-        .map(str::to_string);
-
-    if let Some(token_value) = persist_token.as_deref() {
-        persist_token_in_keyring(&profile_id, &provider_name, token_value).await?;
-    }
-
     sqlx::query(
-        "INSERT INTO auth_profiles (id, profile_name, is_active, is_favorite, auth_level, commit_name, commit_email, github_username, github_avatar_url, api_base_url, oauth_token) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)"
+        "INSERT INTO auth_profiles (id, profile_name, is_active, is_favorite, auth_level, commit_name, commit_email, github_username, github_avatar_url, api_base_url) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)"
     )
     .bind(&profile_id)
     .bind(profile.display_name.trim())
@@ -679,7 +664,6 @@ pub async fn add_profile(
     .bind(profile.username)
     .bind(profile.avatar_url)
     .bind(profile.api_base_url.unwrap_or_else(|| "https://api.github.com".to_string()))
-    .bind(persist_token.clone())
     .execute(pool)
     .await
     .map_err(|error| error.to_string())?;
@@ -693,6 +677,7 @@ pub async fn add_profile(
 
     fetch_profile_row(pool, &profile_id)
         .await?
+        .map(public_profile)
         .ok_or_else(|| "Unable to reload newly created profile".to_string())
 }
 
@@ -706,22 +691,12 @@ pub async fn update_profile(
     ensure_seed_profile(pool).await?;
 
     let should_activate = profile.is_active.unwrap_or(0) == 1;
-    let provider_name = resolve_provider_name(profile.api_base_url.as_deref(), None);
-    let persist_token = profile
-        .token_value
-        .as_deref()
-        .filter(|value| !value.trim().is_empty())
-        .map(str::to_string);
     if should_activate {
         set_active_profile(pool, &profile_id).await?;
     }
 
-    if let Some(token_value) = persist_token.as_deref() {
-        persist_token_in_keyring(&profile_id, &provider_name, token_value).await?;
-    }
-
     sqlx::query(
-        "UPDATE auth_profiles SET profile_name = $1, auth_level = $2, commit_name = $3, commit_email = $4, github_username = $5, github_avatar_url = $6, api_base_url = $7, oauth_token = $8, is_favorite = $9 WHERE id = $10"
+        "UPDATE auth_profiles SET profile_name = $1, auth_level = $2, commit_name = $3, commit_email = $4, github_username = $5, github_avatar_url = $6, api_base_url = $7, is_favorite = $8 WHERE id = $9"
     )
     .bind(profile.display_name.trim())
     .bind(normalize_auth_level(&profile.auth_level))
@@ -729,8 +704,6 @@ pub async fn update_profile(
     .bind(profile.commit_email.unwrap_or_else(|| "local@example.com".to_string()))
     .bind(profile.username)
     .bind(profile.avatar_url)
-    .bind(profile.api_base_url.unwrap_or_else(|| "https://api.github.com".to_string()))
-    .bind(persist_token.clone())
     .bind(profile.is_favorite.unwrap_or(0))
     .bind(&profile_id)
     .execute(pool)
@@ -750,6 +723,7 @@ pub async fn update_profile(
 
     fetch_profile_row(pool, &profile_id)
         .await?
+        .map(public_profile)
         .ok_or_else(|| "Unable to reload updated profile".to_string())
 }
 
@@ -936,26 +910,51 @@ pub async fn exchange_code_for_token(
         .and_then(|profile| profile.avatar_url.clone());
 
     if !payload.profile_id.trim().is_empty() {
+        let profile_exists: Option<String> = sqlx::query_scalar(
+            "SELECT id FROM auth_profiles WHERE id = $1",
+        )
+        .bind(&payload.profile_id)
+        .fetch_optional(pool)
+        .await
+        .map_err(|error| error.to_string())?;
+        if profile_exists.is_none() {
+            return Err("The OAuth profile must be created before authorization.".to_string());
+        }
+
         let provider_name = resolve_provider_name(payload.provider_url.as_deref(), None);
+        let previous_token = load_token_from_keyring(&payload.profile_id, &provider_name)
+            .await
+            .ok()
+            .and_then(normalize_keyring_token);
         persist_token_in_keyring(&payload.profile_id, &provider_name, &token).await?;
 
-        sqlx::query(
-            "UPDATE auth_profiles SET profile_name = CASE WHEN $1 IS NOT NULL AND $1 <> '' THEN $1 ELSE profile_name END, commit_name = CASE WHEN $2 IS NOT NULL AND $2 <> '' THEN $2 ELSE commit_name END, commit_email = CASE WHEN $3 IS NOT NULL AND $3 <> '' THEN $3 ELSE commit_email END, github_username = CASE WHEN $4 IS NOT NULL AND $4 <> '' THEN $4 ELSE github_username END, github_avatar_url = CASE WHEN $5 IS NOT NULL AND $5 <> '' THEN $5 ELSE github_avatar_url END, oauth_token = $6 WHERE id = $7"
+        let profile_update = sqlx::query(
+            "UPDATE auth_profiles SET auth_level = 'full_oauth', profile_name = CASE WHEN $1 IS NOT NULL AND $1 <> '' THEN $1 ELSE profile_name END, commit_name = CASE WHEN $2 IS NOT NULL AND $2 <> '' THEN $2 ELSE commit_name END, commit_email = CASE WHEN $3 IS NOT NULL AND $3 <> '' THEN $3 ELSE commit_email END, github_username = CASE WHEN $4 IS NOT NULL AND $4 <> '' THEN $4 ELSE github_username END, github_avatar_url = CASE WHEN $5 IS NOT NULL AND $5 <> '' THEN $5 ELSE github_avatar_url END WHERE id = $6"
         )
         .bind(resolved_display_name.clone())
         .bind(resolved_display_name.clone())
         .bind(resolved_email.clone())
         .bind(resolved_username.clone())
         .bind(resolved_avatar_url.clone())
-        .bind(Some(token.clone()))
         .bind(&payload.profile_id)
         .execute(pool)
-        .await
-        .map_err(|error| error.to_string())?;
+        .await;
+
+        if let Err(error) = profile_update {
+            let restore_result = match previous_token {
+                Some(previous_token) => persist_token_in_keyring(&payload.profile_id, &provider_name, &previous_token).await,
+                None => clear_token_from_keyring(&payload.profile_id, &provider_name).await,
+            };
+            if let Err(restore_error) = restore_result {
+                return Err(format!(
+                    "Unable to save OAuth profile: {error}; credential cleanup also failed: {restore_error}"
+                ));
+            }
+            return Err(format!("Unable to save OAuth profile: {error}"));
+        }
     }
 
     Ok(OAuthExchangeResponse {
-        token: token.clone(),
         username: resolved_username,
         email: resolved_email,
         display_name: resolved_display_name,
@@ -966,7 +965,7 @@ pub async fn exchange_code_for_token(
 pub async fn resolve_profile_for_repository(
     pool: &SqlitePool,
     repo_path_id: &str,
-) -> Result<Option<AuthProfileRow>, String> {
+) -> Result<Option<RemoteAuthProfile>, String> {
     let scope_profile_id: Option<String> = sqlx::query_scalar::<_, String>(
         "SELECT profile_id FROM profile_repo_scopes WHERE repo_path_id = $1 ORDER BY profile_id LIMIT 1"
     )
@@ -1007,7 +1006,7 @@ pub async fn resolve_profile_for_repository(
 pub async fn resolve_profile_for_remote(
     pool: &SqlitePool,
     profile_id: Option<&str>,
-) -> Result<Option<AuthProfileRow>, String> {
+) -> Result<Option<RemoteAuthProfile>, String> {
     if let Some(explicit_profile_id) = profile_id.map(str::trim).filter(|value| !value.is_empty()) {
         return fetch_profile_row(pool, explicit_profile_id).await;
     }
@@ -1042,7 +1041,7 @@ mod tests {
     use super::{
         determine_token_status, generate_code_challenge, parse_access_token,
         parse_github_user_profile, resolve_oauth_redirect_uri, resolve_oauth_token_url,
-        select_access_token, select_access_token_with_keyring_fallback,
+        normalize_keyring_token,
     };
 
     #[test]
@@ -1068,45 +1067,16 @@ mod tests {
     }
 
     #[test]
-    fn prefers_keyring_token_and_falls_back_to_database_token() {
+    fn normalizes_keyring_tokens_without_database_fallback() {
         assert_eq!(
-            select_access_token(
-                Some("from-keyring".to_string()),
-                Some("from-db".to_string())
-            ),
+            normalize_keyring_token(Some(" from-keyring ".to_string())),
             Some("from-keyring".to_string())
         );
         assert_eq!(
-            select_access_token(None, Some("from-db".to_string())),
-            Some("from-db".to_string())
-        );
-        assert_eq!(
-            select_access_token(Some("   ".to_string()), Some("from-db".to_string())),
-            Some("from-db".to_string())
-        );
-        assert_eq!(select_access_token(None, None), None);
-    }
-
-    #[test]
-    fn falls_back_to_database_token_when_keyring_lookup_errors() {
-        assert_eq!(
-            select_access_token_with_keyring_fallback(
-                Ok(Some("from-keyring".to_string())),
-                Some("from-db".to_string())
-            ),
-            Some("from-keyring".to_string())
-        );
-        assert_eq!(
-            select_access_token_with_keyring_fallback(
-                Err("boom".to_string()),
-                Some("from-db".to_string())
-            ),
-            Some("from-db".to_string())
-        );
-        assert_eq!(
-            select_access_token_with_keyring_fallback(Err("boom".to_string()), None),
+            normalize_keyring_token(Some("   ".to_string())),
             None
         );
+        assert_eq!(normalize_keyring_token(None), None);
     }
 
     #[test]

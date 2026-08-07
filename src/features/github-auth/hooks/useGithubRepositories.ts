@@ -1,11 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { fetchGithubInstallations } from '../api/fetchInstallations';
-import { fetchGithubInstallationRepositories } from '../api/fetchRepositories';
-import { fetchGithubPublicCollaboratorRepositories } from '../api/fetchPublicCollaboratorRepositories';
-import type { GitHubAppInstallation, GitHubRepository } from '../types';
+import { invoke } from '@tauri-apps/api/core';
+import type { GitHubAppInstallation, GitHubRepository, GitHubRepositoryPage } from '../types';
 
 interface UseGithubRepositoriesOptions {
-	accessToken?: string | null;
+	profileId?: string | null;
 	apiBaseUrl?: string | null;
 	enabled?: boolean;
 	pageSize?: number;
@@ -58,7 +56,7 @@ function dedupeRepositories(repositories: GitHubRepository[]): GitHubRepository[
 }
 
 export function useGithubRepositories({
-	accessToken,
+	profileId,
 	apiBaseUrl,
 	enabled = true,
 	pageSize = 30,
@@ -79,10 +77,10 @@ export function useGithubRepositories({
 	const hasLoadedOnceRef = useRef(false);
 	const cacheRef = useRef<GithubRepositoryCacheEntry | null>(null);
 
-	const normalizedToken = accessToken?.trim() ?? '';
+	const normalizedProfileId = profileId?.trim() ?? '';
 	const normalizedApiBaseUrl = apiBaseUrl?.trim() ?? '';
-	const isEnabled = enabled && Boolean(normalizedToken);
-	const cacheKey = `${normalizedApiBaseUrl}|${pageSize}|${normalizedToken}`;
+	const isEnabled = enabled && Boolean(normalizedProfileId);
+	const cacheKey = `${normalizedApiBaseUrl}|${pageSize}|${normalizedProfileId}`;
 
 	const resetState = useCallback(() => {
 		requestKeyRef.current += 1;
@@ -138,53 +136,29 @@ export function useGithubRepositories({
 		setError(null);
 
 		try {
-			const nextInstallations = await fetchGithubInstallations(normalizedToken, apiBaseUrl);
-			if (requestKeyRef.current !== requestKey) {
-				return;
-			}
-
-			const firstValidInstallation = nextInstallations.find((installation) => typeof installation.id === 'number') ?? null;
-			if (!firstValidInstallation) {
-				throw new Error('No GitHub App installations were found for the authenticated user.');
-			}
-
-			const installationId = firstValidInstallation.id;
-			const nextPage = await fetchGithubInstallationRepositories({
-				accessToken: normalizedToken,
-				installationId,
+			const nextPage = await invoke<GitHubRepositoryPage>('list_remote_repositories', {
+				profileId: normalizedProfileId,
 				page: 1,
 				perPage: pageSize,
-				apiBaseUrl,
 			});
-
-			let collaboratorPublicRepositories: GitHubRepository[] = [];
-			try {
-				collaboratorPublicRepositories = await fetchGithubPublicCollaboratorRepositories({
-					accessToken: normalizedToken,
-					apiBaseUrl,
-				});
-			} catch {
-				// The collaborator supplement is best-effort and should not block installation repositories.
-			}
-
 			if (requestKeyRef.current !== requestKey) {
 				return;
 			}
 
 			const now = Date.now();
-			const mergedRepositories = dedupeRepositories([...nextPage.items, ...collaboratorPublicRepositories]);
+			const mergedRepositories = dedupeRepositories(nextPage.items);
 			cacheRef.current = {
 				cacheKey,
-				installations: nextInstallations,
-				selectedInstallationId: installationId,
+				installations: [],
+				selectedInstallationId: 0,
 				repositories: mergedRepositories,
 				page: nextPage.page,
 				hasMore: nextPage.has_more,
 				fetchedAt: now,
 			};
 
-			setInstallations(nextInstallations);
-			setSelectedInstallationId(installationId);
+			setInstallations([]);
+			setSelectedInstallationId(null);
 			setRepositories(mergedRepositories);
 			setLastUpdatedAt(now);
 			setIsUsingCache(false);
@@ -214,10 +188,10 @@ export function useGithubRepositories({
 				setIsRefreshing(false);
 			}
 		}
-	}, [apiBaseUrl, cacheKey, isEnabled, normalizedToken, pageSize, resetState]);
+	}, [cacheKey, isEnabled, normalizedProfileId, pageSize, resetState]);
 
 	const loadMore = useCallback(async () => {
-		if (!isEnabled || isLoading || isRefreshing || isLoadingMore || !hasMore || !selectedInstallationId) {
+		if (!isEnabled || isLoading || isRefreshing || isLoadingMore || !hasMore) {
 			return;
 		}
 
@@ -225,12 +199,10 @@ export function useGithubRepositories({
 		setIsLoadingMore(true);
 
 		try {
-			const nextPage = await fetchGithubInstallationRepositories({
-				accessToken: normalizedToken,
-				installationId: selectedInstallationId,
+			const nextPage = await invoke<GitHubRepositoryPage>('list_remote_repositories', {
+				profileId: normalizedProfileId,
 				page: page + 1,
 				perPage: pageSize,
-				apiBaseUrl,
 			});
 
 			if (requestKeyRef.current !== requestKey) {
@@ -269,7 +241,7 @@ export function useGithubRepositories({
 				setIsLoadingMore(false);
 			}
 		}
-	}, [apiBaseUrl, cacheKey, hasMore, isEnabled, isLoading, isLoadingMore, isRefreshing, normalizedToken, page, pageSize, repositories, selectedInstallationId]);
+	}, [cacheKey, hasMore, isEnabled, isLoading, isLoadingMore, isRefreshing, normalizedProfileId, page, pageSize, repositories, selectedInstallationId]);
 
 	useEffect(() => {
 		if (!isEnabled) {

@@ -125,8 +125,7 @@ export function AppLayout({ children }: AppLayoutProps) {
 
   const canCloneRemote =
     Boolean(activeProfile) &&
-    activeProfile?.auth_level === 'full_oauth' &&
-    (activeProfile ? tokenHealthMap[activeProfile.id] ?? 'none' : 'none') === 'healthy';
+    activeProfile?.auth_level === 'full_oauth';
 
   const HEADER_H = 48;
   const openManagementModal = (initialTab: 'tags' | 'groups' = 'tags') => {

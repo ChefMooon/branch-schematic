@@ -120,7 +120,7 @@ export function ProfileManagementModal({
     };
   }, [profiles, tokenHealthMap]);
 
-  const isOAuthMissingToken = draft.auth_level === 'full_oauth' && !String(draft.token_value ?? '').trim();
+  const isOAuthMissingToken = draft.auth_level === 'full_oauth' && (tokenHealthMap[draft.id ?? ''] ?? 'none') === 'none';
 
   if (!isOpen) {
     return null;
@@ -441,6 +441,7 @@ export function ProfileManagementModal({
                 </label>
                 <OAuthConnectButton
                   draft={draft}
+                  tokenHealthStatus={tokenHealthMap[draft.id ?? ''] ?? 'none'}
                   onChange={(changes: Partial<UserProfile>) => setDraft((current) => ({ ...current, ...changes }))}
                 />
               </div>

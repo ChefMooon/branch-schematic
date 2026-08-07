@@ -252,7 +252,7 @@ struct GitHubBranchPayload {
     commit: GitHubBranchCommitPayload,
 }
 
-fn normalize_api_base_url(profile: &auth::AuthProfileRow) -> String {
+fn normalize_api_base_url(profile: &auth::RemoteAuthProfile) -> String {
     profile
         .api_base_url
         .as_deref()
@@ -263,7 +263,7 @@ fn normalize_api_base_url(profile: &auth::AuthProfileRow) -> String {
         .to_string()
 }
 
-fn ensure_remote_access(profile: &auth::AuthProfileRow) -> Result<String, String> {
+fn ensure_remote_access(profile: &auth::RemoteAuthProfile) -> Result<String, String> {
     if profile.auth_level != "full_oauth" {
         return Err("Remote operations require a full OAuth profile.".to_string());
     }
@@ -292,18 +292,6 @@ fn build_bearer_auth_header(token: &str) -> Result<HeaderValue, String> {
     })
 }
 
-fn parse_oauth_scopes_header(header_value: Option<&HeaderValue>) -> Option<Vec<String>> {
-    header_value
-        .and_then(|value| value.to_str().ok())
-        .map(|value| {
-            value
-                .split(',')
-                .map(|scope| scope.trim().to_string())
-                .filter(|scope| !scope.is_empty())
-                .collect::<Vec<String>>()
-        })
-}
-
 fn derive_origin_type(
     meta: &GitHubSingleRepoMeta,
     authenticated_username: Option<&str>,
@@ -329,7 +317,7 @@ fn derive_origin_type(
 }
 
 async fn fetch_single_github_repo_metadata(
-    profile: &auth::AuthProfileRow,
+    profile: &auth::RemoteAuthProfile,
     owner: &str,
     repo_name: &str,
 ) -> Option<GitHubSingleRepoMeta> {
@@ -443,6 +431,10 @@ async fn resolve_repository_origin_metadata(
 
 fn describe_remote_repository_listing_error(raw_error: &str) -> String {
     let trimmed = raw_error.trim();
+    if trimmed.contains("missing the 'repo' scope") || trimmed.contains("missing the repo scope") {
+        return "The connected OAuth token is missing the repo scope required to list private repositories. Reconnect the profile and grant repository access.".to_string();
+    }
+
     if trimmed.contains("OAuth token") {
         return "We couldn't load repositories because the selected profile is not fully authorized. Reconnect the profile and try again.".to_string();
     }
@@ -517,7 +509,7 @@ fn describe_remote_repository_listing_error(raw_error: &str) -> String {
 }
 
 async fn fetch_remote_repositories_page(
-    profile: &auth::AuthProfileRow,
+    profile: &auth::RemoteAuthProfile,
     page: u32,
     per_page: u32,
 ) -> Result<RemoteRepositoryPage, String> {
@@ -548,22 +540,6 @@ async fn fetch_remote_repositories_page(
         .send()
         .await
         .map_err(|error| format!("Failed to request remote repositories: {}", error))?;
-
-    if api_base_url.contains("api.github.com") {
-        if let Some(scopes) = parse_oauth_scopes_header(response.headers().get("x-oauth-scopes")) {
-            if !scopes.iter().any(|scope| scope == "repo") {
-                let scope_label = if scopes.is_empty() {
-                    "(none)".to_string()
-                } else {
-                    scopes.join(", ")
-                };
-                return Err(format!(
-                    "The connected OAuth token is missing the 'repo' scope required to list private repositories. Current scopes: {}. Reconnect the profile and grant repository access.",
-                    scope_label
-                ));
-            }
-        }
-    }
 
     let has_more = response
         .headers()
@@ -632,7 +608,7 @@ async fn fetch_remote_repositories_page(
 }
 
 async fn fetch_remote_branches_page(
-    profile: &auth::AuthProfileRow,
+    profile: &auth::RemoteAuthProfile,
     owner: &str,
     repo_name: &str,
     page: u32,
@@ -786,7 +762,7 @@ fn derive_clone_base_from_api(api_base_url: &str) -> Result<String, String> {
 }
 
 fn resolve_clone_url(
-    profile: Option<&auth::AuthProfileRow>,
+    profile: Option<&auth::RemoteAuthProfile>,
     owner: Option<&str>,
     repo_name: Option<&str>,
     repo_url: Option<&str>,
@@ -2978,7 +2954,7 @@ where
 async fn resolve_profile_for_repo(
     state: &sqlx::SqlitePool,
     path_id: &str,
-) -> Result<Option<auth::AuthProfileRow>, String> {
+) -> Result<Option<auth::RemoteAuthProfile>, String> {
     auth::resolve_profile_for_repository(state, path_id).await
 }
 
@@ -3252,6 +3228,14 @@ mod tests {
         assert_eq!(
             describe_remote_repository_listing_error("The selected profile does not have an OAuth token."),
             "We couldn't load repositories because the selected profile is not fully authorized. Reconnect the profile and try again."
+        );
+    }
+
+    #[test]
+    fn preserves_missing_repo_scope_when_repository_list_fails() {
+        assert_eq!(
+            describe_remote_repository_listing_error("The connected OAuth token is missing the 'repo' scope required to list private repositories."),
+            "The connected OAuth token is missing the repo scope required to list private repositories. Reconnect the profile and grant repository access."
         );
     }
 

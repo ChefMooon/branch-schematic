@@ -13,7 +13,6 @@ interface UseOAuthFlowOptions {
 }
 
 interface OAuthFlowResult {
-  token: string | null;
   username?: string | null;
   email?: string | null;
   display_name?: string | null;
@@ -167,7 +166,6 @@ export function useOAuthFlow({ profileId, providerUrl, redirectUri }: UseOAuthFl
           setStatus('Exchanging authorization code…');
           try {
             const exchangeResult = await invoke<{
-              token: string;
               username?: string | null;
               email?: string | null;
               display_name?: string | null;
@@ -190,7 +188,6 @@ export function useOAuthFlow({ profileId, providerUrl, redirectUri }: UseOAuthFl
             if (!settled) {
               settled = true;
               resolve({
-                token: exchangeResult?.token ?? null,
                 username: exchangeResult?.username ?? null,
                 email: exchangeResult?.email ?? null,
                 display_name: exchangeResult?.display_name ?? null,

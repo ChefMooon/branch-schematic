@@ -1,22 +1,22 @@
-import { useMemo } from 'react';
 import { ArrowSquareOut, CheckCircle, SpinnerGap } from '@phosphor-icons/react';
-import type { UserProfile } from '../types';
+import type { TokenHealthStatus, UserProfile } from '../types';
 import { useOAuthFlow } from '../hooks/useOAuthFlow';
 import { Button } from '../../../components/button/Button';
 
 interface OAuthConnectButtonProps {
   draft: Partial<UserProfile>;
+  tokenHealthStatus?: TokenHealthStatus;
   onChange: (changes: Partial<UserProfile>) => void;
 }
 
-export function OAuthConnectButton({ draft, onChange }: OAuthConnectButtonProps) {
+export function OAuthConnectButton({ draft, tokenHealthStatus = 'none', onChange }: OAuthConnectButtonProps) {
   const { isWorking, status, startFlow } = useOAuthFlow({
     profileId: draft.id ?? undefined,
     providerUrl: draft.api_base_url ?? undefined,
   });
 
   const isOAuthProfile = draft.auth_level === 'full_oauth';
-  const hasToken = useMemo(() => String(draft.token_value ?? '').trim().length > 0, [draft.token_value]);
+  const hasToken = tokenHealthStatus === 'healthy' || tokenHealthStatus === 'expired' || tokenHealthStatus === 'unreachable';
 
   if (!isOAuthProfile) {
     return null;
@@ -24,9 +24,9 @@ export function OAuthConnectButton({ draft, onChange }: OAuthConnectButtonProps)
 
   const handleConnect = async () => {
     const result = await startFlow(draft);
-    if (result?.token) {
+    if (result) {
       onChange({
-        token_value: result.token,
+        auth_level: 'full_oauth',
         username: result.username ?? draft.username ?? null,
         email: result.email ?? draft.email ?? null,
         display_name: result.display_name ?? draft.display_name ?? undefined,

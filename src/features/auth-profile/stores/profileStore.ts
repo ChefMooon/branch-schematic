@@ -41,7 +41,6 @@ function normalizeProfile(profile: Partial<UserProfile> & { id?: string }): User
     folder_scope: scopeValue(profile.folder_scope),
     commit_name: profile.commit_name ?? null,
     commit_email: profile.commit_email ?? null,
-    token_value: profile.token_value ?? null,
     token_expires_at: profile.token_expires_at ?? null,
     last_token_check_at: profile.last_token_check_at ?? null,
     is_active: profile.is_active ?? 0,
@@ -64,7 +63,6 @@ function toBackendProfile(profile: Partial<UserProfile>) {
     folder_scope: profile.folder_scope ?? [],
     commit_name: profile.commit_name ?? undefined,
     commit_email: profile.commit_email ?? undefined,
-    token_value: profile.token_value ?? undefined,
     token_expires_at: profile.token_expires_at ?? undefined,
     last_token_check_at: profile.last_token_check_at ?? undefined,
     is_active: typeof profile.is_active === 'boolean' ? (profile.is_active ? 1 : 0) : (profile.is_active ?? 0),
@@ -95,10 +93,6 @@ function sortProfiles(profiles: UserProfile[]) {
 }
 
 function inferHealthStatus(profile: UserProfile): TokenHealthStatus {
-  if (!profile.token_value) {
-    return 'none';
-  }
-
   if (profile.token_expires_at) {
     const expiresAt = new Date(profile.token_expires_at);
     if (!Number.isNaN(expiresAt.getTime()) && expiresAt.getTime() <= Date.now()) {
@@ -106,7 +100,7 @@ function inferHealthStatus(profile: UserProfile): TokenHealthStatus {
     }
   }
 
-  return 'healthy';
+  return 'none';
 }
 
 interface ProfileStoreState {
@@ -248,6 +242,8 @@ export const useProfileStore = create<ProfileStoreState>((set, get) => ({
         },
         error: null,
       }));
+
+      await get().refreshTokenHealth();
     } catch (error) {
       console.warn('Unable to persist active profile change:', error);
       set({ error: error instanceof Error ? error.message : 'Unable to activate profile' });
