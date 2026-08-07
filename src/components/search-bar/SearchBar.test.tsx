@@ -53,7 +53,10 @@ describe('SearchBar', () => {
     const input = screen.getByLabelText('Search repositories');
     const shell = input.parentElement;
 
-    expect(shell).toHaveStyle({ border: '1px solid var(--app-border)' });
+    expect(shell).toHaveStyle({
+      border: '1px solid var(--app-border)',
+      boxSizing: 'border-box',
+    });
   });
 
   it('can suppress its shell border when a parent wrapper provides the outline', () => {

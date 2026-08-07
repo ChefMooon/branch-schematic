@@ -60,7 +60,7 @@ export function ViewDetailsConfigurator({ isDark, view }: ViewDetailsConfigurato
         </div>
       </header>
 
-      <div className="canvas-view-manager__details-content">
+      <div className={`canvas-view-manager__details-content${activeTab === 'scope' ? ' canvas-view-manager__details-content--scope' : ''}`}>
         {activeTab === 'metadata' ? (
           <div
             id="canvas-view-manager-panel-metadata"
@@ -76,6 +76,7 @@ export function ViewDetailsConfigurator({ isDark, view }: ViewDetailsConfigurato
             role="tabpanel"
             aria-labelledby="canvas-view-manager-tab-scope"
             tabIndex={0}
+            className="canvas-view-manager__scope-panel"
           >
             <TabScopeSettings viewId={view.id} />
           </div>

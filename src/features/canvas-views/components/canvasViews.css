@@ -266,6 +266,23 @@
   padding: 1rem;
 }
 
+.canvas-view-manager__details-content--scope {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  height: 0;
+  overflow: hidden;
+}
+
+.canvas-view-manager__scope-panel {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
 .canvas-view-manager__empty-details {
   display: grid;
   min-height: 100%;
@@ -366,6 +383,15 @@
   min-width: 0;
 }
 
+.canvas-scope-selector--scrollable {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
 .canvas-scope-selector__header {
   display: flex;
   align-items: flex-start;
@@ -406,6 +432,21 @@
   min-width: 0;
 }
 
+.canvas-scope-selector--scrollable .canvas-scope-selector__list {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  height: 0;
+  min-height: 0;
+  overflow-y: scroll;
+  scrollbar-gutter: stable;
+}
+
+.canvas-scope-selector--scrollable .canvas-scope-selector__repository {
+  flex: 0 0 auto;
+  min-height: 2.8rem;
+}
+
 .canvas-scope-selector__empty,
 .canvas-scope-selector__branch-empty {
   padding: 0.65rem;
@@ -424,6 +465,7 @@
 .canvas-scope-selector__repository-row {
   display: flex;
   align-items: center;
+  box-sizing: border-box;
   gap: 0.55rem;
   min-width: 0;
   padding: 0.55rem 0.65rem;
@@ -604,7 +646,7 @@
   .canvas-view-manager__body {
     display: flex;
     flex-direction: column;
-    overflow: auto;
+    overflow: hidden;
   }
 
   .canvas-view-manager__sidebar {

@@ -154,6 +154,7 @@ export function TabScopeSettings({ viewId }: TabScopeSettingsProps) {
           [repositoryId]: !current[repositoryId],
         }));
       }}
+      scrollableList
       emptyMessage="No tracked repositories are available yet."
     />
   );

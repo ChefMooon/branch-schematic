@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { CaretDown, CaretRight } from '@phosphor-icons/react';
 import { Button } from '../../../components/button/Button';
+import { SearchBar } from '../../../components/search-bar/SearchBar';
 import {
   getRepositoryBranchSelection,
   getRepositorySelectionState,
@@ -21,6 +22,7 @@ type RepositoryScopeSelectorProps = {
   onSelectAll?: () => void;
   onClearAll?: () => void;
   emptyMessage?: string;
+  scrollableList?: boolean;
 };
 
 function IndeterminateCheckbox({
@@ -70,7 +72,9 @@ export function RepositoryScopeSelector({
   onSelectAll,
   onClearAll,
   emptyMessage = 'No tracked repositories available.',
+  scrollableList = false,
 }: RepositoryScopeSelectorProps) {
+  const [searchQuery, setSearchQuery] = useState('');
   const orderedRepositories = useMemo(
     () => [...repositories].sort((left, right) => {
       const leftLabel = left.alias_name || left.display_name;
@@ -79,9 +83,25 @@ export function RepositoryScopeSelector({
     }),
     [repositories],
   );
+  const normalizedSearchQuery = searchQuery.trim().toLocaleLowerCase();
+  const filteredRepositories = useMemo(
+    () => normalizedSearchQuery.length === 0
+      ? orderedRepositories
+      : orderedRepositories.filter((repository) => {
+        const alias = repository.alias_name?.toLocaleLowerCase() ?? '';
+        const displayName = repository.display_name.toLocaleLowerCase();
+        return alias.includes(normalizedSearchQuery) || displayName.includes(normalizedSearchQuery);
+      }),
+    [normalizedSearchQuery, orderedRepositories],
+  );
+  const hasSearchResults = filteredRepositories.length > 0;
+  const hasRepositories = orderedRepositories.length > 0;
 
   return (
-    <section className="canvas-scope-selector" aria-label="Tracked repository and branch visibility">
+    <section
+      className={`canvas-scope-selector${scrollableList ? ' canvas-scope-selector--scrollable' : ''}`}
+      aria-label="Tracked repository and branch visibility"
+    >
       <div className="canvas-scope-selector__header">
         <div>
           <h4 className="canvas-scope-selector__title">Tracked repositories</h4>
@@ -105,12 +125,25 @@ export function RepositoryScopeSelector({
         )}
       </div>
 
+      <SearchBar
+        value={searchQuery}
+        onChange={setSearchQuery}
+        onClear={() => setSearchQuery('')}
+        placeholder="Search tracked repositories"
+        ariaLabel="Search tracked repositories"
+        size="compact"
+      />
+
       <div className="canvas-scope-selector__list">
-        {orderedRepositories.length === 0 && (
+        {!hasRepositories && (
           <div className="canvas-scope-selector__empty">{emptyMessage}</div>
         )}
 
-        {orderedRepositories.map((repository) => {
+        {hasRepositories && !hasSearchResults && (
+          <div className="canvas-scope-selector__empty">No repositories match the current search.</div>
+        )}
+
+        {filteredRepositories.map((repository) => {
           const branches = repository.available_branches ?? [];
           const selected = normalizeSelectedBranches(repository, selectedBranches[repository.id] ?? []);
           const selectionState = getRepositorySelectionState(

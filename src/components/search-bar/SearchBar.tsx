@@ -62,6 +62,7 @@ export function SearchBar({
     alignItems: 'center',
     width: '100%',
     minWidth: 0,
+    boxSizing: 'border-box',
     height: isCompact ? 30 : '100%',
     border: showShellBorder ? '1px solid var(--app-border)' : 'none',
     borderRadius: 8,
