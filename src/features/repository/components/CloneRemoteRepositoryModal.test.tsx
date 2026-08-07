@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { CloneRemoteRepositoryModal } from './CloneRemoteRepositoryModal';
@@ -248,6 +248,57 @@ describe('CloneRemoteRepositoryModal', () => {
       await screen.findByText('Enter a valid repository URL that starts with https://, http://, or git@.')
     ).toBeInTheDocument();
     expect(invokeMock.mock.calls.length).toBe(priorInvokeCalls);
+  });
+
+  it('passes the URL subfolder preference to the clone command', async () => {
+    mockUseProfileContext.mockReturnValue({
+      activeProfile: {
+        id: 'profile-1',
+        display_name: 'Test Profile',
+        auth_level: 'full_oauth',
+        api_base_url: 'https://api.github.com',
+      },
+      tokenHealthMap: { 'profile-1': 'healthy' },
+    });
+    invokeMock.mockImplementation((command: string) => {
+      if (command === 'clone_remote_repository') {
+        return Promise.resolve({ message: 'Repository cloned.' });
+      }
+
+      if (command === 'parse_remote_repository_slug') {
+        return Promise.resolve({ owner: 'octocat', repo_name: 'alpha' });
+      }
+
+      if (command === 'list_remote_branches') {
+        return Promise.resolve({ items: [], page: 1, per_page: 100, has_more: false });
+      }
+
+      return Promise.resolve({ items: [], page: 1, per_page: 30, has_more: false });
+    });
+
+    render(
+      <CloneRemoteRepositoryModal
+        isOpen
+        onClose={() => undefined}
+        onOpenProfileManagement={() => undefined}
+      />
+    );
+
+    await userEvent.click(screen.getByRole('button', { name: 'Clone from URL' }));
+    await userEvent.type(screen.getByRole('textbox', { name: 'Repository URL' }), 'https://github.com/octocat/alpha.git');
+    await userEvent.type(screen.getByRole('textbox', { name: 'Destination' }), 'C:/Users/you/projects');
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Clone into subfolder' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Clone' }));
+
+    await waitFor(() => {
+      expect(invokeMock).toHaveBeenCalledWith('clone_remote_repository', {
+        profileId: 'profile-1',
+        repoUrl: 'https://github.com/octocat/alpha.git',
+        branch: 'main',
+        destinationPath: 'C:/Users/you/projects',
+        cloneIntoSubfolder: false,
+      });
+    });
   });
 
   it('renders last updated status in the basic tab', async () => {

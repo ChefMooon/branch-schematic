@@ -892,6 +892,7 @@ pub async fn clone_remote_repository(
     repo_url: Option<String>,
     branch: Option<String>,
     destination_path: String,
+    clone_into_subfolder: Option<bool>,
 ) -> Result<CloneRemoteRepositoryResult, String> {
     let destination = Path::new(destination_path.trim());
     if destination.as_os_str().is_empty() {
@@ -921,7 +922,11 @@ pub async fn clone_remote_repository(
             "Unable to determine a repository name for the clone destination.".to_string()
         })?;
 
-    let target_path = destination.join(sanitize_repository_name(&inferred_repo_name));
+    let target_path = resolve_repository_target_path(
+        destination,
+        &inferred_repo_name,
+        clone_into_subfolder.unwrap_or(true),
+    )?;
     if target_path.exists() {
         return Err(format!(
             "The destination '{}' already exists.",

@@ -44,6 +44,7 @@ interface RepositoryListState {
 	isBranchLoading: boolean;
 	branchError: string | null;
 	destinationPath: string;
+	cloneIntoSubfolder: boolean;
 	cloneError: string | null;
 }
 
@@ -64,6 +65,7 @@ function createInitialListState(): RepositoryListState {
 		isBranchLoading: false,
 		branchError: null,
 		destinationPath: '',
+		cloneIntoSubfolder: true,
 		cloneError: null,
 	};
 }
@@ -185,6 +187,7 @@ export function CloneRemoteRepositoryModal({
 	const [isUrlBranchLoading, setIsUrlBranchLoading] = useState(false);
 	const [urlBranchError, setUrlBranchError] = useState<string | null>(null);
 	const [urlDestinationPath, setUrlDestinationPath] = useState('');
+	const [urlCloneIntoSubfolder, setUrlCloneIntoSubfolder] = useState(true);
 	const [urlError, setUrlError] = useState<string | null>(null);
 	const [urlCloneError, setUrlCloneError] = useState<string | null>(null);
 	const [isCloning, setIsCloning] = useState(false);
@@ -519,6 +522,7 @@ export function CloneRemoteRepositoryModal({
 				repoName: selectedRepository.name,
 				branch: activeRepositoryState.selectedBranch || selectedRepository.default_branch || 'main',
 				destinationPath,
+				cloneIntoSubfolder: activeRepositoryState.cloneIntoSubfolder,
 			});
 
 			await hydrateFromBackend();
@@ -552,6 +556,7 @@ export function CloneRemoteRepositoryModal({
 		}
 	}, [
 		activeProfile?.id,
+		activeRepositoryState.cloneIntoSubfolder,
 		activeRepositoryState.destinationPath,
 		activeRepositoryState.selectedBranch,
 		addToast,
@@ -588,6 +593,7 @@ export function CloneRemoteRepositoryModal({
 				repoUrl: trimmedUrl,
 				branch: urlBranchInput.trim() || 'main',
 				destinationPath: trimmedDestination,
+				cloneIntoSubfolder: urlCloneIntoSubfolder,
 			});
 
 			await hydrateFromBackend();
@@ -621,6 +627,7 @@ export function CloneRemoteRepositoryModal({
 		hydrateFromBackend,
 		hydrateQuickFilterMetadata,
 		onClose,
+		urlCloneIntoSubfolder,
 		urlBranchInput,
 		urlDestinationPath,
 		urlInput,
@@ -746,6 +753,7 @@ export function CloneRemoteRepositoryModal({
 			branchOptions: [],
 			branchError: null,
 			destinationPath: '',
+			cloneIntoSubfolder: true,
 			cloneError: null,
 		}));
 		setEnterpriseState(createInitialListState());
@@ -755,6 +763,7 @@ export function CloneRemoteRepositoryModal({
 		setIsUrlBranchLoading(false);
 		setUrlBranchError(null);
 		setUrlDestinationPath('');
+		setUrlCloneIntoSubfolder(true);
 		setUrlError(null);
 		setUrlCloneError(null);
 		setIsCloning(false);
@@ -927,6 +936,18 @@ export function CloneRemoteRepositoryModal({
 		activeTab === 'url'
 			? (
 				<>
+					<label style={subfolderOptionStyle}>
+						<span>Clone into subfolder</span>
+						<input
+							type="checkbox"
+							checked={urlCloneIntoSubfolder}
+							onChange={(event) => {
+								setUrlCloneIntoSubfolder(event.target.checked);
+								setUrlCloneError(null);
+							}}
+							disabled={isCloning}
+						/>
+					</label>
 					<Button
 						type="button"
 						variant="basic"
@@ -1011,6 +1032,22 @@ export function CloneRemoteRepositoryModal({
 								</Button>
 							</div>
 						</div>
+
+						<label style={subfolderOptionStyle}>
+							<span>Clone into subfolder</span>
+							<input
+								type="checkbox"
+								checked={activeRepositoryState.cloneIntoSubfolder}
+								onChange={(event) => {
+									setActiveRepositoryState((current) => ({
+										...current,
+										cloneIntoSubfolder: event.target.checked,
+										cloneError: null,
+									}));
+								}}
+								disabled={isCloning}
+							/>
+						</label>
 
 						<Button
 							type="button"
@@ -1471,6 +1508,20 @@ const footerLabelStyle: React.CSSProperties = {
 	fontSize: 11,
 	fontWeight: 700,
 	color: 'var(--app-muted)',
+};
+
+const subfolderOptionStyle: React.CSSProperties = {
+	display: 'flex',
+	alignItems: 'center',
+	justifyContent: 'space-between',
+	gap: 10,
+	minWidth: 180,
+	padding: '8px 10px',
+	border: '1px solid var(--app-border)',
+	borderRadius: 8,
+	background: 'var(--app-surface-muted)',
+	fontSize: 12,
+	color: 'var(--app-text)',
 };
 
 const statusTextStyle: React.CSSProperties = {
