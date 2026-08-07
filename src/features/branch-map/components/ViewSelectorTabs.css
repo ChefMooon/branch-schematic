@@ -1,0 +1,12 @@
+.view-selector-tabs__list {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 4px;
+}
+
+.view-selector-tabs__tab-wrapper {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+}

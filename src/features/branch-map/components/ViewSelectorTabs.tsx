@@ -1,9 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useViewport } from '@xyflow/react';
+import { Button } from '../../../components/button/Button';
+import { useClickOutside } from '../../../hooks/useClickOutside';
 import { sortCanvasViews, useCanvasStore } from '../../../stores/canvas-store';
 import { CreateViewModal } from '../../canvas-views/components/CreateViewModal';
 import { ViewManagerModal } from '../../canvas-views/components/ViewManagerModal';
 import { ViewActionsDropdown } from './ViewActionsDropdown';
+import './ViewSelectorTabs.css';
 
 type ViewSelectorTabsProps = {
   isDark?: boolean;
@@ -62,19 +65,7 @@ export function ViewSelectorTabs({
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  useEffect(() => {
-    if (!isOverflowOpen) return;
-
-    const handleOutsideClick = (event: MouseEvent) => {
-      if (!overflowRef.current) return;
-      if (!overflowRef.current.contains(event.target as Node)) {
-        setIsOverflowOpen(false);
-      }
-    };
-
-    document.addEventListener('mousedown', handleOutsideClick);
-    return () => document.removeEventListener('mousedown', handleOutsideClick);
-  }, [isOverflowOpen]);
+  useClickOutside(overflowRef, () => setIsOverflowOpen(false), isOverflowOpen);
 
   useEffect(() => {
     const handleEscape = (event: KeyboardEvent) => {
@@ -122,7 +113,8 @@ export function ViewSelectorTabs({
 
   return (
     <>
-      <div 
+      <div
+        className="view-selector-tabs"
         style={{
           position: 'absolute',
           top: '16px',
@@ -133,47 +125,39 @@ export function ViewSelectorTabs({
           alignItems: 'center',
           maxWidth: isWideLayout ? 'min(1120px, calc(100vw - 160px))' : 'min(860px, calc(100vw - 160px))',
           overflow: 'visible',
-          background: isDark ? '#171717' : '#ffffff',
+          background: 'var(--app-surface)',
           padding: '6px',
           borderRadius: '8px',
-          border: `1px solid ${isDark ? '#262626' : '#e2e8f0'}`,
-          boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'
+          border: '1px solid var(--app-border)',
+          boxShadow: '0 4px 6px -1px var(--app-shadow)',
         }}
       >
-        {visibleViews.map((v) => (
-          <div key={v.id} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-            <button
-              onClick={() => setActiveView(v.id)}
-              title={v.name}
-              aria-label={`Open view ${v.name}`}
-              style={{
-                padding: '6px 12px',
-                borderRadius: '6px',
-                fontSize: '12px',
-                fontWeight: 500,
-                cursor: 'pointer',
-                border: 'none',
-                maxWidth: isNarrowLayout ? '118px' : isWideLayout ? '140px' : '172px',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-                backgroundColor: activeViewId === v.id 
-                  ? (isDark ? '#262626' : '#f1f5f9') 
-                  : 'transparent',
-                color: activeViewId === v.id
-                  ? (isDark ? '#ffffff' : '#0f172a')
-                  : (isDark ? '#a3a3a3' : '#64748b'),
-                transition: 'all 0.15s ease'
-              }}
-            >
-              {v.name}
-            </button>
-          </div>
-        ))}
+        <div role="tablist" aria-label="Canvas views" className="view-selector-tabs__list">
+          {visibleViews.map((view) => (
+            <div key={view.id} className="view-selector-tabs__tab-wrapper">
+              <Button
+                type="button"
+                variant="basic"
+                className={`app-btn--view-tab${activeViewId === view.id ? ' is-active' : ''}`}
+                role="tab"
+                aria-selected={activeViewId === view.id}
+                onClick={() => setActiveView(view.id)}
+                title={view.name}
+                aria-label={`Open view ${view.name}`}
+                style={{ maxWidth: isNarrowLayout ? '118px' : isWideLayout ? '140px' : '172px' }}
+              >
+                {view.name}
+              </Button>
+            </div>
+          ))}
+        </div>
 
         {overflowViews.length > 0 && (
           <div ref={overflowRef} style={{ position: 'relative' }}>
-            <button
+            <Button
+              type="button"
+              variant="basic"
+              className="app-btn--view-trigger"
               onClick={() => {
                 setIsOverflowOpen((open) => {
                   const nextOpen = !open;
@@ -183,22 +167,18 @@ export function ViewSelectorTabs({
                   return nextOpen;
                 });
               }}
-              style={{
-                padding: '6px 10px',
-                borderRadius: '6px',
-                fontSize: '12px',
-                fontWeight: 600,
-                cursor: 'pointer',
-                border: `1px solid ${isDark ? '#404040' : '#cbd5e1'}`,
-                backgroundColor: isDark ? '#111111' : '#ffffff',
-                color: isDark ? '#d4d4d4' : '#475569',
-              }}
+              aria-haspopup="menu"
+              aria-expanded={isOverflowOpen}
+              aria-controls="view-selector-overflow-menu"
             >
               More ({overflowViews.length})
-            </button>
+            </Button>
 
             {isOverflowOpen && (
               <div
+                id="view-selector-overflow-menu"
+                role="menu"
+                aria-label="More canvas views"
                 style={{
                   position: 'absolute',
                   top: 'calc(100% + 6px)',
@@ -206,48 +186,30 @@ export function ViewSelectorTabs({
                   minWidth: '190px',
                   maxHeight: '220px',
                   overflowY: 'auto',
-                  background: isDark ? '#111111' : '#ffffff',
-                  border: `1px solid ${isDark ? '#262626' : '#e2e8f0'}`,
+                  background: 'var(--app-surface)',
+                  border: '1px solid var(--app-border)',
                   borderRadius: '10px',
-                  boxShadow: isDark
-                    ? '0 12px 26px -8px rgba(0, 0, 0, 0.65)'
-                    : '0 10px 24px -12px rgba(15, 23, 42, 0.35)',
+                  boxShadow: '0 12px 26px -8px var(--app-shadow)',
                   padding: '8px',
                   zIndex: 24,
                 }}
               >
                 {overflowViews.map((view) => (
-                  <button
+                  <Button
                     key={view.id}
+                    type="button"
+                    variant="menu-item"
+                    className={`app-btn--view-menu-item${activeViewId === view.id ? ' is-active' : ''}`}
                     onClick={() => {
                       void setActiveView(view.id);
                       setIsOverflowOpen(false);
                     }}
-                    style={{
-                      width: '100%',
-                      textAlign: 'left',
-                      border: 'none',
-                      borderRadius: '7px',
-                      maxWidth: '220px',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                      background: activeViewId === view.id
-                        ? (isDark ? '#262626' : '#f1f5f9')
-                        : 'transparent',
-                      color: activeViewId === view.id
-                        ? (isDark ? '#ffffff' : '#0f172a')
-                        : (isDark ? '#d4d4d8' : '#334155'),
-                      fontSize: '12px',
-                      fontWeight: 600,
-                      cursor: 'pointer',
-                      padding: '7px 8px',
-                    }}
+                    role="menuitem"
                     title={view.name}
                     aria-label={`Open view ${view.name}`}
                   >
                     {view.name}
-                  </button>
+                  </Button>
                 ))}
               </div>
             )}
