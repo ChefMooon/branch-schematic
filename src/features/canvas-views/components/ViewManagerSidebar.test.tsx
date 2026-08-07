@@ -60,4 +60,24 @@ describe('ViewManagerSidebar', () => {
     expect(onToggleFavorite).toHaveBeenCalledWith('view-1', true);
     expect(onSelect).not.toHaveBeenCalled();
   });
+
+  it('shows the selected view name in the sidebar context', () => {
+    render(
+      <ViewManagerSidebar
+        views={[view]}
+        selectedViewId="view-1"
+        onSelect={vi.fn()}
+        onCreate={vi.fn()}
+        onDuplicate={vi.fn()}
+        onRename={vi.fn()}
+        onDelete={vi.fn()}
+        onToggleFavorite={vi.fn(async () => undefined)}
+        onMoveUp={vi.fn(async () => undefined)}
+        onMoveDown={vi.fn(async () => undefined)}
+      />,
+    );
+
+    expect(screen.getByText('Selected: Primary')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Open view Primary' })).toHaveAttribute('aria-current', 'true');
+  });
 });

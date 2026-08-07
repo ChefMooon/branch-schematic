@@ -5,6 +5,8 @@ import { RepositoryScopeSelector } from '../RepositoryScopeSelector';
 import {
   getRepositoryBranchSelection,
   normalizeSelectedBranches,
+  normalizeWorkspaceScopeRecords,
+  type RawWorkspaceScopeRecord,
   type WorkspaceScopeRecord,
 } from '../scopeSelection';
 import '../canvasViews.css';
@@ -15,6 +17,7 @@ type TabScopeSettingsProps = {
 
 export function TabScopeSettings({ viewId }: TabScopeSettingsProps) {
   const setRepositoryScope = useCanvasStore((state) => state.setRepositoryScope);
+  const setCanvasViewScope = useCanvasStore((state) => state.setCanvasViewScope);
 
   const [repositories, setRepositories] = useState<WorkspaceScopeRecord[]>([]);
   const [expandedRepositories, setExpandedRepositories] = useState<Record<string, boolean>>({});
@@ -43,7 +46,7 @@ export function TabScopeSettings({ viewId }: TabScopeSettingsProps) {
 
   const hydrateScope = async (requestId = scopeRequestRef.current) => {
     const [workspaceRows, scopeState] = await Promise.all([
-      invoke<WorkspaceScopeRecord[]>('get_tracked_workspaces'),
+      invoke<RawWorkspaceScopeRecord[]>('get_tracked_workspaces').then(normalizeWorkspaceScopeRecords),
       invoke<CanvasViewScopeState>('get_canvas_view_scope', { viewId }),
     ]);
 
@@ -139,6 +142,42 @@ export function TabScopeSettings({ viewId }: TabScopeSettingsProps) {
     void updateRepositoryScope(repository, visible, nextBranches);
   };
 
+  const updateAllRepositories = async (visible: boolean) => {
+    const nextPathVisibility = Object.fromEntries(
+      repositories.map((repository) => [repository.id, visible]),
+    );
+    const nextBranchVisibility = Object.fromEntries(
+      repositories.flatMap((repository) => (
+        repository.available_branches ?? []
+      ).map((branchName) => [`${repository.id}::${branchName}`, visible])),
+    );
+    const busyState = Object.fromEntries(repositories.map((repository) => [repository.id, true]));
+    const nextSelectedBranches = Object.fromEntries(
+      repositories.map((repository) => [
+        repository.id,
+        visible ? [...(repository.available_branches ?? [])] : [],
+      ]),
+    );
+
+    setRepositoryVisibility(Object.fromEntries(repositories.map((repository) => [repository.id, visible])));
+    setSelectedBranches(nextSelectedBranches);
+    setBusyRepositories(busyState);
+    try {
+      const scopeState = await setCanvasViewScope(
+        viewId,
+        nextPathVisibility,
+        nextBranchVisibility,
+      );
+      if (scopeState) {
+        applyScopeState(repositories, scopeState);
+      } else {
+        await hydrateScope();
+      }
+    } finally {
+      setBusyRepositories({});
+    }
+  };
+
   return (
     <RepositoryScopeSelector
       repositories={repositories}
@@ -154,6 +193,9 @@ export function TabScopeSettings({ viewId }: TabScopeSettingsProps) {
           [repositoryId]: !current[repositoryId],
         }));
       }}
+      onSelectAll={() => { void updateAllRepositories(true); }}
+      onClearAll={() => { void updateAllRepositories(false); }}
+      bulkActionsDisabled={Object.values(busyRepositories).some(Boolean)}
       scrollableList
       emptyMessage="No tracked repositories are available yet."
     />

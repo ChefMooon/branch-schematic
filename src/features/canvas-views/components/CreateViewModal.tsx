@@ -2,7 +2,12 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { X } from '@phosphor-icons/react';
 import { invoke } from '@tauri-apps/api/core';
 import { RepositoryScopeSelector } from './RepositoryScopeSelector';
-import { getRepositoryBranchSelection, type WorkspaceScopeRecord } from './scopeSelection';
+import {
+  getRepositoryBranchSelection,
+  normalizeWorkspaceScopeRecords,
+  type RawWorkspaceScopeRecord,
+  type WorkspaceScopeRecord,
+} from './scopeSelection';
 import { Button } from '../../../components/button/Button';
 import { useBackdropDismiss } from '../../../hooks/useBackdropDismiss';
 import './canvasViews.css';
@@ -65,23 +70,16 @@ export function CreateViewModal({
 
     const hydrateScope = async () => {
       try {
-        const rows = await invoke<WorkspaceScopeRecord[]>('get_tracked_workspaces');
+        const rows = await invoke<RawWorkspaceScopeRecord[]>('get_tracked_workspaces');
         if (isCancelled) return;
 
-        const orderedRows = [...rows].sort((left, right) => {
+        const orderedRows = normalizeWorkspaceScopeRecords(rows).sort((left, right) => {
           const leftLabel = left.alias_name || left.display_name;
           const rightLabel = right.alias_name || right.display_name;
           return leftLabel.localeCompare(rightLabel);
         });
 
-        const nextPathIds = orderedRows.map((repo) => repo.id);
-        const nextBranchSelection = Object.fromEntries(
-          orderedRows.map((repo) => [repo.id, [...(repo.available_branches ?? [])]]),
-        );
-
         setRepositories(orderedRows);
-        setSelectedPathIds(nextPathIds);
-        setSelectedBranchNames(nextBranchSelection);
         setExpandedRepos(Object.fromEntries(orderedRows.map((repo) => [repo.id, false])));
       } catch (error) {
         console.error('Failed to load tracked workspaces for create view modal:', error);
@@ -204,7 +202,6 @@ export function CreateViewModal({
       >
         <header className="canvas-create-view-modal__header">
           <div>
-            <p className="canvas-view-manager__eyebrow">Canvas environments</p>
             <h2 className="canvas-create-view-modal__title" id="create-view-modal-title">Create view</h2>
             <p className="canvas-create-view-modal__description">
               Add a saved canvas environment with its own starting viewport and repository scope.

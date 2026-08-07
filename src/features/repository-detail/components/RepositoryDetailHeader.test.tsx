@@ -38,5 +38,8 @@ describe('RepositoryDetailHeader', () => {
     expect(screen.getByText('Repository details')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /select preview branch/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /close repository details/i })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Commits' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('tab', { name: 'Commits' })).toHaveAttribute('aria-controls', 'repository-view-panel-commits');
+    expect(screen.getByRole('tab', { name: 'Changes' })).toHaveAttribute('aria-selected', 'false');
   });
 });

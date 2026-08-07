@@ -21,6 +21,7 @@ type RepositoryScopeSelectorProps = {
   onToggleExpansion: (repositoryId: string) => void;
   onSelectAll?: () => void;
   onClearAll?: () => void;
+  bulkActionsDisabled?: boolean;
   emptyMessage?: string;
   scrollableList?: boolean;
 };
@@ -71,10 +72,13 @@ export function RepositoryScopeSelector({
   onToggleExpansion,
   onSelectAll,
   onClearAll,
+  bulkActionsDisabled = false,
   emptyMessage = 'No tracked repositories available.',
   scrollableList = false,
 }: RepositoryScopeSelectorProps) {
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedGroup, setSelectedGroup] = useState('');
+  const [selectedTag, setSelectedTag] = useState('');
   const orderedRepositories = useMemo(
     () => [...repositories].sort((left, right) => {
       const leftLabel = left.alias_name || left.display_name;
@@ -84,15 +88,30 @@ export function RepositoryScopeSelector({
     [repositories],
   );
   const normalizedSearchQuery = searchQuery.trim().toLocaleLowerCase();
+  const groupOptions = useMemo(
+    () => [...new Set(orderedRepositories.map((repository) => repository.custom_group).filter(Boolean))]
+      .sort((left, right) => left!.localeCompare(right!, undefined, { sensitivity: 'base' })) as string[],
+    [orderedRepositories],
+  );
+  const tagOptions = useMemo(
+    () => orderedRepositories
+      .flatMap((repository) => repository.tags ?? [])
+      .filter((tag, index, tags) => tags.findIndex((candidate) => candidate.id === tag.id) === index)
+      .sort((left, right) => left.tag_name.localeCompare(right.tag_name, undefined, { sensitivity: 'base' })),
+    [orderedRepositories],
+  );
   const filteredRepositories = useMemo(
-    () => normalizedSearchQuery.length === 0
-      ? orderedRepositories
-      : orderedRepositories.filter((repository) => {
-        const alias = repository.alias_name?.toLocaleLowerCase() ?? '';
-        const displayName = repository.display_name.toLocaleLowerCase();
-        return alias.includes(normalizedSearchQuery) || displayName.includes(normalizedSearchQuery);
-      }),
-    [normalizedSearchQuery, orderedRepositories],
+    () => orderedRepositories.filter((repository) => {
+      const alias = repository.alias_name?.toLocaleLowerCase() ?? '';
+      const displayName = repository.display_name.toLocaleLowerCase();
+      const matchesSearch = normalizedSearchQuery.length === 0
+        || alias.includes(normalizedSearchQuery)
+        || displayName.includes(normalizedSearchQuery);
+      const matchesGroup = selectedGroup.length === 0 || repository.custom_group === selectedGroup;
+      const matchesTag = selectedTag.length === 0 || (repository.tags ?? []).some((tag) => tag.id === selectedTag);
+      return matchesSearch && matchesGroup && matchesTag;
+    }),
+    [normalizedSearchQuery, orderedRepositories, selectedGroup, selectedTag],
   );
   const hasSearchResults = filteredRepositories.length > 0;
   const hasRepositories = orderedRepositories.length > 0;
@@ -112,13 +131,13 @@ export function RepositoryScopeSelector({
         {(onSelectAll || onClearAll) && (
           <div className="canvas-scope-selector__toolbar">
             {onSelectAll && (
-              <Button type="button" variant="basic" onClick={onSelectAll}>
-                Select all
+              <Button type="button" variant="basic" onClick={onSelectAll} disabled={bulkActionsDisabled}>
+                Select all repositories
               </Button>
             )}
             {onClearAll && (
-              <Button type="button" variant="basic" onClick={onClearAll}>
-                Clear all
+              <Button type="button" variant="basic" onClick={onClearAll} disabled={bulkActionsDisabled}>
+                Clear all repositories
               </Button>
             )}
           </div>
@@ -134,13 +153,44 @@ export function RepositoryScopeSelector({
         size="compact"
       />
 
+      {(groupOptions.length > 0 || tagOptions.length > 0) && (
+        <div className="canvas-scope-selector__filters">
+          {groupOptions.length > 0 && (
+            <label className="canvas-scope-selector__filter">
+              <span>Group</span>
+              <select
+                value={selectedGroup}
+                onChange={(event) => setSelectedGroup(event.target.value)}
+                aria-label="Filter repositories by group"
+              >
+                <option value="">All groups</option>
+                {groupOptions.map((group) => <option key={group} value={group}>{group}</option>)}
+              </select>
+            </label>
+          )}
+          {tagOptions.length > 0 && (
+            <label className="canvas-scope-selector__filter">
+              <span>Tag</span>
+              <select
+                value={selectedTag}
+                onChange={(event) => setSelectedTag(event.target.value)}
+                aria-label="Filter repositories by tag"
+              >
+                <option value="">All tags</option>
+                {tagOptions.map((tag) => <option key={tag.id} value={tag.id}>{tag.tag_name}</option>)}
+              </select>
+            </label>
+          )}
+        </div>
+      )}
+
       <div className="canvas-scope-selector__list">
         {!hasRepositories && (
           <div className="canvas-scope-selector__empty">{emptyMessage}</div>
         )}
 
         {hasRepositories && !hasSearchResults && (
-          <div className="canvas-scope-selector__empty">No repositories match the current search.</div>
+          <div className="canvas-scope-selector__empty">No repositories match the current search or filters.</div>
         )}
 
         {filteredRepositories.map((repository) => {

@@ -161,8 +161,7 @@ export function ViewManagerModal({ isDark, isOpen, onClose }: ViewManagerModalPr
         >
           <header className="canvas-view-manager__header">
             <div>
-              <p className="canvas-view-manager__eyebrow">Canvas environments</p>
-              <h1 className="canvas-view-manager__title" id="canvas-view-manager-title">View manager</h1>
+              <h1 className="canvas-view-manager__title" id="canvas-view-manager-title">View Manager</h1>
               <p className="canvas-view-manager__description">
                 Organize saved canvases, baseline viewports, and the repositories or branches each environment shows.
               </p>

@@ -824,6 +824,63 @@ pub async fn set_canvas_view_branch_visibility(
     Ok(())
 }
 
+pub async fn set_canvas_view_scope(
+    pool: &SqlitePool,
+    view_id: &str,
+    path_visibility: &HashMap<String, bool>,
+    branch_visibility: &HashMap<String, bool>,
+) -> Result<(), sqlx::Error> {
+    ensure_canvas_view_exists(pool, view_id, "Workspace View").await?;
+    let mut tx = pool.begin().await?;
+
+    for (repo_path_id, visible) in path_visibility {
+        sqlx::query(
+            "INSERT INTO canvas_view_visible_paths (view_id, repo_path_id, is_visible)
+             VALUES (?, ?, ?)
+             ON CONFLICT(view_id, repo_path_id) DO UPDATE SET is_visible = excluded.is_visible;",
+        )
+        .bind(view_id)
+        .bind(repo_path_id)
+        .bind(if *visible { 1_i64 } else { 0_i64 })
+        .execute(&mut *tx)
+        .await?;
+    }
+
+    for (branch_key, visible) in branch_visibility {
+        let (repo_path_id, branch_name) = branch_key
+            .split_once("::")
+            .ok_or(sqlx::Error::RowNotFound)?;
+        let branch_id = sqlx::query_scalar::<_, String>(
+            "SELECT id
+             FROM cached_git_branches
+             WHERE path_id = ? AND branch_name = ?
+             LIMIT 1;",
+        )
+        .bind(repo_path_id)
+        .bind(branch_name)
+        .fetch_optional(&mut *tx)
+        .await?;
+
+        let Some(branch_id) = branch_id else {
+            continue;
+        };
+
+        sqlx::query(
+            "INSERT INTO canvas_view_visible_branches (view_id, branch_id, is_visible)
+             VALUES (?, ?, ?)
+             ON CONFLICT(view_id, branch_id) DO UPDATE SET is_visible = excluded.is_visible;",
+        )
+        .bind(view_id)
+        .bind(branch_id)
+        .bind(if *visible { 1_i64 } else { 0_i64 })
+        .execute(&mut *tx)
+        .await?;
+    }
+
+    tx.commit().await?;
+    Ok(())
+}
+
 pub async fn fetch_canvas_view_scope(
     pool: &SqlitePool,
     view_id: &str,

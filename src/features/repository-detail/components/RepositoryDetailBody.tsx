@@ -32,15 +32,19 @@ export function RepositoryDetailBody({
   return (
     <div className="repository-view-body-content">
       {activeTab === 'commits' ? (
-        <RepositoryDetailCommitsTab
-          commits={commits}
-          selectedCommit={selectedCommit}
-          isLoadingCommits={isLoadingCommits}
-          branchLabel={branchLabel}
-          onSelectCommit={onSelectCommit}
-        />
+        <div className="repository-view-tab-panel" id="repository-view-panel-commits" role="tabpanel" aria-labelledby="repository-view-tab-commits" tabIndex={0}>
+          <RepositoryDetailCommitsTab
+            commits={commits}
+            selectedCommit={selectedCommit}
+            isLoadingCommits={isLoadingCommits}
+            branchLabel={branchLabel}
+            onSelectCommit={onSelectCommit}
+          />
+        </div>
       ) : (
-        <RepositoryDetailChangesTab repo={repo} />
+        <div className="repository-view-tab-panel" id="repository-view-panel-changes" role="tabpanel" aria-labelledby="repository-view-tab-changes" tabIndex={0}>
+          <RepositoryDetailChangesTab repo={repo} />
+        </div>
       )}
     </div>
   );

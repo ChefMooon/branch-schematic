@@ -28,7 +28,6 @@ export function ViewManagerSidebar({
   onMoveUp,
   onMoveDown,
 }: ViewManagerSidebarProps) {
-  const selectedView = views.find((view) => view.id === selectedViewId) ?? null;
   const canDelete = views.length > 1;
 
   return (
@@ -37,6 +36,9 @@ export function ViewManagerSidebar({
         <Button type="button" variant="submit" className="canvas-view-manager__create-button" onClick={onCreate}>
           Create view
         </Button>
+        <p className="canvas-view-manager__selected-label">
+          Selected: {views.find((view) => view.id === selectedViewId)?.name ?? 'None'}
+        </p>
       </div>
 
       <div className="canvas-view-manager__view-list">
@@ -69,7 +71,7 @@ export function ViewManagerSidebar({
             >
               <div className="canvas-view-manager__view-card-header">
                 <div className="canvas-view-manager__view-summary">
-                  <span className="canvas-view-manager__view-name">{view.name}</span>
+                  <span className="canvas-view-manager__view-name" title={view.name}>{view.name}</span>
                   <span className="canvas-view-manager__view-meta">Baseline zoom {zoom}</span>
                 </div>
                 <Button
@@ -154,11 +156,6 @@ export function ViewManagerSidebar({
         })}
       </div>
 
-      {selectedView && (
-        <div className="canvas-view-manager__sidebar-footer">
-          <span className="canvas-view-manager__active-label">Selected: {selectedView.name}</span>
-        </div>
-      )}
     </aside>
   );
 }

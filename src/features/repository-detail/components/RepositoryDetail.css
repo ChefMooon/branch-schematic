@@ -962,45 +962,15 @@
   min-height: 0;
 }
 
-.repository-view-tabs {
+.repository-view-tab-panel {
   display: flex;
-  width: 100%;
-  margin: 0;
-  border: 0;
-  border-top: 1px solid var(--app-border);
-  background: var(--app-surface);
-  overflow: hidden;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
 }
 
-.repository-view-tab {
-  flex: 1 1 0;
-  border: 0;
-  padding: 12px 14px;
-  background: transparent;
-  color: var(--app-muted);
-  font-size: 12px;
-  font-weight: 700;
-  cursor: pointer;
-  text-align: center;
-  border-radius: 0;
-  box-shadow: none;
-  position: relative;
-  transition: color 0.16s ease, transform 0.16s ease;
-}
-
-.repository-view-tab:hover {
-  background: transparent;
-  color: var(--app-accent);
-  transform: translateY(-1px);
-}
-
-.repository-view-tab:active {
-  transform: translateY(0);
-}
-
-.repository-view-tab.is-active {
-  background: color-mix(in srgb, var(--app-accent) 10%, var(--app-surface));
-  color: var(--app-accent);
+.repository-view-tabs {
+  border-top: 0;
 }
 
 .repository-view-summary-pill-row {

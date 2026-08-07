@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { CaretDown, CaretUp, GitBranch, Info, XIcon } from '@phosphor-icons/react';
 import { Button } from '../../../components/button/Button';
+import { Tabs } from '../../../components/tabs/Tabs';
 import { useClickOutside } from '../../../hooks/useClickOutside';
 import type { TrackedPath } from '../../../types/git';
 
@@ -150,26 +151,17 @@ export function RepositoryDetailHeader({ repo, activeBranch, previewBranch, onSe
         </div>
       </div>
 
-      <div className="repository-view-tabs" role="tablist" aria-label="Repository detail tabs">
-        <button
-          type="button"
-          role="tab"
-          aria-selected={activeTab === 'commits'}
-          className={`repository-view-tab ${activeTab === 'commits' ? 'is-active' : ''}`}
-          onClick={() => onTabChange('commits')}
-        >
-          Commits
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={activeTab === 'changes'}
-          className={`repository-view-tab ${activeTab === 'changes' ? 'is-active' : ''}`}
-          onClick={() => onTabChange('changes')}
-        >
-          Changes
-        </button>
-      </div>
+      <Tabs
+        value={activeTab}
+        onChange={onTabChange}
+        ariaLabel="Repository detail tabs"
+        idPrefix="repository-view"
+        className="repository-view-tabs"
+        items={[
+          { value: 'commits', label: 'Commits' },
+          { value: 'changes', label: 'Changes' },
+        ]}
+      />
     </div>
   );
 }

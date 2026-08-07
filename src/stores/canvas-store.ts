@@ -232,6 +232,7 @@ interface CanvasState {
   moveViewOrder: (viewId: string, direction: -1 | 1) => Promise<void>;
   togglePathVisibility: (viewId: string, repoPathId: string, visible: boolean) => Promise<CanvasViewScopeState | null>;
   toggleBranchVisibility: (viewId: string, branchId: string, visible: boolean) => Promise<CanvasViewScopeState | null>;
+  setCanvasViewScope: (viewId: string, pathVisibility: Record<string, boolean>, branchVisibility: Record<string, boolean>) => Promise<CanvasViewScopeState | null>;
   setRepositoryScope: (viewId: string, repoPathId: string, visible: boolean, branchVisibility: Record<string, boolean>) => Promise<CanvasViewScopeState | null>;
   snapshotBaselineViewport: (viewId: string, zoom: number, x: number, y: number) => Promise<void>;
   saveCardState: (viewId: string, cardStateJson: string) => Promise<void>;
@@ -516,26 +517,28 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
         panY: viewportDefaults?.panY ?? 0,
       });
 
-      if (scope?.visiblePathIds) {
+      const initialScope = scope ?? {
+        visiblePathIds: [],
+        branchVisibility: {},
+      };
+
+      if (initialScope.visiblePathIds) {
         const scopeState = await invoke<CanvasViewScopeState>('get_canvas_view_scope', { viewId });
         const allPathIds = new Set([...scopeState.visible_path_ids, ...scopeState.hidden_path_ids]);
-        const selectedPathIds = new Set(scope.visiblePathIds);
+        const selectedPathIds = new Set(initialScope.visiblePathIds);
 
-        for (const pathId of allPathIds) {
-          await get().togglePathVisibility(viewId, pathId, selectedPathIds.has(pathId));
-        }
-      }
+        const pathVisibility = Object.fromEntries(
+          [...allPathIds].map((pathId) => [pathId, selectedPathIds.has(pathId)]),
+        );
+        const branchVisibility = Object.fromEntries(
+          Object.keys(scopeState.branch_visibility).map((branchKey) => {
+            const [repoId, branchName] = branchKey.split('::');
+            const selectedBranchNames = initialScope.branchVisibility?.[repoId] ?? [];
+            return [branchKey, Boolean(repoId && branchName && selectedBranchNames.includes(branchName))];
+          }),
+        );
 
-      if (scope?.branchVisibility) {
-        const scopeState = await invoke<CanvasViewScopeState>('get_canvas_view_scope', { viewId });
-        for (const [branchKey, isVisible] of Object.entries(scopeState.branch_visibility)) {
-          const [repoId, branchName] = branchKey.split('::');
-          const selectedBranchNames = scope.branchVisibility?.[repoId] ?? [];
-          const shouldBeVisible = Boolean(repoId && branchName && selectedBranchNames.includes(branchName));
-          if (isVisible !== shouldBeVisible) {
-            await get().toggleBranchVisibility(viewId, branchKey, shouldBeVisible);
-          }
-        }
+        await get().setCanvasViewScope(viewId, pathVisibility, branchVisibility);
       }
 
       if (isFavorite) {
@@ -645,30 +648,21 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
     }
   },
 
-  setRepositoryScope: async (viewId, repoPathId, visible, branchVisibility) => {
+  setCanvasViewScope: async (viewId, pathVisibility, branchVisibility) => {
     const operation = scopeVisibilityUpdate.then(async () => {
       try {
-        await invoke('set_canvas_view_path_visibility', {
+        await invoke('set_canvas_view_scope', {
           viewId,
-          repoPathId,
-          visible,
+          pathVisibility,
+          branchVisibility,
         });
-
-        for (const [branchId, branchVisible] of Object.entries(branchVisibility)) {
-          await invoke('set_canvas_view_branch_visibility', {
-            viewId,
-            branchId,
-            visible: branchVisible,
-          });
-        }
-
         const scope = await invoke<CanvasViewScopeState>('get_canvas_view_scope', { viewId });
         if (get().activeViewId === viewId) {
           await get().hydrateWorkspaceNodes();
         }
         return scope;
       } catch (error) {
-        console.error('Failed updating repository scope state:', error);
+        console.error('Failed updating canvas view scope state:', error);
         if (get().activeViewId === viewId) {
           try {
             await get().hydrateWorkspaceNodes();
@@ -682,6 +676,14 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
 
     scopeVisibilityUpdate = operation.then(() => undefined, () => undefined);
     return operation;
+  },
+
+  setRepositoryScope: async (viewId, repoPathId, visible, branchVisibility) => {
+    return get().setCanvasViewScope(
+      viewId,
+      { [repoPathId]: visible },
+      branchVisibility,
+    );
   },
 
   snapshotBaselineViewport: async (viewId, zoom, x, y) => {

@@ -717,6 +717,23 @@ async fn set_canvas_view_branch_visibility(
 }
 
 #[tauri::command]
+async fn set_canvas_view_scope(
+    state: tauri::State<'_, DbState>,
+    view_id: String,
+    path_visibility: std::collections::HashMap<String, bool>,
+    branch_visibility: std::collections::HashMap<String, bool>,
+) -> Result<(), String> {
+    db::set_canvas_view_scope(
+        state.inner().pool(),
+        &view_id,
+        &path_visibility,
+        &branch_visibility,
+    )
+    .await
+    .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 async fn get_canvas_view_scope(
     state: tauri::State<'_, DbState>,
     view_id: String,
@@ -1146,6 +1163,7 @@ pub fn run() {
             save_canvas_view_card_state,
             set_canvas_view_path_visibility,
             set_canvas_view_branch_visibility,
+            set_canvas_view_scope,
             get_canvas_view_scope,
             get_workspace_nodes,
             update_card_position,
