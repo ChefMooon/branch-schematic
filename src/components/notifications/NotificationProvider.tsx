@@ -1,7 +1,13 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef, useState, type ReactNode } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { useNotificationListener, type NotificationPayload } from '../../hooks/useNotificationListener';
 import { Toast } from './toast';
+import {
+  DEFAULT_TOAST_DURATION,
+  TOAST_EXIT_DURATION,
+  initialToastLifecycleState,
+  toastLifecycleReducer,
+} from './toastLifecycle';
 
 export type NotificationVariant = 'info' | 'success' | 'warning' | 'error';
 
@@ -22,6 +28,19 @@ export interface NotificationEntry {
   createdAt: string;
   route?: string;
   routeParams?: Record<string, string>;
+}
+
+interface PersistedNotificationEntry {
+  id: string;
+  title: string;
+  message: string;
+  variant: NotificationVariant;
+  isRead: number;
+  isPinned: number;
+  isArchived: number;
+  createdAt: string;
+  route?: string;
+  routeParamsJson?: string;
 }
 
 interface NotificationContextValue {
@@ -66,16 +85,69 @@ function NotificationBridge() {
 }
 
 export function NotificationProvider({ children }: { children: ReactNode }) {
-  const [toasts, setToasts] = useState<NotificationToast[]>([]);
+  const [toastLifecycle, dispatchToast] = useReducer(toastLifecycleReducer, initialToastLifecycleState);
   const [inbox, setInbox] = useState<NotificationEntry[]>([]);
+  const nextToastId = useRef(0);
+  const toastTimers = useRef(new Map<number, number>());
+  const exitTimers = useRef(new Map<number, number>());
   const themeMode = useAppThemeMode();
   const isDark = themeMode === 'dark';
+
+  const toasts = useMemo<NotificationToast[]>(() => toastLifecycle.visible.map(({ lifecycle: _lifecycle, remainingMs: _remainingMs, startedAt: _startedAt, isPaused: _isPaused, ...toast }) => toast), [toastLifecycle.visible]);
+
+  useEffect(() => {
+    for (const [id, timer] of toastTimers.current) {
+      const toast = toastLifecycle.visible.find((item) => item.id === id);
+      if (!toast || toast.lifecycle !== 'visible' || toast.isPaused) {
+        window.clearTimeout(timer);
+        toastTimers.current.delete(id);
+      }
+    }
+
+    for (const toast of toastLifecycle.visible) {
+      if (toast.lifecycle !== 'visible' || toast.isPaused || toastTimers.current.has(toast.id)) continue;
+      const timer = window.setTimeout(() => {
+        toastTimers.current.delete(toast.id);
+        dispatchToast({ type: 'begin-exit', id: toast.id });
+      }, toast.remainingMs);
+      toastTimers.current.set(toast.id, timer);
+    }
+
+    for (const [id, timer] of exitTimers.current) {
+      if (!toastLifecycle.visible.some((toast) => toast.id === id && toast.lifecycle === 'exiting')) {
+        window.clearTimeout(timer);
+        exitTimers.current.delete(id);
+      }
+    }
+
+    for (const toast of toastLifecycle.visible) {
+      if (toast.lifecycle !== 'exiting' || exitTimers.current.has(toast.id)) continue;
+      const timer = window.setTimeout(() => {
+        exitTimers.current.delete(toast.id);
+        dispatchToast({ type: 'finish-exit', id: toast.id, now: Date.now() });
+      }, TOAST_EXIT_DURATION + 40);
+      exitTimers.current.set(toast.id, timer);
+    }
+  }, [toastLifecycle]);
+
+  useEffect(() => () => {
+    for (const timer of toastTimers.current.values()) window.clearTimeout(timer);
+    for (const timer of exitTimers.current.values()) window.clearTimeout(timer);
+    toastTimers.current.clear();
+    exitTimers.current.clear();
+  }, []);
 
   useEffect(() => {
     const loadNotifications = async () => {
       try {
-        const persisted = await invoke<NotificationEntry[]>('get_notifications');
-        setInbox(persisted.filter((item) => !item.isArchived));
+        const persisted = await invoke<PersistedNotificationEntry[]>('get_notifications');
+        setInbox(persisted.filter((item) => !item.isArchived).map((item) => ({
+          ...item,
+          isRead: Boolean(item.isRead),
+          isPinned: Boolean(item.isPinned),
+          isArchived: Boolean(item.isArchived),
+          routeParams: item.routeParamsJson ? JSON.parse(item.routeParamsJson) as Record<string, string> : undefined,
+        })));
       } catch {
         setInbox([]);
       }
@@ -85,21 +157,24 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const addToast = useCallback((payload: NotificationPayload) => {
-    const id = Date.now() + Math.floor(Math.random() * 1000);
+    nextToastId.current += 1;
+    const id = nextToastId.current;
     const nextToast: NotificationToast = {
       id,
       title: payload.title ?? 'Update',
       message: payload.message ?? 'A background task completed.',
       variant: payload.variant ?? 'info',
-      duration: payload.duration ?? 6000,
+      duration: Number.isFinite(payload.duration) && (payload.duration ?? 0) > 0
+        ? payload.duration as number
+        : DEFAULT_TOAST_DURATION,
     };
 
-    setToasts((current) => [...current, nextToast]);
+    dispatchToast({ type: 'enqueue', toast: nextToast, now: Date.now() });
 
     if (payload.target === 'inbox' || payload.target === 'both') {
       const createdAt = new Date().toISOString();
       const entry: NotificationEntry = {
-        id: `notif-${id}`,
+        id: `notif-${crypto.randomUUID()}`,
         title: payload.title ?? 'Update',
         message: payload.message ?? 'A background task completed.',
         variant: payload.variant ?? 'info',
@@ -111,16 +186,46 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
         routeParams: payload.routeParams,
       };
       setInbox((current) => [entry, ...current.filter((item) => item.id !== entry.id)]);
-      void invoke('save_notification', { notification: entry });
+      const persistedEntry: PersistedNotificationEntry = {
+        id: entry.id,
+        title: entry.title,
+        message: entry.message,
+        variant: entry.variant,
+        isRead: entry.isRead ? 1 : 0,
+        isPinned: entry.isPinned ? 1 : 0,
+        isArchived: entry.isArchived ? 1 : 0,
+        createdAt: entry.createdAt,
+        route: entry.route,
+        routeParamsJson: entry.routeParams ? JSON.stringify(entry.routeParams) : undefined,
+      };
+      void invoke('save_notification', { notification: persistedEntry });
     }
-
-    window.setTimeout(() => {
-      setToasts((current) => current.filter((toast) => toast.id !== id));
-    }, nextToast.duration);
   }, []);
 
   const dismissToast = useCallback((id: number) => {
-    setToasts((current) => current.filter((toast) => toast.id !== id));
+    const timer = toastTimers.current.get(id);
+    if (timer !== undefined) {
+      window.clearTimeout(timer);
+      toastTimers.current.delete(id);
+    }
+    dispatchToast({ type: 'begin-exit', id });
+  }, []);
+
+  const pauseToast = useCallback((id: number) => {
+    dispatchToast({ type: 'pause', id, now: Date.now() });
+  }, []);
+
+  const resumeToast = useCallback((id: number) => {
+    dispatchToast({ type: 'resume', id, now: Date.now() });
+  }, []);
+
+  const finishToastExit = useCallback((id: number) => {
+    const timer = exitTimers.current.get(id);
+    if (timer !== undefined) {
+      window.clearTimeout(timer);
+      exitTimers.current.delete(id);
+    }
+    dispatchToast({ type: 'finish-exit', id, now: Date.now() });
   }, []);
 
   const markNotificationAsRead = useCallback(async (id: string) => {
@@ -169,7 +274,7 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
       {children}
       <div
         aria-live="polite"
-        aria-atomic="true"
+        aria-atomic="false"
         style={{
           position: 'fixed',
           top: 16,
@@ -178,6 +283,8 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
           flexDirection: 'column',
           gap: 12,
           width: 'min(360px, calc(100vw - 32px))',
+          maxHeight: 'calc(100vh - 32px)',
+          overflowY: 'auto',
           zIndex: 99999,
           pointerEvents: 'none',
         }}
@@ -188,6 +295,10 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
             toast={toast}
             isDark={isDark}
             onDismiss={dismissToast}
+            isExiting={toastLifecycle.visible.find((item) => item.id === toast.id)?.lifecycle === 'exiting'}
+            onPause={pauseToast}
+            onResume={resumeToast}
+            onExitComplete={finishToastExit}
           />
         ))}
       </div>

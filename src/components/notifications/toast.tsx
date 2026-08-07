@@ -5,6 +5,10 @@ interface ToastProps {
   toast: NotificationToast;
   isDark: boolean;
   onDismiss: (id: number) => void;
+  isExiting?: boolean;
+  onPause: (id: number) => void;
+  onResume: (id: number) => void;
+  onExitComplete: (id: number) => void;
 }
 
 const variantStyles = (variant: NotificationVariant, isDark: boolean): CSSProperties => {
@@ -39,9 +43,20 @@ const variantStyles = (variant: NotificationVariant, isDark: boolean): CSSProper
   };
 };
 
-export function Toast({ toast, isDark, onDismiss }: ToastProps) {
+export function Toast({ toast, isDark, onDismiss, isExiting = false, onPause, onResume, onExitComplete }: ToastProps) {
   return (
     <div
+      role={toast.variant === 'error' ? 'alert' : 'status'}
+      tabIndex={0}
+      onMouseEnter={() => onPause(toast.id)}
+      onMouseLeave={() => onResume(toast.id)}
+      onFocus={() => onPause(toast.id)}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) onResume(toast.id);
+      }}
+      onAnimationEnd={(event) => {
+        if (isExiting && event.animationName === 'toast-out') onExitComplete(toast.id);
+      }}
       style={{
         pointerEvents: 'auto',
         padding: '14px 16px',
@@ -54,7 +69,7 @@ export function Toast({ toast, isDark, onDismiss }: ToastProps) {
         display: 'flex',
         flexDirection: 'column',
         gap: 6,
-        animation: 'toast-in 220ms ease-out',
+        animation: isExiting ? 'toast-out 180ms ease-in forwards' : 'toast-in 220ms ease-out',
         ...variantStyles(toast.variant, isDark),
       }}
     >

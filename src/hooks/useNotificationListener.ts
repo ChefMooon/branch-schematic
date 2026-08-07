@@ -19,16 +19,23 @@ export function useNotificationListener() {
 
   useEffect(() => {
     let unlisten: (() => void) | undefined;
+    let disposed = false;
 
     async function subscribe() {
-      unlisten = await listen<NotificationPayload>(EVENT_NAME, (event) => {
+      const cleanup = await listen<NotificationPayload>(EVENT_NAME, (event) => {
         addToast(event.payload);
       });
+      if (disposed) {
+        void cleanup();
+      } else {
+        unlisten = cleanup;
+      }
     }
 
-    void subscribe();
+    void subscribe().catch(() => undefined);
 
     return () => {
+      disposed = true;
       if (unlisten) {
         void unlisten();
       }
