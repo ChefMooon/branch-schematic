@@ -1,7 +1,7 @@
 # Codebase Context Snapshot
 
 =========================================
-📅 **Snapshot Updated:** Aug 5, 2026, 4:30 PM
+📅 **Snapshot Updated:** Aug 7, 2026, 1:07 AM
 📦 **Key Dependencies:**
   - `react`: ^19.1.0
   - `react-dom`: ^19.1.0
@@ -58,7 +58,9 @@ branch-schematic/
 │   │   ├── notifications
 │   │   │   ├── NotificationDropdown.tsx
 │   │   │   ├── NotificationProvider.tsx
-│   │   │   └── toast.tsx
+│   │   │   ├── toast.tsx
+│   │   │   ├── toastLifecycle.test.ts
+│   │   │   └── toastLifecycle.ts
 │   │   └── search-bar
 │   │       ├── SearchBar.css
 │   │       ├── SearchBar.test.tsx
@@ -93,18 +95,25 @@ branch-schematic/
 │   │   │   │   ├── TagFiltersPopover.tsx
 │   │   │   │   ├── ViewActionsDropdown.test.tsx
 │   │   │   │   ├── ViewActionsDropdown.tsx
+│   │   │   │   ├── ViewSelectorTabs.css
+│   │   │   │   ├── ViewSelectorTabs.test.tsx
 │   │   │   │   └── ViewSelectorTabs.tsx
 │   │   │   ├── viewportSync.test.ts
 │   │   │   └── viewportSync.ts
 │   │   ├── canvas-views
 │   │   │   └── components
+│   │   │       ├── canvasViews.css
 │   │   │       ├── CreateViewModal.tsx
-│   │   │       ├── RepositoryScopeRow.tsx
+│   │   │       ├── RepositoryScopeSelector.test.tsx
+│   │   │       ├── RepositoryScopeSelector.tsx
+│   │   │       ├── scopeSelection.test.ts
+│   │   │       ├── scopeSelection.ts
 │   │   │       ├── Tabs
 │   │   │       │   ├── TabMetadataSettings.tsx
 │   │   │       │   └── TabScopeSettings.tsx
 │   │   │       ├── ViewDetailsConfigurator.tsx
 │   │   │       ├── ViewManagerModal.tsx
+│   │   │       ├── ViewManagerSidebar.test.tsx
 │   │   │       └── ViewManagerSidebar.tsx
 │   │   ├── github-auth
 │   │   │   ├── api
@@ -201,6 +210,7 @@ branch-schematic/
 │   │   └── repository-update-diagnostics
 │   │       ├── components
 │   │       │   ├── RepositoryUpdateDiagnosticsModal.css
+│   │       │   ├── RepositoryUpdateDiagnosticsModal.test.tsx
 │   │       │   └── RepositoryUpdateDiagnosticsModal.tsx
 │   │       ├── hooks
 │   │       │   └── useRepositoryUpdateDiagnostics.ts
