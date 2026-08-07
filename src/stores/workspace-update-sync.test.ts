@@ -3,25 +3,19 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const listenMock = vi.hoisted(() => vi.fn());
 const invokeMock = vi.hoisted(() => vi.fn());
 const hydrateWorkspaceNodesMock = vi.hoisted(() => vi.fn());
-const branchMapActiveMock = vi.hoisted(() => ({ value: true }));
 
 vi.mock('@tauri-apps/api/event', () => ({ listen: listenMock }));
 vi.mock('@tauri-apps/api/core', () => ({ invoke: invokeMock }));
-vi.mock('./canvas-store', () => ({
-  useCanvasStore: {
-    getState: () => ({
-      isBranchMapActive: branchMapActiveMock.value,
-      hydrateWorkspaceNodes: hydrateWorkspaceNodesMock,
-    }),
-  },
-}));
 
-import { parseWorkspaceUpdatedEvent, useWorkspaceStore } from './workspace-store';
+import {
+  parseWorkspaceUpdatedEvent,
+  registerBranchMapSynchronization,
+  useWorkspaceStore,
+} from './workspace-store';
 
 describe('workspace update synchronization', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    branchMapActiveMock.value = true;
     invokeMock.mockResolvedValue([]);
   });
 
@@ -48,6 +42,7 @@ describe('workspace update synchronization', () => {
       handler = nextHandler;
       return unlisten;
     });
+    const releaseSynchronization = registerBranchMapSynchronization(hydrateWorkspaceNodesMock);
 
     const releaseFirst = await useWorkspaceStore.getState().subscribeToWorkspaceUpdates();
     const releaseSecond = await useWorkspaceStore.getState().subscribeToWorkspaceUpdates();
@@ -76,9 +71,10 @@ describe('workspace update synchronization', () => {
     expect(unlisten).not.toHaveBeenCalled();
     releaseSecond();
     expect(unlisten).toHaveBeenCalledTimes(1);
+    releaseSynchronization();
   });
 
-  it('refreshes repository data without hydrating canvas nodes outside branch map', async () => {
+  it('refreshes repository data without hydrating canvas nodes when no branch map is registered', async () => {
     let handler: ((event: { payload: unknown }) => void) | undefined;
     const unlisten = vi.fn();
     listenMock.mockImplementation(async (_eventName, nextHandler) => {
@@ -87,7 +83,6 @@ describe('workspace update synchronization', () => {
     });
 
     const release = await useWorkspaceStore.getState().subscribeToWorkspaceUpdates();
-    branchMapActiveMock.value = false;
     handler?.({
       payload: {
         version: 1,

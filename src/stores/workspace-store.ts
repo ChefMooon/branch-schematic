@@ -1,7 +1,6 @@
 import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
-import { useCanvasStore } from './canvas-store';
 import type { CustomGroup, GroupSummary, QuickFilterMetadata, RepoGitStatusSnapshot, RepoTag, TagFilterSummary, TrackedPath } from '../types/git';
 
 const WORKSPACE_UPDATED_EVENT = 'workspace-updated';
@@ -31,6 +30,22 @@ let reconciliationTimer: ReturnType<typeof setTimeout> | undefined;
 let latestRevision = 0;
 const repositoryRevisions = new Map<string, number>();
 let hydrationGeneration = 0;
+let branchMapSynchronization: (() => void | Promise<void>) | undefined;
+
+export function registerBranchMapSynchronization(
+  synchronize: () => void | Promise<void>,
+): () => void {
+  branchMapSynchronization = synchronize;
+  let released = false;
+
+  return () => {
+    if (released) return;
+    released = true;
+    if (branchMapSynchronization === synchronize) {
+      branchMapSynchronization = undefined;
+    }
+  };
+}
 
 export function parseWorkspaceUpdatedEvent(value: unknown): WorkspaceUpdatedEvent | null {
   if (!value || typeof value !== 'object') return null;
@@ -174,9 +189,8 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
           );
         }
         void useWorkspaceStore.getState().hydrateFromBackend();
-        if (useCanvasStore.getState().isBranchMapActive) {
-          void useCanvasStore.getState().hydrateWorkspaceNodes();
-        }
+        const synchronize = branchMapSynchronization;
+        if (synchronize) void synchronize();
       }).then((unlisten) => {
         if (sharedSubscriberCount === 0) {
           unlisten();

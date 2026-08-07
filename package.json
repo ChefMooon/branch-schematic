@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "test": "vitest run",
+    "analyze:bundle": "npm run build && node scripts/analyze-bundle.js",
     "bench:repo-updates": "node scripts/benchmark-repository-update.js",
     "rollout:check": "node scripts/evaluate-rollout.js",
     "docs:code": "node scripts/generate-codebase-map.js",

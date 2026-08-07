@@ -3,6 +3,11 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppLayout } from './AppLayout';
 
+const { createNewViewMock, navigateMock } = vi.hoisted(() => ({
+  createNewViewMock: vi.fn(),
+  navigateMock: vi.fn(),
+}));
+
 const mockStore = {
   hydrateFromBackend: vi.fn(),
   subscribeToWorkspaceUpdates: vi.fn(),
@@ -41,7 +46,7 @@ const mockProfileContext = {
 
 vi.mock('@tanstack/react-router', () => ({
   useLocation: () => ({ pathname: '/' }),
-  useNavigate: () => vi.fn(),
+  useNavigate: () => navigateMock,
 }));
 
 vi.mock('../../hooks/useOS', () => ({
@@ -53,8 +58,9 @@ vi.mock('../../stores/workspace-store', () => ({
 }));
 
 vi.mock('../../stores/canvas-store', () => ({
-  useCanvasStore: (selector: (state: { createNewView: () => void }) => unknown) =>
-    selector({ createNewView: vi.fn() }),
+  useCanvasStore: {
+    getState: () => ({ createNewView: createNewViewMock }),
+  },
 }));
 
 vi.mock('../notifications/NotificationProvider', () => ({
@@ -68,12 +74,41 @@ vi.mock('../../features/auth-profile/hooks/useProfileContext', () => ({
 vi.mock('../titlebar/WindowControls', () => ({ WindowControls: () => null }));
 vi.mock('./AppSidebar', () => ({ AppSidebar: () => null }));
 vi.mock('../../features/repository/components/RepositoryDropdown', () => ({
-  RepositoryDropdown: ({ isOpen }: { isOpen: boolean }) => (isOpen ? <div data-testid="repository-dropdown">Repository menu</div> : null),
+  RepositoryDropdown: ({
+    isOpen,
+    onSelect,
+  }: {
+    isOpen: boolean;
+    onSelect: (action: 'create-view') => void;
+  }) => (isOpen ? (
+    <div data-testid="repository-dropdown">
+      <button type="button" onClick={() => onSelect('create-view')}>Create view action</button>
+    </div>
+  ) : null),
 }));
 vi.mock('../../features/repository/components/AddLocalRepositoryModal', () => ({ AddLocalRepositoryModal: () => null }));
 vi.mock('../../features/repository/components/BulkImportLocalRepositryModal', () => ({ BulkImportLocalRepositoryModal: () => null }));
 vi.mock('../../features/repository/components/CreateRepositoryModal', () => ({ CreateRepositoryModal: () => null }));
-vi.mock('../../features/canvas-views/components/CreateViewModal', () => ({ CreateViewModal: () => null }));
+vi.mock('../../features/canvas-views/components/CreateViewModal', () => ({
+  CreateViewModal: ({
+    isOpen,
+    onCreate,
+  }: {
+    isOpen: boolean;
+    onCreate: (options: { name: string; isFavorite: boolean; viewportDefaults: { zoomLevel: number; panX: number; panY: number } }) => Promise<void>;
+  }) => (isOpen ? (
+    <button
+      type="button"
+      onClick={() => onCreate({
+        name: 'Dashboard view',
+        isFavorite: false,
+        viewportDefaults: { zoomLevel: 1, panX: 0, panY: 0 },
+      })}
+    >
+      Submit create view
+    </button>
+  ) : null),
+}));
 vi.mock('../../features/management/components/SettingsManagementModal', () => ({ SettingsManagementModal: () => null }));
 vi.mock('../../features/auth-profile/components/ProfileIndicator', () => ({
   ProfileIndicator: ({
@@ -109,6 +144,8 @@ describe('AppLayout', () => {
     mockStore.subscribeToWorkspaceUpdates.mockResolvedValue(vi.fn());
     mockStore.hydrateQuickFilterMetadata.mockResolvedValue(undefined);
     mockStore.cleanupDanglingTags.mockResolvedValue(0);
+    createNewViewMock.mockResolvedValue(undefined);
+    navigateMock.mockResolvedValue(undefined);
   });
 
   it('places the repository diagnostics action beside the notification action', () => {
@@ -217,5 +254,46 @@ describe('AppLayout', () => {
 
     await user.click(profileButton);
     expect(profileButton).toHaveClass('is-active');
+  });
+
+  it('creates a view from the global repository menu before navigating to the branch map', async () => {
+    const user = userEvent.setup();
+
+    render(
+      <AppLayout>
+        <div>content</div>
+      </AppLayout>,
+    );
+
+    await user.click(screen.getByTitle(/new/i));
+    await user.click(screen.getByRole('button', { name: 'Create view action' }));
+    await user.click(await screen.findByRole('button', { name: 'Submit create view' }));
+
+    expect(createNewViewMock).toHaveBeenCalledWith({
+      name: 'Dashboard view',
+      isFavorite: false,
+      viewportDefaults: { zoomLevel: 1, panX: 0, panY: 0 },
+    });
+    expect(navigateMock).toHaveBeenCalledWith({ to: '/branch-map' });
+  });
+
+  it('does not navigate when the global create-view action fails', async () => {
+    const user = userEvent.setup();
+    createNewViewMock.mockRejectedValue(new Error('create failed'));
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    render(
+      <AppLayout>
+        <div>content</div>
+      </AppLayout>,
+    );
+
+    await user.click(screen.getByTitle(/new/i));
+    await user.click(screen.getByRole('button', { name: 'Create view action' }));
+    await user.click(screen.getByRole('button', { name: 'Submit create view' }));
+
+    await vi.waitFor(() => expect(createNewViewMock).toHaveBeenCalled());
+    expect(navigateMock).not.toHaveBeenCalled();
+    consoleError.mockRestore();
   });
 });

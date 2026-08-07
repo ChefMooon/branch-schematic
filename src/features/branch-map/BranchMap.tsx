@@ -16,6 +16,7 @@ import type { BranchCardNode } from './components/BranchCard';
 import { MapToolbar } from './components/MapToolbar';
 import { ViewSelectorTabs } from './components/ViewSelectorTabs';
 import { useCanvasStore } from '../../stores/canvas-store';
+import { registerBranchMapSynchronization } from '../../stores/workspace-store';
 import { shouldApplyStoredViewport, type ViewportState } from './viewportSync';
 
 const nodeTypes = {
@@ -75,11 +76,13 @@ function MapWorkspace() {
 
   useEffect(() => {
     void setBranchMapActive(true);
+    const releaseSynchronization = registerBranchMapSynchronization(() => hydrateWorkspaceNodes());
 
     return () => {
+      releaseSynchronization();
       void setBranchMapActive(false);
     };
-  }, [setBranchMapActive]);
+  }, [hydrateWorkspaceNodes, setBranchMapActive]);
 
   // 1. Initial workspace views initialization
   useEffect(() => {

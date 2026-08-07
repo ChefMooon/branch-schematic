@@ -1,4 +1,4 @@
-import { useState, useEffect, isValidElement, cloneElement, type ReactElement } from 'react';
+import { lazy, Suspense, useState, useEffect, isValidElement, cloneElement, type ReactElement } from 'react';
 import { useLocation, useNavigate } from '@tanstack/react-router';
 import {
   BellIcon,
@@ -14,21 +14,12 @@ import { WindowControls } from './WindowControls';
 import './titlebar.css';
 import { AppSidebar } from './AppSidebar';
 import { RepositoryDropdown } from '../../features/repository/components/RepositoryDropdown';
-import { AddLocalRepositoryModal } from '../../features/repository/components/AddLocalRepositoryModal';
-import { BulkImportLocalRepositoryModal } from '../../features/repository/components/BulkImportLocalRepositryModal';
-import { CreateRepositoryModal } from '../../features/repository/components/CreateRepositoryModal';
-import { CloneRemoteRepositoryModal } from '../../features/repository/components/CloneRemoteRepositoryModal';
-import { CreateViewModal } from '../../features/canvas-views/components/CreateViewModal';
-import { SettingsManagementModal } from '../../features/management/components/SettingsManagementModal';
-import { useCanvasStore } from '../../stores/canvas-store';
 import { NotificationDropdown } from '../notifications/NotificationDropdown';
 import { useNotifications } from '../notifications/NotificationProvider';
 import { ProfileIndicator } from '../../features/auth-profile/components/ProfileIndicator';
 import { ProfileDropdown } from '../../features/auth-profile/components/ProfileDropdown';
-import { ProfileManagementModal } from '../../features/auth-profile/components/ProfileManagementModal';
 import { useProfileContext } from '../../features/auth-profile/hooks/useProfileContext';
 import { Button } from '../button/Button';
-import { RepositoryUpdateDiagnosticsModal } from '../../features/repository-update-diagnostics/components/RepositoryUpdateDiagnosticsModal';
 import type { RepositoryModalAction } from '../../features/repository/types';
 import type { UserProfile } from '../../features/auth-profile/types';
 
@@ -37,6 +28,15 @@ interface AppLayoutProps {
 }
 
 type AppStyle = React.CSSProperties;
+
+const LazyAddLocalRepositoryModal = lazy(() => import('../../features/repository/components/AddLocalRepositoryModal').then(({ AddLocalRepositoryModal }) => ({ default: AddLocalRepositoryModal })));
+const LazyBulkImportLocalRepositoryModal = lazy(() => import('../../features/repository/components/BulkImportLocalRepositryModal').then(({ BulkImportLocalRepositoryModal }) => ({ default: BulkImportLocalRepositoryModal })));
+const LazyCreateRepositoryModal = lazy(() => import('../../features/repository/components/CreateRepositoryModal').then(({ CreateRepositoryModal }) => ({ default: CreateRepositoryModal })));
+const LazyCloneRemoteRepositoryModal = lazy(() => import('../../features/repository/components/CloneRemoteRepositoryModal').then(({ CloneRemoteRepositoryModal }) => ({ default: CloneRemoteRepositoryModal })));
+const LazyCreateViewModal = lazy(() => import('../../features/canvas-views/components/CreateViewModal').then(({ CreateViewModal }) => ({ default: CreateViewModal })));
+const LazySettingsManagementModal = lazy(() => import('../../features/management/components/SettingsManagementModal').then(({ SettingsManagementModal }) => ({ default: SettingsManagementModal })));
+const LazyProfileManagementModal = lazy(() => import('../../features/auth-profile/components/ProfileManagementModal').then(({ ProfileManagementModal }) => ({ default: ProfileManagementModal })));
+const LazyRepositoryUpdateDiagnosticsModal = lazy(() => import('../../features/repository-update-diagnostics/components/RepositoryUpdateDiagnosticsModal').then(({ RepositoryUpdateDiagnosticsModal }) => ({ default: RepositoryUpdateDiagnosticsModal })));
 
 function useLayoutThemeMode() {
   const [themeMode, setThemeMode] = useState<'light' | 'dark'>(() => {
@@ -104,7 +104,6 @@ export function AppLayout({ children }: AppLayoutProps) {
     deleteGlobalTag,
     cleanupDanglingTags,
   } = useWorkspaceStore();
-  const createNewView = useCanvasStore((state) => state.createNewView);
   const {
     inbox,
     unreadCount,
@@ -273,7 +272,13 @@ export function AppLayout({ children }: AppLayoutProps) {
       branchVisibility?: Record<string, string[]>;
     };
   }) => {
-    await createNewView(options);
+    try {
+      const { useCanvasStore } = await import('../../stores/canvas-store');
+      await useCanvasStore.getState().createNewView(options);
+    } catch (error) {
+      console.error('Failed to create view from the application layout:', error);
+      return;
+    }
     await navigate({ to: '/branch-map' });
   };
 
@@ -453,71 +458,89 @@ export function AppLayout({ children }: AppLayoutProps) {
         </div>
       </header>
 
-      <RepositoryUpdateDiagnosticsModal
-        isOpen={isDiagnosticsOpen}
-        onClose={() => setIsDiagnosticsOpen(false)}
-      />
+      <Suspense fallback={null}>
+        {isDiagnosticsOpen && (
+          <LazyRepositoryUpdateDiagnosticsModal
+            isOpen
+            onClose={() => setIsDiagnosticsOpen(false)}
+          />
+        )}
 
-      <AddLocalRepositoryModal
-        isOpen={activeRepositoryModal === 'add-local'}
-        onClose={() => setActiveRepositoryModal(null)}
-      />
+        {activeRepositoryModal === 'add-local' && (
+          <LazyAddLocalRepositoryModal
+            isOpen
+            onClose={() => setActiveRepositoryModal(null)}
+          />
+        )}
 
-      <BulkImportLocalRepositoryModal
-        isOpen={activeRepositoryModal === 'bulk-import'}
-        onClose={() => setActiveRepositoryModal(null)}
-      />
+        {activeRepositoryModal === 'bulk-import' && (
+          <LazyBulkImportLocalRepositoryModal
+            isOpen
+            onClose={() => setActiveRepositoryModal(null)}
+          />
+        )}
 
-      <CreateRepositoryModal
-        isOpen={activeRepositoryModal === 'create'}
-        onClose={() => setActiveRepositoryModal(null)}
-      />
+        {activeRepositoryModal === 'create' && (
+          <LazyCreateRepositoryModal
+            isOpen
+            onClose={() => setActiveRepositoryModal(null)}
+          />
+        )}
 
-      <CloneRemoteRepositoryModal
-        isOpen={activeRepositoryModal === 'clone'}
-        onClose={() => setActiveRepositoryModal(null)}
-        onOpenProfileManagement={() => handleOpenProfileManagement(activeProfile?.id ?? null)}
-      />
+        {activeRepositoryModal === 'clone' && (
+          <LazyCloneRemoteRepositoryModal
+            isOpen
+            onClose={() => setActiveRepositoryModal(null)}
+            onOpenProfileManagement={() => handleOpenProfileManagement(activeProfile?.id ?? null)}
+          />
+        )}
 
-      <CreateViewModal
-        isOpen={activeRepositoryModal === 'create-view'}
-        onClose={() => setActiveRepositoryModal(null)}
-        onCreate={handleCreateView}
-      />
+        {activeRepositoryModal === 'create-view' && (
+          <LazyCreateViewModal
+            isOpen
+            onClose={() => setActiveRepositoryModal(null)}
+            onCreate={handleCreateView}
+          />
+        )}
 
-      <SettingsManagementModal
-        isOpen={isManagementModalOpen}
-        initialTab={managementInitialTab}
-        groups={groupDirectory}
-        tags={tagDirectory}
-        danglingTagNames={quickFilterMetadata?.dangling_tags.map((tag) => tag.tag_name) ?? []}
-        onClose={() => {
-          setIsManagementModalOpen(false);
-          setManagementInitialTab('tags');
-        }}
-        onCreateGroup={createCustomGroup}
-        onCreateTag={createGlobalTag}
-        onUpdateGroup={updateCustomGroup}
-        onDeleteGroup={deleteCustomGroup}
-        onUpdateTag={updateGlobalTag}
-        onDeleteTag={deleteGlobalTag}
-        onCleanupDanglingTags={cleanupDanglingTags}
-      />
+        {isManagementModalOpen && (
+          <LazySettingsManagementModal
+            isOpen
+            initialTab={managementInitialTab}
+            groups={groupDirectory}
+            tags={tagDirectory}
+            danglingTagNames={quickFilterMetadata?.dangling_tags.map((tag) => tag.tag_name) ?? []}
+            onClose={() => {
+              setIsManagementModalOpen(false);
+              setManagementInitialTab('tags');
+            }}
+            onCreateGroup={createCustomGroup}
+            onCreateTag={createGlobalTag}
+            onUpdateGroup={updateCustomGroup}
+            onDeleteGroup={deleteCustomGroup}
+            onUpdateTag={updateGlobalTag}
+            onDeleteTag={deleteGlobalTag}
+            onCleanupDanglingTags={cleanupDanglingTags}
+          />
+        )}
 
-      <ProfileManagementModal
-        isOpen={isProfileManagementModalOpen}
-        onClose={() => {
-          setIsProfileManagementModalOpen(false);
-          setManagedProfile(null);
-        }}
-        profile={managedProfile}
-        profiles={profiles}
-        tokenHealthMap={tokenHealthMap}
-        onCreateProfile={addProfile}
-        onSaveProfile={updateProfile}
-        onDeleteProfile={deleteProfile}
-        onSelectProfile={handleProfileManagementSelection}
-      />
+        {isProfileManagementModalOpen && (
+          <LazyProfileManagementModal
+            isOpen
+            onClose={() => {
+              setIsProfileManagementModalOpen(false);
+              setManagedProfile(null);
+            }}
+            profile={managedProfile}
+            profiles={profiles}
+            tokenHealthMap={tokenHealthMap}
+            onCreateProfile={addProfile}
+            onSaveProfile={updateProfile}
+            onDeleteProfile={deleteProfile}
+            onSelectProfile={handleProfileManagementSelection}
+          />
+        )}
+      </Suspense>
 
       {/* ── MAIN CONTENT ── */}
       <main style={{ ...styles.main, top: HEADER_H }}>

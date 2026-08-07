@@ -6,7 +6,6 @@ import { applyTheme, loadThemePreference, type ThemePreference } from "../theme"
 import { AppLayout } from "../components/layout/AppLayout";
 import { DatabaseRecoveryGate } from "../components/database-recovery/DatabaseRecoveryGate";
 import { NotificationProvider } from "../components/notifications/NotificationProvider";
-import '@xyflow/react/dist/style.css';
 
 const RootLayout = () => {
   const [theme, setTheme] = useState<ThemePreference>('system');
@@ -41,7 +40,7 @@ const RootLayout = () => {
         <AppLayout>
           {/* Sub-pages such as /branch-map and /database mount exactly here! */}
           <Outlet />
-          <TanStackRouterDevtools position="bottom-right" />
+          {import.meta.env.DEV && <TanStackRouterDevtools position="bottom-right" />}
         </AppLayout>
       </NotificationProvider>
     </DatabaseRecoveryGate>
