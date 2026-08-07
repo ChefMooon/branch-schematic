@@ -534,6 +534,10 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     try {
       await invoke('delete_custom_group', { id });
       await get().hydrateFromBackend();
+      await Promise.all([
+        get().hydrateManagementDirectory(),
+        get().hydrateQuickFilterMetadata(),
+      ]);
     } catch (error) {
       console.error('Failed to delete custom group:', error);
       throw error;
@@ -554,6 +558,10 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     try {
       await invoke('delete_global_tag', { id });
       await get().hydrateFromBackend();
+      await Promise.all([
+        get().hydrateManagementDirectory(),
+        get().hydrateQuickFilterMetadata(),
+      ]);
     } catch (error) {
       console.error('Failed to delete global tag:', error);
       throw error;

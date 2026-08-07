@@ -53,11 +53,26 @@ export function ConfirmationModal({
   return (
     <div
       className="confirmation-modal-overlay"
-      onMouseDown={handleMouseDown}
-      onMouseUp={handleMouseUp}
-      onMouseLeave={handleMouseLeave}
-      onTouchStart={handleTouchStart}
-      onTouchEnd={handleTouchEnd}
+      onMouseDown={(event) => {
+        event.stopPropagation();
+        handleMouseDown(event);
+      }}
+      onMouseUp={(event) => {
+        event.stopPropagation();
+        handleMouseUp(event);
+      }}
+      onMouseLeave={(event) => {
+        event.stopPropagation();
+        handleMouseLeave();
+      }}
+      onTouchStart={(event) => {
+        event.stopPropagation();
+        handleTouchStart(event);
+      }}
+      onTouchEnd={(event) => {
+        event.stopPropagation();
+        handleTouchEnd(event);
+      }}
     >
       <div
         ref={dialogRef}

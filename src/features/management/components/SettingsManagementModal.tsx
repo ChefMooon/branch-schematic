@@ -65,6 +65,17 @@ export function SettingsManagementModal({
     if (!isOpen) return;
 
     setTab(initialTab);
+    setTagCreateDraft({ name: '', color: defaultTagColor() });
+    setGroupCreateDraft({ name: '', color: defaultGroupColor() });
+    setIsCreatingTag(false);
+    setIsCreatingGroup(false);
+    setTagToDelete(null);
+    setGroupToDelete(null);
+    setIsCleanupConfirmOpen(false);
+  }, [isOpen, initialTab]);
+
+  useEffect(() => {
+    if (!isOpen) return;
 
     const nextTagDrafts: Record<string, { name: string; color: string }> = {};
     tags.forEach((tag) => {
@@ -78,11 +89,26 @@ export function SettingsManagementModal({
 
     setTagDrafts(nextTagDrafts);
     setGroupDrafts(nextGroupDrafts);
-    setTagCreateDraft({ name: '', color: defaultTagColor() });
-    setGroupCreateDraft({ name: '', color: defaultGroupColor() });
-    setIsCreatingTag(false);
-    setIsCreatingGroup(false);
-  }, [isOpen, initialTab, groups, tags]);
+  }, [groups, isOpen, tags]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const previousOverflow = document.body.style.overflow;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !tagToDelete && !groupToDelete && !isCleanupConfirmOpen) {
+        onClose();
+      }
+    };
+
+    document.body.style.overflow = 'hidden';
+    document.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [groupToDelete, isCleanupConfirmOpen, isOpen, onClose, tagToDelete]);
 
   const danglingLabel = useMemo(() => danglingTagNames.join(', '), [danglingTagNames]);
 
@@ -311,19 +337,30 @@ export function SettingsManagementModal({
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
     >
-      <div ref={dialogRef} className="app-modal app-modal-wide" onClick={(event) => event.stopPropagation()}>
+      <div
+        ref={dialogRef}
+        className="app-modal app-modal-wide"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="settings-management-modal-title"
+        onClick={(event) => event.stopPropagation()}
+      >
         <div className="app-modal-header">
-          <h3>Tag and Group Management</h3>
-          <Button type="button" variant="close" className="app-modal-close" onClick={onClose}>
-            <XIcon size={14}  weight="bold"/>
+          <h3 id="settings-management-modal-title">Tag and Group Management</h3>
+          <Button type="button" variant="close" className="app-modal-close" onClick={onClose} aria-label="Close management modal">
+            <XIcon size={14} weight="bold" />
           </Button>
         </div>
 
-        <div className="management-tabs">
+        <div className="management-tabs" role="tablist" aria-label="Tag and group management sections">
           <Button
             type="button"
             variant="basic"
-            className={`${tab === 'tags' ? 'is-active' : ''}`}
+            role="tab"
+            id="settings-management-tab-tags"
+            aria-selected={tab === 'tags'}
+            aria-controls="settings-management-panel-tags"
+            className={`management-tab${tab === 'tags' ? ' is-active' : ''}`}
             onClick={() => setTab('tags')}
           >
             Tags
@@ -331,7 +368,11 @@ export function SettingsManagementModal({
           <Button
             type="button"
             variant="basic"
-            className={`${tab === 'groups' ? 'is-active' : ''}`}
+            role="tab"
+            id="settings-management-tab-groups"
+            aria-selected={tab === 'groups'}
+            aria-controls="settings-management-panel-groups"
+            className={`management-tab${tab === 'groups' ? ' is-active' : ''}`}
             onClick={() => setTab('groups')}
           >
             Groups
@@ -340,7 +381,7 @@ export function SettingsManagementModal({
 
         <div className="app-modal-body">
           {tab === 'tags' && (
-            <div className="management-list">
+            <div id="settings-management-panel-tags" role="tabpanel" aria-labelledby="settings-management-tab-tags" tabIndex={0} className="management-list">
               <form className="management-create-row" onSubmit={handleCreateTag}>
                 <input
                   type="text"
@@ -350,6 +391,7 @@ export function SettingsManagementModal({
                 />
                 <input
                   type="color"
+                  aria-label="Choose color for new tag"
                   value={tagCreateDraft.color}
                   onChange={(event) => setTagCreateDraft((prev) => ({ ...prev, color: event.target.value }))}
                 />
@@ -378,6 +420,7 @@ export function SettingsManagementModal({
                     />
                     <input
                       type="color"
+                      aria-label={`Choose color for tag ${tag.tag_name}`}
                       value={draft.color}
                       onChange={(event) =>
                         setTagDrafts((prev) => ({ ...prev, [tag.id]: { ...draft, color: event.target.value } }))
@@ -429,7 +472,7 @@ export function SettingsManagementModal({
           )}
 
           {tab === 'groups' && (
-            <div className="management-list">
+            <div id="settings-management-panel-groups" role="tabpanel" aria-labelledby="settings-management-tab-groups" tabIndex={0} className="management-list">
               <form className="management-create-row" onSubmit={handleCreateGroup}>
                 <input
                   type="text"
@@ -439,6 +482,7 @@ export function SettingsManagementModal({
                 />
                 <input
                   type="color"
+                  aria-label="Choose color for new group"
                   value={groupCreateDraft.color}
                   onChange={(event) => setGroupCreateDraft((prev) => ({ ...prev, color: event.target.value }))}
                 />
@@ -467,6 +511,7 @@ export function SettingsManagementModal({
                     />
                     <input
                       type="color"
+                      aria-label={`Choose color for group ${group.group_name}`}
                       value={draft.color}
                       onChange={(event) =>
                         setGroupDrafts((prev) => ({ ...prev, [group.id]: { ...draft, color: event.target.value } }))

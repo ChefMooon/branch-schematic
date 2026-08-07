@@ -2459,11 +2459,14 @@
   background: var(--app-surface);
   color: var(--app-text);
   border-radius: 8px;
-  padding: 0.3rem 0.7rem;
+  min-height: 38px;
+  box-sizing: border-box;
+  padding: 0.55rem 0.85rem;
+  align-items: center;
   cursor: pointer;
 }
 
-.management-tab.active {
+.management-tab.is-active {
   border-color: var(--app-accent);
   background: color-mix(in srgb, var(--app-accent) 12%, transparent);
   color: var(--app-accent);
