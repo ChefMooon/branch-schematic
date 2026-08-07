@@ -1,5 +1,6 @@
 .view-selector-tabs__list {
   display: flex;
+  flex: 1 1 auto;
   min-width: 0;
   align-items: center;
   gap: 4px;
@@ -7,6 +8,15 @@
 
 .view-selector-tabs__tab-wrapper {
   display: flex;
+  flex: 0 1 auto;
   min-width: 0;
   align-items: center;
+}
+
+.view-selector-tabs__label {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

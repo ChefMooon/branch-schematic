@@ -33,6 +33,7 @@ export function ViewSelectorTabs({
     () => typeof window !== 'undefined' && window.innerWidth >= 1160 && window.innerWidth < 1400,
   );
   const overflowRef = useRef<HTMLDivElement | null>(null);
+  const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const isModalOpen = isModalOpenProp ?? internalModalOpen;
   const { zoom, x, y } = useViewport();
 
@@ -93,7 +94,21 @@ export function ViewSelectorTabs({
       visibleViews: visible,
       overflowViews: overflow,
     };
-  }, [activeView, isNarrowLayout, orderedViews]);
+  }, [activeView, isMediumLayout, isNarrowLayout, isWideLayout, orderedViews]);
+
+  const focusTab = (index: number) => {
+    if (visibleViews.length === 0) return;
+
+    const currentIndex = visibleViews.findIndex((view) => view.id === activeViewId);
+    const nextIndex = (currentIndex + index + visibleViews.length) % visibleViews.length;
+    focusTabAt(nextIndex);
+  };
+
+  const focusTabAt = (index: number) => {
+    const nextView = visibleViews[index];
+    setActiveView(nextView.id);
+    tabRefs.current[index]?.focus();
+  };
 
   const handleCreateView = async (options: {
     name: string;
@@ -133,7 +148,7 @@ export function ViewSelectorTabs({
         }}
       >
         <div role="tablist" aria-label="Canvas views" className="view-selector-tabs__list">
-          {visibleViews.map((view) => (
+          {visibleViews.map((view, index) => (
             <div key={view.id} className="view-selector-tabs__tab-wrapper">
               <Button
                 type="button"
@@ -141,12 +156,31 @@ export function ViewSelectorTabs({
                 className={`app-btn--view-tab${activeViewId === view.id ? ' is-active' : ''}`}
                 role="tab"
                 aria-selected={activeViewId === view.id}
+                tabIndex={activeViewId === view.id ? 0 : -1}
+                ref={(element) => {
+                  tabRefs.current[index] = element;
+                }}
                 onClick={() => setActiveView(view.id)}
+                onKeyDown={(event) => {
+                  if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
+                    event.preventDefault();
+                    focusTab(1);
+                  } else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
+                    event.preventDefault();
+                    focusTab(-1);
+                  } else if (event.key === 'Home') {
+                    event.preventDefault();
+                    focusTabAt(0);
+                  } else if (event.key === 'End') {
+                    event.preventDefault();
+                    focusTabAt(visibleViews.length - 1);
+                  }
+                }}
                 title={view.name}
                 aria-label={`Open view ${view.name}`}
                 style={{ maxWidth: isNarrowLayout ? '118px' : isWideLayout ? '140px' : '172px' }}
               >
-                {view.name}
+                <span className="view-selector-tabs__label">{view.name}</span>
               </Button>
             </div>
           ))}
@@ -208,7 +242,7 @@ export function ViewSelectorTabs({
                     title={view.name}
                     aria-label={`Open view ${view.name}`}
                   >
-                    {view.name}
+                    <span className="view-selector-tabs__label">{view.name}</span>
                   </Button>
                 ))}
               </div>
