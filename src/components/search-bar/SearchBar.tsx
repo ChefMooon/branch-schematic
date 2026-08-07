@@ -19,6 +19,7 @@ export interface SearchBarProps {
   showIcon?: boolean;
   showShellBorder?: boolean;
   showFocusRing?: boolean;
+  size?: 'default' | 'compact';
   disabled?: boolean;
 }
 
@@ -39,10 +40,12 @@ export function SearchBar({
   showIcon = true,
   showShellBorder = true,
   showFocusRing = true,
+  size = 'default',
   disabled = false,
 }: SearchBarProps) {
   const [isHovered, setIsHovered] = useState(false);
   const [isFocused, setIsFocused] = useState(false);
+  const isCompact = size === 'compact';
 
   const handleClear = () => {
     if (onClear) {
@@ -59,7 +62,7 @@ export function SearchBar({
     alignItems: 'center',
     width: '100%',
     minWidth: 0,
-    height: '100%',
+    height: isCompact ? 30 : '100%',
     border: showShellBorder ? '1px solid var(--app-border)' : 'none',
     borderRadius: 8,
     background: disabled
@@ -96,8 +99,10 @@ export function SearchBar({
               boxSizing: 'border-box',
               borderRadius: 8,
               border: 'none',
-              padding: showIcon ? '8px 32px 8px 32px' : '8px 32px 8px 10px',
-              fontSize: 13,
+              padding: isCompact
+                ? showIcon ? '6px 32px 6px 32px' : '6px 32px 6px 10px'
+                : showIcon ? '8px 32px 8px 32px' : '8px 32px 8px 10px',
+              fontSize: isCompact ? 12 : 13,
               background: 'transparent',
               color: 'var(--app-text)',
               outline: 'none',

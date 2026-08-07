@@ -145,7 +145,11 @@ export function ViewManagerModal({ isDark, isOpen, onClose }: ViewManagerModalPr
     <>
       <div
         className="canvas-view-manager-overlay"
-        {...backdropDismiss}
+        onMouseDown={backdropDismiss.handleMouseDown}
+        onMouseUp={backdropDismiss.handleMouseUp}
+        onMouseLeave={backdropDismiss.handleMouseLeave}
+        onTouchStart={backdropDismiss.handleTouchStart}
+        onTouchEnd={backdropDismiss.handleTouchEnd}
       >
         <div
           ref={dialogRef}

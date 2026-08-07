@@ -186,7 +186,14 @@ export function CreateViewModal({
   if (!isOpen) return null;
 
   return (
-    <div className="canvas-create-view-overlay" {...backdropDismiss}>
+    <div
+      className="canvas-create-view-overlay"
+      onMouseDown={backdropDismiss.handleMouseDown}
+      onMouseUp={backdropDismiss.handleMouseUp}
+      onMouseLeave={backdropDismiss.handleMouseLeave}
+      onTouchStart={backdropDismiss.handleTouchStart}
+      onTouchEnd={backdropDismiss.handleTouchEnd}
+    >
       <div
         ref={dialogRef}
         className="canvas-create-view-modal"

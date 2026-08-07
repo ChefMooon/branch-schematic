@@ -47,4 +47,32 @@ describe('TagSelectionModal', () => {
 
     expect(onClose).toHaveBeenCalledTimes(1);
   });
+
+  it('filters tags and clears the text search independently from tag assignment', async () => {
+    const user = userEvent.setup();
+
+    render(
+      <TagSelectionModal
+        isOpen
+        availableTags={[
+          { id: 'tag-1', tag_name: 'backend', color_hex: '#4f46e5', repo_count: 1 },
+          { id: 'tag-2', tag_name: 'frontend', color_hex: '#14b8a6', repo_count: 2 },
+        ]}
+        assignedTagNames={[]}
+        onClose={vi.fn()}
+        onApply={vi.fn().mockResolvedValue(undefined)}
+      />
+    );
+
+    const searchInput = screen.getByRole('textbox', { name: 'Search tags' });
+    await user.type(searchInput, 'back');
+
+    expect(screen.getByRole('button', { name: /backend/i })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /frontend/i })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /clear search/i }));
+
+    expect(searchInput).toHaveValue('');
+    expect(screen.getByRole('button', { name: /frontend/i })).toBeInTheDocument();
+  });
 });

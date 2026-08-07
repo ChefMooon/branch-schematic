@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { ArrowClockwiseIcon, XIcon } from '@phosphor-icons/react';
 import { Button } from '../../../components/button/Button';
+import { SearchBar } from '../../../components/search-bar/SearchBar';
 import { useBackdropDismiss } from '../../../hooks/useBackdropDismiss';
 import { useWorkspaceStore } from '../../../stores/workspace-store';
 import { useRepositoryUpdateDiagnostics } from '../hooks/useRepositoryUpdateDiagnostics';
@@ -76,6 +77,14 @@ export function RepositoryUpdateDiagnosticsModal({ isOpen, onClose }: Repository
       });
   }, [filter, repositoryNames, search, snapshot]);
 
+  const handleSearchKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>) => {
+    if (event.key === 'Escape' && search.trim()) {
+      event.preventDefault();
+      event.stopPropagation();
+      setSearch('');
+    }
+  };
+
   if (!isOpen) return null;
 
   const diagnostics = snapshot?.diagnostics;
@@ -83,7 +92,11 @@ export function RepositoryUpdateDiagnosticsModal({ isOpen, onClose }: Repository
   return (
     <div
       className="repository-update-diagnostics-modal-backdrop"
-      {...backdropDismiss}
+      onMouseDown={backdropDismiss.handleMouseDown}
+      onMouseUp={backdropDismiss.handleMouseUp}
+      onMouseLeave={backdropDismiss.handleMouseLeave}
+      onTouchStart={backdropDismiss.handleTouchStart}
+      onTouchEnd={backdropDismiss.handleTouchEnd}
       style={{ position: 'fixed', inset: 0, zIndex: 40, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, background: 'rgba(15, 23, 42, 0.52)' }}
     >
       <div ref={contentRef} className="repository-update-diagnostics-modal" role="dialog" aria-modal="true" aria-labelledby="repository-update-diagnostics-title">
@@ -121,7 +134,17 @@ export function RepositoryUpdateDiagnosticsModal({ isOpen, onClose }: Repository
         )}
 
         <div className="repository-update-diagnostics-modal__filters">
-          <input className="repository-update-diagnostics-modal__search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search repository or ID" aria-label="Search repository or ID" />
+          <SearchBar
+            className="repository-update-diagnostics-modal__search"
+            value={search}
+            onChange={setSearch}
+            onClear={() => setSearch('')}
+            onKeyDown={handleSearchKeyDown}
+            placeholder="Search repository or ID"
+            ariaLabel="Search repository or ID"
+            size="compact"
+            containerStyle={{ flex: '1 1 220px', minWidth: 150, height: 30 }}
+          />
           <select className="repository-update-diagnostics-modal__select" value={filter} onChange={(event) => setFilter(event.target.value as Filter)} aria-label="Filter diagnostics">
             <option value="all">All states</option>
             <option value="running">Running</option>

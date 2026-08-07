@@ -2312,25 +2312,8 @@
 }
 
 .tag-selection-search {
-  flex: 1;
+  flex: 1 1 180px;
   min-width: 180px;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  padding: 0.45rem 0.6rem;
-  border: 1px solid var(--input-border);
-  border-radius: 8px;
-  background: var(--input-bg);
-  color: var(--input-text);
-}
-
-.tag-selection-search input {
-  flex: 1;
-  border: none;
-  outline: none;
-  background: transparent;
-  color: inherit;
-  font-size: 0.85rem;
 }
 
 .tag-selection-toolbar-actions {

@@ -89,4 +89,20 @@ describe('SearchBar', () => {
 
     expect(shell).toHaveStyle({ boxShadow: 'none' });
   });
+
+  it('supports an opt-in compact size without changing the default shell contract', () => {
+    const { rerender } = render(
+      <SearchBar value="" onChange={vi.fn()} ariaLabel="Search repositories" />
+    );
+
+    const defaultInput = screen.getByRole('textbox', { name: 'Search repositories' });
+    expect(defaultInput.parentElement).toHaveStyle({ height: '100%' });
+
+    rerender(
+      <SearchBar value="" onChange={vi.fn()} ariaLabel="Search repositories" size="compact" />
+    );
+
+    expect(defaultInput.parentElement).toHaveStyle({ height: '30px' });
+    expect(defaultInput).toHaveStyle({ fontSize: '12px' });
+  });
 });

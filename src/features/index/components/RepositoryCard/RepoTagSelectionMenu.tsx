@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   CheckSquareIcon,
-  MagnifyingGlassIcon,
   PlusIcon,
   SquareIcon,
   TrashIcon,
@@ -11,6 +10,7 @@ import { useCallback } from 'react';
 import { Button } from '../../../../components/button/Button';
 import { ConfirmationModal } from '../../../../components/Modal/ConfirmationModal';
 import { useNotifications } from '../../../../components/notifications/NotificationProvider';
+import { SearchBar } from '../../../../components/search-bar/SearchBar';
 import { useBackdropDismiss } from '../../../../hooks/useBackdropDismiss';
 import type { TagFilterSummary } from '../../../../types/git';
 
@@ -210,15 +210,15 @@ export function TagSelectionModal({
 
           <div className="app-modal-body">
             <div className="tag-selection-toolbar">
-              <div className="tag-selection-search">
-                <MagnifyingGlassIcon size={14} />
-                <input
-                  type="text"
-                  value={search}
-                  onChange={(event) => setSearch(event.target.value)}
-                  placeholder="Search tags"
-                />
-              </div>
+              <SearchBar
+                className="tag-selection-search"
+                value={search}
+                onChange={setSearch}
+                ariaLabel="Search tags"
+                placeholder="Search tags"
+                size="compact"
+                containerStyle={{ flex: '1 1 180px', minWidth: 180 }}
+              />
               <div className="tag-selection-toolbar-actions">
                 <Button type="button" variant="basic" onClick={() => {
                   void commitSelection(filteredTags.map((tag) => tag.tag_name));
