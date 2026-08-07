@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 type ColorPickerProps = {
   value: string | null;
@@ -16,6 +16,10 @@ const normalizeHex = (value: string | null | undefined) => {
 export function ColorPicker({ value, onChange }: ColorPickerProps) {
   const [draft, setDraft] = useState(() => normalizeHex(value));
   const presetColors = useMemo(() => ['#4F46E5', '#0EA5E9', '#10B981', '#F59E0B', '#EF4444', '#EC4899', '#8B5CF6', '#14B8A6'], []);
+
+  useEffect(() => {
+    setDraft(normalizeHex(value));
+  }, [value]);
 
   const commitHex = (next: string | null) => {
     const normalized = normalizeHex(next);

@@ -19,6 +19,11 @@ export interface WorkspaceUpdatedEvent {
   emittedAt: string;
 }
 
+export interface BulkThemeUpdateResult {
+  updatedIds: string[];
+  failed: Array<{ id: string; message: string }>;
+}
+
 let sharedUnlisten: (() => void) | undefined;
 let sharedListenPromise: Promise<() => void> | undefined;
 let sharedSubscriberCount = 0;
@@ -112,6 +117,7 @@ interface WorkspaceState {
   setRepositoryPinned: (repoId: string, pinned: boolean) => Promise<void>;
   setRepositoryGroup: (repoId: string, groupId: string | null) => Promise<void>;
   updateRepositoryTheme: (id: string, colorHex: string | null, iconName: string | null) => Promise<void>;
+  applyThemeToRepositories: (ids: string[], colorHex: string | null, iconName: string | null) => Promise<BulkThemeUpdateResult>;
   refreshRepositoryGitStatus: (repoId: string, absolutePath: string) => Promise<void>;
   setRepositoriesStatus: (repoIds: string[], status: TrackedPath['status']) => void;
   markRepositoriesMissing: (missingPaths: string[]) => void;
@@ -357,6 +363,36 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     } catch (error) {
       console.error('Failed to update repository theme:', error);
     }
+  },
+
+  applyThemeToRepositories: async (ids, colorHex, iconName) => {
+    const repositoryIds = Array.from(new Set(ids.filter((id) => id.trim().length > 0)));
+    const updatedIds: string[] = [];
+    const failed: Array<{ id: string; message: string }> = [];
+    let nextIndex = 0;
+
+    const applyNext = async () => {
+      while (nextIndex < repositoryIds.length) {
+        const index = nextIndex;
+        nextIndex += 1;
+        const id = repositoryIds[index];
+
+        try {
+          await invoke('set_repository_theme', { pathId: id, colorHex, iconName });
+          updatedIds.push(id);
+        } catch (error) {
+          failed.push({
+            id,
+            message: error instanceof Error ? error.message : 'The theme could not be updated.',
+          });
+        }
+      }
+    };
+
+    await Promise.all(Array.from({ length: Math.min(4, repositoryIds.length) }, () => applyNext()));
+    if (repositoryIds.length > 0) await get().hydrateFromBackend();
+
+    return { updatedIds, failed };
   },
 
   refreshRepositoryGitStatus: async (repoId, absolutePath) => {

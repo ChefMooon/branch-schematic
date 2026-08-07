@@ -17,6 +17,10 @@ vi.mock('../../../stores/workspace-store', () => ({
   useWorkspaceStore: () => mockStore,
 }));
 
+vi.mock('../../../components/notifications/NotificationProvider', () => ({
+  useNotifications: () => ({ addToast: vi.fn() }),
+}));
+
 vi.mock('./RepositoryCard', () => ({
   RepositoryCard: () => <div>repo</div>,
 }));

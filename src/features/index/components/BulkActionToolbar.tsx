@@ -1,11 +1,14 @@
 import { useState } from 'react';
+import { ArrowClockwise, PaintBrush, Trash, X } from '@phosphor-icons/react';
 
 import { ConfirmationModal } from '../../../components/Modal/ConfirmationModal';
+import { Button } from '../../../components/button/Button';
 
 type BulkActionToolbarProps = {
   selectedCount: number;
   onBulkUntrack: () => void | Promise<void>;
   onBulkRefresh: () => void | Promise<void>;
+  onBulkTheme: () => void;
   onClearSelection: () => void;
 };
 
@@ -13,6 +16,7 @@ export function BulkActionToolbar({
   selectedCount,
   onBulkUntrack,
   onBulkRefresh,
+  onBulkTheme,
   onClearSelection,
 }: BulkActionToolbarProps) {
   const [showUntrackConfirmation, setShowUntrackConfirmation] = useState(false);
@@ -30,19 +34,27 @@ export function BulkActionToolbar({
           <span>{selectedCount === 1 ? 'workspace selected' : 'workspaces selected'}</span>
         </div>
         <div className="bulk-action-toolbar__actions">
-          <button type="button" className="bulk-action-toolbar__button" onClick={() => void onBulkRefresh()}>
+          <Button type="button" variant="basic" className="bulk-action-toolbar__button" onClick={() => void onBulkRefresh()}>
+            <ArrowClockwise size={15} weight="bold" />
             Refresh status
-          </button>
-          <button
+          </Button>
+          <Button type="button" variant="basic" className="bulk-action-toolbar__button" onClick={onBulkTheme}>
+            <PaintBrush size={15} weight="bold" />
+            Change theme
+          </Button>
+          <Button
             type="button"
-            className="bulk-action-toolbar__button bulk-action-toolbar__button-danger"
+            variant="danger"
+            className="bulk-action-toolbar__button"
             onClick={() => setShowUntrackConfirmation(true)}
           >
+            <Trash size={15} weight="bold" />
             Untrack
-          </button>
-          <button type="button" className="bulk-action-toolbar__button bulk-action-toolbar__button-muted" onClick={onClearSelection}>
+          </Button>
+          <Button type="button" variant="basic" className="bulk-action-toolbar__button bulk-action-toolbar__button-muted" onClick={onClearSelection}>
+            <X size={15} weight="bold" />
             Clear
-          </button>
+          </Button>
         </div>
       </div>
 

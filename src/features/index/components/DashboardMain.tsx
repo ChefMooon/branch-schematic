@@ -4,11 +4,13 @@ import { RepositoryCard } from "./RepositoryCard";
 import { SearchBar } from "../../../components/search-bar/SearchBar";
 import { OWNER_GROUPING_FILTER_VALUE, WorkspaceQuickFilters } from "./WorkspaceQuickFilters";
 import { BulkActionToolbar } from "./BulkActionToolbar";
+import { RepoThemeModal } from "./RepositoryCard/RepoThemeModal";
 import { FilterDropdown } from "./common/FilterDropdown";
 import { useWorkspaceStore } from "../../../stores/workspace-store";
 import { useProfileStore } from "../../auth-profile/stores/profileStore";
 import { resolveRepoOrigin } from "../hooks/useResolveRepoOrigin";
 import { useVerifyRepositories } from "../hooks/useVerifyRepositories";
+import { useNotifications } from "../../../components/notifications/NotificationProvider";
 import "./Dashboard.css";
 
 type DashboardMainProps = {
@@ -26,6 +28,8 @@ export function DashboardMain({ onOpenManagementModal, onCleanupDanglingTags }: 
   const [selectedGroup, setSelectedGroup] = useState<string | null>(null);
   const [favoritesOnly, setFavoritesOnly] = useState(false);
   const [selectedRepoIds, setSelectedRepoIds] = useState<Set<string>>(new Set());
+  const [bulkThemeRepoIds, setBulkThemeRepoIds] = useState<string[] | null>(null);
+  const [isBulkThemeBusy, setIsBulkThemeBusy] = useState(false);
   const lastVerifiedSignatureRef = useRef<string | null>(null);
   const {
     repos: allRepos,
@@ -35,7 +39,9 @@ export function DashboardMain({ onOpenManagementModal, onCleanupDanglingTags }: 
     groupDirectory,
     refreshRepositoryGitStatus,
     cleanupDanglingTags: cleanupDanglingTagsFromStore,
+    applyThemeToRepositories,
   } = useWorkspaceStore();
+  const { addToast } = useNotifications();
   const { verifyRepositories } = useVerifyRepositories();
   const activeProfileId = useProfileStore((state) => state.activeProfileId);
   const activeGithubUsername = useProfileStore((state) => {
@@ -120,6 +126,30 @@ export function DashboardMain({ onOpenManagementModal, onCleanupDanglingTags }: 
     );
     await fetchRepositoriesData();
     setSelectedRepoIds(new Set());
+  };
+
+  const handleBulkThemeSubmit = async (colorHex: string | null, iconName: string | null) => {
+    if (!bulkThemeRepoIds || bulkThemeRepoIds.length === 0) return;
+
+    setIsBulkThemeBusy(true);
+    try {
+      const result = await applyThemeToRepositories(bulkThemeRepoIds, colorHex, iconName);
+      if (result.failed.length === 0) {
+        addToast({ title: "Themes updated", message: `Updated ${result.updatedIds.length} workspace${result.updatedIds.length === 1 ? "" : "s"}.`, variant: "success", target: "toast" });
+      } else {
+        addToast({ title: "Themes partially updated", message: `Updated ${result.updatedIds.length} workspace${result.updatedIds.length === 1 ? "" : "s"}; ${result.failed.length} failed.`, variant: "warning", target: "toast", duration: 7000 });
+      }
+      setSelectedRepoIds((current) => {
+        const next = new Set(current);
+        bulkThemeRepoIds.forEach((id) => next.delete(id));
+        return next;
+      });
+      setBulkThemeRepoIds(null);
+    } catch (error) {
+      addToast({ title: "Themes could not be updated", message: error instanceof Error ? error.message : "The selected workspaces could not be updated.", variant: "error", target: "toast" });
+    } finally {
+      setIsBulkThemeBusy(false);
+    }
   };
 
   const repoTypeOptions = useMemo(
@@ -275,9 +305,23 @@ export function DashboardMain({ onOpenManagementModal, onCleanupDanglingTags }: 
           selectedCount={selectedRepoIds.size}
           onBulkRefresh={handleBulkRefresh}
           onBulkUntrack={handleBulkUntrack}
+          onBulkTheme={() => setBulkThemeRepoIds(Array.from(selectedRepoIds))}
           onClearSelection={() => setSelectedRepoIds(new Set())}
         />
       ) : null}
+
+      <RepoThemeModal
+        isOpen={bulkThemeRepoIds !== null}
+        isBusy={isBulkThemeBusy}
+        mode="submit"
+        currentThemeColor={null}
+        currentIconName={null}
+        onClose={() => {
+          if (!isBulkThemeBusy) setBulkThemeRepoIds(null);
+        }}
+        onThemeChange={() => undefined}
+        onSubmit={handleBulkThemeSubmit}
+      />
         
         {processedRepositories.length === 0 ? (
           <div className="repo-grid-empty-state">
