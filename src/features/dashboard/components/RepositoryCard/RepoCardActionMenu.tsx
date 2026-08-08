@@ -297,7 +297,7 @@ export function RepoCardOverflowMenu({
               disabled={isBusy}
             >
               <Trash size={16} />
-              <span>Untrack repository</span>
+              <span>Archive repository</span>
             </button>
           </div>
         </div>
@@ -305,13 +305,13 @@ export function RepoCardOverflowMenu({
 
       <ConfirmationModal
         isOpen={showUntrackConfirmation}
-        title="Untrack repository"
+        title="Archive repository"
         message={
           <>
-            This will remove the repository from your workspace. This action cannot be undone.
+            This will archive the repository from your workspace. You can restore it later.
           </>
         }
-        confirmLabel="Yes, untrack"
+        confirmLabel="Archive"
         cancelLabel="Cancel"
         variant="danger"
         isBusy={isBusy}

@@ -207,6 +207,7 @@ function parseManualEdgeNodePair(edgeId: string): [string, string] | null {
 
 interface CanvasState {
   views: CanvasViewRecord[];
+  archivedViews: CanvasViewRecord[];
   activeViewId: string | null;
   isBranchMapActive: boolean;
   isViewHydrating: boolean;
@@ -227,6 +228,9 @@ interface CanvasState {
   createNewView: (options: { name: string; isFavorite?: boolean; viewportDefaults?: { zoomLevel: number; panX: number; panY: number }; scope?: { visiblePathIds?: string[]; branchVisibility?: Record<string, string[]> } }) => Promise<void>;
   duplicateView: (sourceId: string, newName: string) => Promise<void>;
   deleteView: (viewId: string) => Promise<void>;
+  hydrateArchivedViews: () => Promise<void>;
+  restoreView: (viewId: string) => Promise<void>;
+  purgeView: (viewId: string) => Promise<void>;
   renameView: (viewId: string, name: string) => Promise<void>;
   setViewFavorite: (viewId: string, favorite: boolean) => Promise<void>;
   moveViewOrder: (viewId: string, direction: -1 | 1) => Promise<void>;
@@ -270,6 +274,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
 
   return ({
   views: [],
+  archivedViews: [],
   activeViewId: null,
   isBranchMapActive: false,
   isViewHydrating: false,
@@ -426,6 +431,29 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
     }
   },
 
+  hydrateArchivedViews: async () => {
+    try {
+      const rawBackendViews = await invoke<any[]>('get_archived_canvas_views');
+      set({
+        archivedViews: rawBackendViews.map((v) => ({
+          id: v.view_id || v.id,
+          name: v.view_name || v.name || 'Unnamed View',
+          zoom_level: v.zoom_level ?? 1,
+          pan_x: v.pan_x ?? 0,
+          pan_y: v.pan_y ?? 0,
+          is_favorite: v.is_favorite ?? 0,
+          display_order: v.display_order ?? 0,
+          card_state_json: v.card_state_json ?? undefined,
+          baseline_zoom: v.baseline_zoom ?? undefined,
+          baseline_pan_x: v.baseline_pan_x ?? undefined,
+          baseline_pan_y: v.baseline_pan_y ?? undefined,
+        })),
+      });
+    } catch (error) {
+      console.error('Failed to fetch archived views:', error);
+    }
+  },
+
   initializeBranchMapSession: async () => {
     const views = get().views;
     if (views.length === 0) {
@@ -571,7 +599,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
         ? (existingViews[deleteIndex + 1]?.id || existingViews[deleteIndex - 1]?.id || null)
         : null;
 
-      await invoke('delete_canvas_view', { viewId });
+      await invoke('archive_canvas_view', { viewId });
 
       if (get().activeViewId === viewId) {
         set({ activeViewId: null, nodes: [], edges: [] });
@@ -585,6 +613,16 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
     } catch (error) {
       console.error('Failed deleting environment view:', error);
     }
+  },
+
+  restoreView: async (viewId) => {
+    await invoke('restore_canvas_view', { viewId });
+    await Promise.all([get().hydrateViewsList(), get().hydrateArchivedViews()]);
+  },
+
+  purgeView: async (viewId) => {
+    await invoke('purge_canvas_view', { viewId });
+    await get().hydrateArchivedViews();
   },
 
   renameView: async (viewId, name) => {

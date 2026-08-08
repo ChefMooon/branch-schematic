@@ -13,6 +13,7 @@ use tauri::{
 };
 use tauri_plugin_autostart::ManagerExt;
 use tauri_plugin_window_state::{AppHandleExt, WindowExt};
+use crate::manager::WatcherManager;
 
 mod auth;
 mod db;
@@ -572,6 +573,15 @@ async fn get_active_tracked_paths(
 }
 
 #[tauri::command]
+async fn get_archived_tracked_paths(
+    state: tauri::State<'_, DbState>,
+) -> Result<Vec<db::TrackedPathRow>, String> {
+    db::fetch_archived_tracked_paths(state.inner().pool())
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 async fn get_canvas_views(
     state: tauri::State<'_, DbState>,
 ) -> Result<Vec<db::CanvasViewRow>, String> {
@@ -612,6 +622,45 @@ async fn delete_canvas_view(
     view_id: String,
 ) -> Result<(), String> {
     db::delete_canvas_view(state.inner().pool(), &view_id)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+async fn archive_canvas_view(
+    state: tauri::State<'_, DbState>,
+    view_id: String,
+) -> Result<(), String> {
+    db::archive_canvas_view(state.inner().pool(), &view_id)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+async fn get_archived_canvas_views(
+    state: tauri::State<'_, DbState>,
+) -> Result<Vec<db::CanvasViewRow>, String> {
+    db::fetch_archived_canvas_views(state.inner().pool())
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+async fn restore_canvas_view(
+    state: tauri::State<'_, DbState>,
+    view_id: String,
+) -> Result<(), String> {
+    db::restore_canvas_view(state.inner().pool(), &view_id)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+async fn purge_canvas_view(
+    state: tauri::State<'_, DbState>,
+    view_id: String,
+) -> Result<(), String> {
+    db::purge_canvas_view(state.inner().pool(), &view_id)
         .await
         .map_err(|error| error.to_string())
 }
@@ -843,10 +892,15 @@ async fn update_branch_card_config(
 
 #[tauri::command]
 async fn soft_archive_repository(
-    _state: tauri::State<'_, DbState>,
-    _path_id: String,
+    state: tauri::State<'_, DbState>,
+    manager: tauri::State<'_, WatcherManager>,
+    path_id: String,
 ) -> Result<(), String> {
-    Ok(())
+    db::archive_tracked_path(state.inner().pool(), &path_id)
+        .await
+        .map_err(|error| error.to_string())?;
+
+    manager.stop_monitored(&path_id).await
 }
 
 #[tauri::command]
@@ -1151,10 +1205,15 @@ pub fn run() {
             verify_repo_paths,
             validate_repository_path,
             get_active_tracked_paths,
+            get_archived_tracked_paths,
             get_canvas_views,
             create_canvas_view,
             clone_view,
             delete_canvas_view,
+            archive_canvas_view,
+            get_archived_canvas_views,
+            restore_canvas_view,
+            purge_canvas_view,
             rename_canvas_view,
             set_canvas_view_favorite,
             move_canvas_view_display_order,
@@ -1182,6 +1241,8 @@ pub fn run() {
             git::add_new_tracked_path,
             git::relink_repository_path,
             git::untrack_repository,
+            git::restore_repository,
+            git::purge_repository,
             git::get_tracked_workspaces,
             git::refresh_repository_git_status,
             git::get_repository_changes,

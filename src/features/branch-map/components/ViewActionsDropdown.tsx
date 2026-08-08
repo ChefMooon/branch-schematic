@@ -461,14 +461,14 @@ export function ViewActionsDropdown({
 
       <ConfirmationModal
         isOpen={isDeleteConfirmOpen}
-        title="Delete view"
+        title="Archive view"
         message={
           <>
-            Delete view <strong>{activeView?.name ?? 'this view'}</strong>? The next view in order
-            will become active. This action cannot be undone.
+            Archive view <strong>{activeView?.name ?? 'this view'}</strong>? The next view in order
+            will become active. The saved layout will be kept for recovery.
           </>
         }
-        confirmLabel="Delete view"
+        confirmLabel="Archive view"
         cancelLabel="Cancel"
         variant="danger"
         onConfirm={handleDeleteConfirm}

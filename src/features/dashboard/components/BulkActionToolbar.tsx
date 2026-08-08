@@ -49,7 +49,7 @@ export function BulkActionToolbar({
             onClick={() => setShowUntrackConfirmation(true)}
           >
             <Trash size={15} weight="bold" />
-            Untrack
+            Archive
           </Button>
           <Button type="button" variant="basic" className="bulk-action-toolbar__button bulk-action-toolbar__button-muted" onClick={onClearSelection}>
             <X size={15} weight="bold" />
@@ -60,15 +60,15 @@ export function BulkActionToolbar({
 
       <ConfirmationModal
         isOpen={showUntrackConfirmation}
-        title="Untrack selected workspaces"
+        title="Archive selected workspaces"
         message={
           <>
             {selectedCount === 1
-              ? 'This will remove the selected workspace from your workspace list. This action cannot be undone.'
-              : `This will remove the ${selectedCount} selected workspaces from your workspace list. This action cannot be undone.`}
+              ? 'This will archive the selected workspace. You can restore it later.'
+              : `This will archive the ${selectedCount} selected workspaces. You can restore them later.`}
           </>
         }
-        confirmLabel="Yes, untrack"
+        confirmLabel="Archive"
         cancelLabel="Cancel"
         variant="danger"
         onConfirm={() => void handleUntrackConfirm()}

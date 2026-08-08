@@ -64,15 +64,6 @@ pub fn verification_missing() -> HealthTransition {
     }
 }
 
-pub fn verification_moved() -> HealthTransition {
-    HealthTransition {
-        state: HealthState::Moved,
-        is_cache_stale: true,
-        failure_count: 0,
-        error: Some("Repository path no longer matches its recorded location".to_string()),
-    }
-}
-
 pub fn verification_failed(previous_failures: u32, message: &str) -> HealthTransition {
     let failure_count = previous_failures.saturating_add(1);
     HealthTransition {

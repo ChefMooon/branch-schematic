@@ -116,8 +116,8 @@ describe('ViewActionsDropdown', () => {
     await user.click(screen.getByRole('button', { name: /view actions/i }));
     await user.click(screen.getByRole('button', { name: /delete/i }));
 
-    expect(screen.getByRole('dialog')).toHaveTextContent(/delete view/i);
-    expect(screen.getByRole('dialog')).toHaveTextContent(/this action cannot be undone/i);
+    expect(screen.getByRole('dialog')).toHaveTextContent(/archive view/i);
+    expect(screen.getByRole('dialog')).toHaveTextContent(/saved layout will be kept for recovery/i);
   });
 
   it('opens a confirmation modal before restoring saved card locations', async () => {

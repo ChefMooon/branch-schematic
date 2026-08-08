@@ -1,16 +1,20 @@
-import { ArrowDown, ArrowUp, CopySimple, PencilSimple, Star, Trash } from '@phosphor-icons/react';
+import { Archive, ArrowCounterClockwise, ArrowDown, ArrowUp, CaretDown, CaretRight, CopySimple, PencilSimple, Star, Trash } from '@phosphor-icons/react';
+import { useState } from 'react';
 import type { CanvasViewRecord } from '../../../stores/canvas-store';
 import { Button } from '../../../components/button/Button';
 import './canvasViews.css';
 
 type ViewManagerSidebarProps = {
   views: CanvasViewRecord[];
+  archivedViews?: CanvasViewRecord[];
   selectedViewId: string | null;
   onSelect: (viewId: string) => void;
   onCreate: () => void;
   onDuplicate: (view: CanvasViewRecord) => void;
   onRename: (view: CanvasViewRecord) => void;
   onDelete: (view: CanvasViewRecord) => void;
+  onRestore?: (view: CanvasViewRecord) => void;
+  onPurge?: (view: CanvasViewRecord) => void;
   onToggleFavorite: (viewId: string, favorite: boolean) => Promise<void>;
   onMoveUp: (viewId: string) => Promise<void>;
   onMoveDown: (viewId: string) => Promise<void>;
@@ -18,17 +22,22 @@ type ViewManagerSidebarProps = {
 
 export function ViewManagerSidebar({
   views,
+  archivedViews = [],
   selectedViewId,
   onSelect,
   onCreate,
   onDuplicate,
   onRename,
   onDelete,
+  onRestore = () => undefined,
+  onPurge = () => undefined,
   onToggleFavorite,
   onMoveUp,
   onMoveDown,
 }: ViewManagerSidebarProps) {
   const canDelete = views.length > 1;
+  const [isArchiveSectionOpen, setIsArchiveSectionOpen] = useState(false);
+  const archivedViewCountLabel = `${archivedViews.length} ${archivedViews.length === 1 ? 'view' : 'views'}`;
 
   return (
     <aside className="canvas-view-manager__sidebar">
@@ -145,8 +154,8 @@ export function ViewManagerSidebar({
                   className="canvas-view-manager__icon-button is-danger"
                   onClick={() => onDelete(view)}
                   disabled={!canDelete}
-                  title={canDelete ? `Delete ${view.name}` : 'At least one view must remain'}
-                  aria-label={canDelete ? `Delete ${view.name}` : 'Delete unavailable because this is the only view'}
+                  title={canDelete ? `Archive ${view.name}` : 'At least one view must remain'}
+                  aria-label={canDelete ? `Archive ${view.name}` : 'Archive unavailable because this is the only view'}
                 >
                   <Trash size={15} weight="bold" />
                 </Button>
@@ -155,6 +164,51 @@ export function ViewManagerSidebar({
           );
         })}
       </div>
+
+      <section
+        className={`canvas-view-manager__archive-section${isArchiveSectionOpen ? ' is-open' : ' is-collapsed'}`}
+        aria-labelledby="archived-views-title"
+      >
+        <button
+          type="button"
+          className="canvas-view-manager__archive-heading"
+          aria-expanded={isArchiveSectionOpen}
+          aria-controls="archived-views-panel"
+          onClick={() => setIsArchiveSectionOpen((open) => !open)}
+        >
+          <Archive size={16} weight="bold" />
+          <span className="canvas-view-manager__archive-label">
+            <span id="archived-views-title">Archived views</span>
+            <span className="canvas-view-manager__archive-count">{archivedViewCountLabel}</span>
+          </span>
+          <span className="canvas-view-manager__archive-chevron" aria-hidden="true">
+            {isArchiveSectionOpen ? <CaretDown size={14} weight="bold" /> : <CaretRight size={14} weight="bold" />}
+          </span>
+        </button>
+        {isArchiveSectionOpen && (
+          <div id="archived-views-panel" className="canvas-view-manager__archive-panel">
+            {archivedViews.length === 0 ? (
+              <p className="canvas-view-manager__empty">No archived views.</p>
+            ) : (
+              <div className="canvas-view-manager__archived-list">
+                {archivedViews.map((view) => (
+                  <div className="canvas-view-manager__archived-row" key={view.id}>
+                    <span className="canvas-view-manager__view-name" title={view.name}>{view.name}</span>
+                    <div className="canvas-view-manager__view-actions" aria-label={`Archive actions for ${view.name}`}>
+                      <Button type="button" variant="basic" className="canvas-view-manager__icon-button" onClick={() => onRestore(view)} title={`Restore ${view.name}`} aria-label={`Restore ${view.name}`}>
+                        <ArrowCounterClockwise size={15} weight="bold" />
+                      </Button>
+                      <Button type="button" variant="danger" className="canvas-view-manager__icon-button is-danger" onClick={() => onPurge(view)} title={`Permanently purge ${view.name}`} aria-label={`Permanently purge ${view.name}`}>
+                        <Trash size={15} weight="bold" />
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </section>
 
     </aside>
   );

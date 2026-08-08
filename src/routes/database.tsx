@@ -27,7 +27,7 @@ function DatabasePage() {
 
   const [message, setMessage] = useState<string>("");
   const [error, setError] = useState<string>("");
-  const { addRepo, removeRepo, hydrateFromBackend } = useWorkspaceStore();
+  const { removeRepo, hydrateFromBackend } = useWorkspaceStore();
   const { addToast } = useNotifications();
 
   async function refreshCacheData() {
@@ -64,20 +64,9 @@ function DatabasePage() {
 
     try {
       setIsLoading(true);
-      const db = await openAppDatabase();
-      const pathUuid = crypto.randomUUID();
-
-      await db.execute(
-        "INSERT INTO tracked_paths (id, display_name, absolute_path, is_active) VALUES ($1, $2, $3, 1)",
-        [pathUuid, newDisplayName, newPath]
-      );
-
-      await invoke("ensure_repository_monitored_command", {
-        pathId: pathUuid,
+      await invoke("add_new_tracked_path", {
         absolutePath: newPath,
       });
-
-      addRepo({ id: pathUuid, display_name: newDisplayName, absolute_path: newPath, is_active: 1 });
       await hydrateFromBackend();
 
       setMessage(`Success: Daemon is now watching ${newDisplayName}`);
@@ -129,10 +118,7 @@ function DatabasePage() {
   async function handleUnmountPath(pathId: string, displayName: string) {
     try {
       setIsLoading(true);
-      const db = await openAppDatabase();
-      
-      await db.execute("UPDATE tracked_paths SET is_active = 0 WHERE id = $1", [pathId]);
-      await db.execute("DELETE FROM cached_git_branches WHERE path_id = $1", [pathId]);
+      await invoke("untrack_repository", { pathId });
 
       removeRepo(pathId);
       await hydrateFromBackend();

@@ -109,6 +109,14 @@ export interface TrackedPath {
   status?: 'active' | 'missing' | 'verifying';
 }
 
+export interface ArchivedTrackedRepository {
+  id: string;
+  display_name: string;
+  absolute_path: string;
+  remote_url?: string | null;
+  archived_at: string | null;
+}
+
 /**
  * Snapshot of branch/sync status for a repository's currently checked-out (HEAD)
  * branch, returned by `refresh_repository_git_status` and the fetch/pull/push commands.

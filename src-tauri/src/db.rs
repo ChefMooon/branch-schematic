@@ -12,6 +12,7 @@ pub struct TrackedPathRow {
     pub absolute_path: String,
     pub remote_url: Option<String>,
     pub is_active: i64,
+    pub archived_at: Option<String>,
     pub theme_color_hex: Option<String>,
     pub icon_name: Option<String>,
     pub is_pinned: i64,
@@ -161,10 +162,6 @@ pub const DB_NAME: &str = "branch-schematic-dev.db";
 #[cfg(not(debug_assertions))]
 pub const DB_NAME: &str = "branch-schematic.db";
 
-#[cfg(debug_assertions)]
-pub const DB_URL: &str = "sqlite:branch-schematic-dev.db";
-#[cfg(not(debug_assertions))]
-pub const DB_URL: &str = "sqlite:branch-schematic.db";
 pub const DEFAULT_CANVAS_VIEW_ID: &str = "default-workspace-view";
 pub const EXPECTED_SCHEMA_VERSION: i64 = 3;
 pub const DEFAULT_DETAIL_STATUS_REFRESH_INTERVAL: i64 = 5;
@@ -681,7 +678,18 @@ pub async fn fetch_active_tracked_paths(
     pool: &SqlitePool,
 ) -> Result<Vec<TrackedPathRow>, sqlx::Error> {
     let rows = sqlx::query_as::<_, TrackedPathRow>(
-        "SELECT id, display_name, absolute_path, remote_url, is_active, theme_color_hex, icon_name, is_pinned, health_state, is_cache_stale, last_verified_at, last_successful_verification_at, verification_failure_count, last_verification_error FROM tracked_paths WHERE is_active = 1 ORDER BY display_name ASC"
+        "SELECT id, display_name, absolute_path, remote_url, is_active, archived_at, theme_color_hex, icon_name, is_pinned, health_state, is_cache_stale, last_verified_at, last_successful_verification_at, verification_failure_count, last_verification_error FROM tracked_paths WHERE is_active = 1 AND archived_at IS NULL ORDER BY display_name ASC"
+    )
+    .fetch_all(pool)
+    .await?;
+    Ok(rows)
+}
+
+pub async fn fetch_archived_tracked_paths(
+    pool: &SqlitePool,
+) -> Result<Vec<TrackedPathRow>, sqlx::Error> {
+    let rows = sqlx::query_as::<_, TrackedPathRow>(
+        "SELECT id, display_name, absolute_path, remote_url, is_active, archived_at, theme_color_hex, icon_name, is_pinned, health_state, is_cache_stale, last_verified_at, last_successful_verification_at, verification_failure_count, last_verification_error FROM tracked_paths WHERE archived_at IS NOT NULL ORDER BY archived_at DESC, display_name ASC"
     )
     .fetch_all(pool)
     .await?;
@@ -712,6 +720,56 @@ pub async fn fetch_all_canvas_views(pool: &SqlitePool) -> Result<Vec<CanvasViewR
     .fetch_all(pool)
     .await?;
     Ok(rows)
+}
+
+pub async fn fetch_archived_canvas_views(
+    pool: &SqlitePool,
+) -> Result<Vec<CanvasViewRow>, sqlx::Error> {
+    let rows = sqlx::query_as::<_, CanvasViewRow>(
+        "SELECT id, view_name, zoom_level, pan_x, pan_y, is_favorite, display_order, card_state_json, baseline_zoom, baseline_pan_x, baseline_pan_y, created_at, archived_at FROM canvas_views WHERE archived_at IS NOT NULL ORDER BY archived_at DESC, created_at DESC",
+    )
+    .fetch_all(pool)
+    .await?;
+    Ok(rows)
+}
+
+pub async fn restore_canvas_view(pool: &SqlitePool, view_id: &str) -> Result<(), sqlx::Error> {
+    let result = sqlx::query(
+        "UPDATE canvas_views
+         SET archived_at = NULL,
+             display_order = COALESCE((SELECT MAX(display_order) + 1 FROM canvas_views WHERE archived_at IS NULL), 0)
+         WHERE id = ? AND archived_at IS NOT NULL;",
+    )
+    .bind(view_id)
+    .execute(pool)
+    .await?;
+
+    if result.rows_affected() == 0 {
+        return Err(sqlx::Error::RowNotFound);
+    }
+
+    Ok(())
+}
+
+pub async fn purge_canvas_view(pool: &SqlitePool, view_id: &str) -> Result<(), sqlx::Error> {
+    if view_id == DEFAULT_CANVAS_VIEW_ID {
+        return Err(sqlx::Error::Protocol(
+            "The default canvas view cannot be purged".to_string(),
+        ));
+    }
+
+    let result = sqlx::query(
+        "DELETE FROM canvas_views WHERE id = ? AND archived_at IS NOT NULL;",
+    )
+    .bind(view_id)
+    .execute(pool)
+    .await?;
+
+    if result.rows_affected() == 0 {
+        return Err(sqlx::Error::RowNotFound);
+    }
+
+    Ok(())
 }
 
 pub async fn update_canvas_viewport_state(
@@ -1394,6 +1452,7 @@ pub async fn insert_tracked_path(
          ) VALUES (?, ?, ?, ?, ?, ?, 0, 1)
          ON CONFLICT(absolute_path) DO UPDATE SET
             is_active = 1,
+                archived_at = NULL,
             display_name = excluded.display_name,
             remote_url = excluded.remote_url,
             repo_origin_type = excluded.repo_origin_type,
@@ -1404,6 +1463,7 @@ pub async fn insert_tracked_path(
          ) VALUES (?, ?, ?, ?, ?, 0, 1)
          ON CONFLICT(absolute_path) DO UPDATE SET
             is_active = 1,
+                archived_at = NULL,
             display_name = excluded.display_name,
             remote_url = excluded.remote_url,
             repo_origin_type = excluded.repo_origin_type;"
@@ -1440,7 +1500,8 @@ pub async fn relink_tracked_path(
              remote_url = ?,
              repo_origin_type = ?,
              github_owner_login = ?,
-             is_active = 1
+             is_active = 1,
+             archived_at = NULL
          WHERE id = ?;",
     )
     .bind(display_name)
@@ -1472,10 +1533,53 @@ pub async fn deactivate_duplicate_tracked_path(
 }
 
 pub async fn untrack_repository_path(pool: &SqlitePool, path_id: &str) -> Result<(), sqlx::Error> {
-    sqlx::query("UPDATE tracked_paths SET is_active = 0 WHERE id = ?;")
+    sqlx::query(
+        "UPDATE tracked_paths
+         SET is_active = 0, archived_at = CURRENT_TIMESTAMP
+         WHERE id = ?;",
+    )
         .bind(path_id)
         .execute(pool)
         .await?;
+    Ok(())
+}
+
+pub async fn restore_tracked_path(
+    pool: &SqlitePool,
+    path_id: &str,
+) -> Result<String, sqlx::Error> {
+    let absolute_path = sqlx::query_scalar::<_, String>(
+        "SELECT absolute_path FROM tracked_paths WHERE id = ? AND archived_at IS NOT NULL;",
+    )
+    .bind(path_id)
+    .fetch_optional(pool)
+    .await?
+    .ok_or(sqlx::Error::RowNotFound)?;
+
+    sqlx::query(
+        "UPDATE tracked_paths
+         SET is_active = 1, archived_at = NULL
+         WHERE id = ? AND archived_at IS NOT NULL;",
+    )
+    .bind(path_id)
+    .execute(pool)
+    .await?;
+
+    Ok(absolute_path)
+}
+
+pub async fn purge_tracked_path(pool: &SqlitePool, path_id: &str) -> Result<(), sqlx::Error> {
+    let result = sqlx::query(
+        "DELETE FROM tracked_paths WHERE id = ? AND archived_at IS NOT NULL;",
+    )
+    .bind(path_id)
+    .execute(pool)
+    .await?;
+
+    if result.rows_affected() == 0 {
+        return Err(sqlx::Error::RowNotFound);
+    }
+
     Ok(())
 }
 
@@ -2086,10 +2190,35 @@ pub async fn archive_tracked_path(pool: &SqlitePool, path_id: &str) -> Result<()
 }
 
 pub async fn archive_canvas_view(pool: &SqlitePool, view_id: &str) -> Result<(), sqlx::Error> {
-    sqlx::query("UPDATE canvas_views SET archived_at = CURRENT_TIMESTAMP WHERE id = ?;")
+    if view_id == DEFAULT_CANVAS_VIEW_ID {
+        return Err(sqlx::Error::Protocol(
+            "The default canvas view cannot be archived".to_string(),
+        ));
+    }
+
+    let active_view_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM canvas_views WHERE archived_at IS NULL;")
+            .fetch_one(pool)
+            .await?;
+    if active_view_count <= 1 {
+        return Err(sqlx::Error::Protocol(
+            "At least one active canvas view must remain".to_string(),
+        ));
+    }
+
+    let result = sqlx::query(
+        "UPDATE canvas_views
+         SET archived_at = CURRENT_TIMESTAMP
+         WHERE id = ? AND archived_at IS NULL;",
+    )
         .bind(view_id)
         .execute(pool)
         .await?;
+
+    if result.rows_affected() == 0 {
+        return Err(sqlx::Error::RowNotFound);
+    }
+
     Ok(())
 }
 
@@ -2100,6 +2229,16 @@ pub async fn clone_canvas_view(
     new_name: &str,
 ) -> Result<(), sqlx::Error> {
     let mut tx = pool.begin().await?;
+
+    let source_exists: Option<String> = sqlx::query_scalar(
+        "SELECT id FROM canvas_views WHERE id = ? AND archived_at IS NULL LIMIT 1;",
+    )
+    .bind(source_id)
+    .fetch_optional(&mut *tx)
+    .await?;
+    if source_exists.is_none() {
+        return Err(sqlx::Error::RowNotFound);
+    }
 
     let next_display_order: i64 =
         sqlx::query_scalar("SELECT COALESCE(MAX(display_order), -1) + 1 FROM canvas_views;")

@@ -27,9 +27,13 @@ type InputDialogState = {
 
 export function ViewManagerModal({ isDark, isOpen, onClose }: ViewManagerModalProps) {
   const views = useCanvasStore((state) => state.views);
+  const archivedViews = useCanvasStore((state) => state.archivedViews);
   const activeViewId = useCanvasStore((state) => state.activeViewId);
   const setActiveView = useCanvasStore((state) => state.setActiveView);
   const deleteView = useCanvasStore((state) => state.deleteView);
+  const hydrateArchivedViews = useCanvasStore((state) => state.hydrateArchivedViews);
+  const restoreView = useCanvasStore((state) => state.restoreView);
+  const purgeView = useCanvasStore((state) => state.purgeView);
   const renameView = useCanvasStore((state) => state.renameView);
   const duplicateView = useCanvasStore((state) => state.duplicateView);
   const createNewView = useCanvasStore((state) => state.createNewView);
@@ -40,6 +44,7 @@ export function ViewManagerModal({ isDark, isOpen, onClose }: ViewManagerModalPr
   const [selectedViewId, setSelectedViewId] = useState<string | null>(activeViewId);
   const [inputDialog, setInputDialog] = useState<InputDialogState | null>(null);
   const [viewToDelete, setViewToDelete] = useState<CanvasViewRecord | null>(null);
+  const [viewToPurge, setViewToPurge] = useState<CanvasViewRecord | null>(null);
 
   const backdropDismiss = useBackdropDismiss(dialogRef, onClose, isOpen);
   const orderedViews = useMemo(() => sortCanvasViews(views), [views]);
@@ -47,6 +52,8 @@ export function ViewManagerModal({ isDark, isOpen, onClose }: ViewManagerModalPr
 
   useEffect(() => {
     if (!isOpen) return;
+
+    void hydrateArchivedViews();
 
     if (activeViewId && views.some((view) => view.id === activeViewId)) {
       setSelectedViewId(activeViewId);
@@ -62,7 +69,7 @@ export function ViewManagerModal({ isDark, isOpen, onClose }: ViewManagerModalPr
     const previousOverflow = document.body.style.overflow;
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return;
-      if (inputDialog || viewToDelete) return;
+      if (inputDialog || viewToDelete || viewToPurge) return;
       onClose();
     };
 
@@ -73,7 +80,7 @@ export function ViewManagerModal({ isDark, isOpen, onClose }: ViewManagerModalPr
       document.body.style.overflow = previousOverflow;
       document.removeEventListener('keydown', handleKeyDown);
     };
-  }, [inputDialog, isOpen, onClose, viewToDelete]);
+  }, [inputDialog, isOpen, onClose, viewToDelete, viewToPurge]);
 
   if (!isOpen) return null;
 
@@ -141,6 +148,16 @@ export function ViewManagerModal({ isDark, isOpen, onClose }: ViewManagerModalPr
     await setActiveView(viewId);
   };
 
+  const handleRestore = async (view: CanvasViewRecord) => {
+    await restoreView(view.id);
+  };
+
+  const handlePurgeConfirm = async () => {
+    if (!viewToPurge) return;
+    await purgeView(viewToPurge.id);
+    setViewToPurge(null);
+  };
+
   return (
     <>
       <div
@@ -174,12 +191,15 @@ export function ViewManagerModal({ isDark, isOpen, onClose }: ViewManagerModalPr
           <div className="canvas-view-manager__body">
             <ViewManagerSidebar
               views={orderedViews}
+              archivedViews={archivedViews}
               selectedViewId={selectedViewId}
               onSelect={(viewId) => void handleSelect(viewId)}
               onCreate={handleCreate}
               onRename={handleRename}
               onDuplicate={handleDuplicate}
               onDelete={setViewToDelete}
+              onRestore={(view) => void handleRestore(view)}
+              onPurge={setViewToPurge}
               onToggleFavorite={(viewId, favorite) => setViewFavorite(viewId, favorite)}
               onMoveUp={(viewId) => moveViewOrder(viewId, -1)}
               onMoveDown={(viewId) => moveViewOrder(viewId, 1)}
@@ -202,12 +222,22 @@ export function ViewManagerModal({ isDark, isOpen, onClose }: ViewManagerModalPr
 
       <ConfirmationModal
         isOpen={viewToDelete !== null}
-        title="Delete view?"
-        message={viewToDelete ? `Delete “${viewToDelete.name}”? This removes the saved environment and its layout.` : null}
-        confirmLabel="Delete view"
+        title="Archive view?"
+        message={viewToDelete ? `Archive “${viewToDelete.name}”? The saved environment and its layout will be kept for recovery.` : null}
+        confirmLabel="Archive view"
         variant="danger"
         onConfirm={handleDeleteConfirm}
         onCancel={() => setViewToDelete(null)}
+      />
+
+      <ConfirmationModal
+        isOpen={viewToPurge !== null}
+        title="Permanently purge view?"
+        message={viewToPurge ? `Permanently purge “${viewToPurge.name}”? Its saved layout and history will be removed and cannot be recovered.` : null}
+        confirmLabel="Permanently purge"
+        variant="danger"
+        onConfirm={handlePurgeConfirm}
+        onCancel={() => setViewToPurge(null)}
       />
     </>
   );

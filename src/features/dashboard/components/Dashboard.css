@@ -2492,6 +2492,39 @@
   color: var(--app-muted);
 }
 
+.archived-repository-row {
+  grid-template-columns: minmax(0, 1fr) auto auto;
+}
+
+.archived-repository-details {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.18rem;
+}
+
+.archived-repository-details strong,
+.archived-repository-details span,
+.archived-repository-details small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.archived-repository-details span,
+.archived-repository-details small {
+  color: var(--app-muted);
+  font-size: 0.74rem;
+}
+
+.management-empty-state {
+  border: 1px dashed var(--app-border);
+  border-radius: 10px;
+  padding: 1.25rem;
+  color: var(--app-muted);
+  text-align: center;
+}
+
 .btn-secondary.danger {
   color: var(--app-danger);
   border-color: color-mix(in srgb, var(--app-danger) 28%, transparent);

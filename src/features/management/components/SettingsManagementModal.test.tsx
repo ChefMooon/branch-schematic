@@ -25,7 +25,7 @@ describe('SettingsManagementModal', () => {
       />
     );
 
-    expect(screen.getByText('Tag and Group Management')).toBeInTheDocument();
+    expect(screen.getByText('Data Management')).toBeInTheDocument();
   });
 
   it('exposes accessible tabs, panels, and color controls', () => {
@@ -46,18 +46,18 @@ describe('SettingsManagementModal', () => {
       />
     );
 
-    expect(screen.getByRole('dialog', { name: 'Tag and Group Management' })).toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: 'Data Management' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Close management modal' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Tags' })).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByRole('tab', { name: 'Groups' })).toHaveAttribute('aria-selected', 'false');
-    expect(screen.getByRole('tabpanel')).toHaveAttribute('aria-labelledby', 'settings-management-tab-tags');
+    expect(screen.getByRole('tabpanel')).toHaveAttribute('aria-labelledby', 'data-management-tab-tags');
     expect(screen.getByLabelText('Choose color for new tag')).toBeInTheDocument();
     expect(screen.getByLabelText('Choose color for tag Active')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('tab', { name: 'Groups' }));
 
     expect(screen.getByRole('tab', { name: 'Groups' })).toHaveAttribute('aria-selected', 'true');
-    expect(screen.getByRole('tabpanel')).toHaveAttribute('aria-labelledby', 'settings-management-tab-groups');
+    expect(screen.getByRole('tabpanel')).toHaveAttribute('aria-labelledby', 'data-management-tab-groups');
     expect(screen.getByLabelText('Choose color for new group')).toBeInTheDocument();
     expect(screen.getByLabelText('Choose color for group Work')).toBeInTheDocument();
     expect(screen.queryByLabelText('Choose color for new tag')).not.toBeInTheDocument();
@@ -108,7 +108,7 @@ describe('SettingsManagementModal', () => {
     );
 
     expect(screen.getByRole('tab', { name: 'Tags' })).toHaveAttribute('aria-selected', 'true');
-    expect(screen.getByRole('tabpanel')).toHaveAttribute('aria-labelledby', 'settings-management-tab-tags');
+    expect(screen.getByRole('tabpanel')).toHaveAttribute('aria-labelledby', 'data-management-tab-tags');
   });
 
   it('closes with Escape and restores the previous body overflow value', () => {
@@ -168,7 +168,7 @@ describe('SettingsManagementModal', () => {
 
     expect(onClose).not.toHaveBeenCalled();
     expect(screen.queryByRole('dialog', { name: 'Delete tag' })).not.toBeInTheDocument();
-    expect(screen.getByRole('dialog', { name: 'Tag and Group Management' })).toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: 'Data Management' })).toBeInTheDocument();
   });
 
   it('confirms tag deletion once and removes the confirmation', async () => {
@@ -229,5 +229,51 @@ describe('SettingsManagementModal', () => {
     rerender(<SettingsManagementModal {...props} isOpen />);
 
     expect(screen.queryByRole('dialog', { name: 'Delete tag' })).not.toBeInTheDocument();
+  });
+
+  it('restores and purges archived repositories through the archive tab', async () => {
+    const onRestoreRepository = vi.fn(async () => undefined);
+    const onPurgeRepository = vi.fn(async () => undefined);
+
+    render(
+      <SettingsManagementModal
+        isOpen
+        groups={[]}
+        tags={[]}
+        archivedRepos={[{
+          id: 'repo-1',
+          display_name: 'Archived Repo',
+          absolute_path: 'C:/projects/archived-repo',
+          remote_url: null,
+          archived_at: '2026-08-07T10:00:00Z',
+        }]}
+        danglingTagNames={[]}
+        onClose={vi.fn()}
+        onCreateGroup={vi.fn(async () => null)}
+        onCreateTag={vi.fn(async () => null)}
+        onUpdateGroup={vi.fn(async () => undefined)}
+        onDeleteGroup={vi.fn(async () => undefined)}
+        onUpdateTag={vi.fn(async () => undefined)}
+        onDeleteTag={vi.fn(async () => undefined)}
+        onCleanupDanglingTags={vi.fn(async () => 0)}
+        onRestoreRepository={onRestoreRepository}
+        onPurgeRepository={onPurgeRepository}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('tab', { name: /Archived repositories/ }));
+    expect(screen.getByText('Archived Repo')).toBeInTheDocument();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Restore' }));
+    });
+    expect(onRestoreRepository).toHaveBeenCalledWith('repo-1');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Purge' }));
+    expect(screen.getByRole('dialog', { name: 'Purge archived repository' })).toBeInTheDocument();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Purge repository' }));
+    });
+    expect(onPurgeRepository).toHaveBeenCalledWith('repo-1');
   });
 });

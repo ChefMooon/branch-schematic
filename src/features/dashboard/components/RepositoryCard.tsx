@@ -132,7 +132,7 @@ export function RepositoryCard({ repo, onRefresh, onOpenManagement, onOpenManage
 
   const handleUntrackProject = async (e: React.MouseEvent<HTMLButtonElement>) => {
     e.stopPropagation(); // Avoid triggering any higher-level card selection flows
-    if (confirm(`Are you sure you want to stop tracking ${repo.display_name}?`)) {
+    if (confirm(`Archive ${repo.display_name}? You can restore it later.`)) {
       try {
         await invoke("untrack_repository", { pathId: repo.id });
         onRefresh(); // Refresh the parent dashboard list reactively

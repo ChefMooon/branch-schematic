@@ -83,11 +83,11 @@ export function AppSidebar({ isOpen, onClose, onOpenManagementModal }: AppSideba
             }}
             type="button"
             variant="menu-item"
-            title="Manage Tags/Groups"
+            title="Data Management"
             style={{ justifyContent: 'flex-start' }}
           >
             <WrenchIcon size={16} weight="bold" color="currentColor" style={{ display: 'block' }} />
-            <span style={styles.navLabel}>Manage Tags/Groups</span>
+            <span style={styles.navLabel}>Data Management</span>
           </Button>
           <Button
             type="button"

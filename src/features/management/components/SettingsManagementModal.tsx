@@ -1,16 +1,17 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
-import { PencilSimple, Plus, Trash, Wrench, XIcon } from '@phosphor-icons/react';
+import { ArrowCounterClockwise, PencilSimple, Plus, Trash, Wrench, XIcon } from '@phosphor-icons/react';
 import { ConfirmationModal } from '../../../components/Modal/ConfirmationModal';
 import { useNotifications } from '../../../components/notifications/NotificationProvider';
 import { useBackdropDismiss } from '../../../hooks/useBackdropDismiss';
 import { Button } from '../../../components/button/Button';
-import type { GroupSummary, TagFilterSummary } from '../../../types/git';
+import type { ArchivedTrackedRepository, GroupSummary, TagFilterSummary } from '../../../types/git';
 
 type SettingsManagementModalProps = {
   isOpen: boolean;
-  initialTab?: 'tags' | 'groups';
+  initialTab?: 'tags' | 'groups' | 'archived-repositories';
   groups: GroupSummary[];
   tags: TagFilterSummary[];
+  archivedRepos?: ArchivedTrackedRepository[];
   danglingTagNames: string[];
   onClose: () => void;
   onCreateGroup: (groupName: string, colorHex?: string) => Promise<string | null>;
@@ -20,9 +21,11 @@ type SettingsManagementModalProps = {
   onUpdateTag: (id: string, tagName: string, colorHex: string) => Promise<void>;
   onDeleteTag: (id: string) => Promise<void>;
   onCleanupDanglingTags: () => Promise<number>;
+  onRestoreRepository?: (repoId: string) => Promise<void>;
+  onPurgeRepository?: (repoId: string) => Promise<void>;
 };
 
-type Tab = 'tags' | 'groups';
+type Tab = 'tags' | 'groups' | 'archived-repositories';
 
 function defaultTagColor() {
   return '#3B82F6';
@@ -37,6 +40,7 @@ export function SettingsManagementModal({
   initialTab = 'tags',
   groups,
   tags,
+  archivedRepos = [],
   danglingTagNames,
   onClose,
   onCreateGroup,
@@ -46,6 +50,8 @@ export function SettingsManagementModal({
   onUpdateTag,
   onDeleteTag,
   onCleanupDanglingTags,
+  onRestoreRepository = async () => {},
+  onPurgeRepository = async () => {},
 }: SettingsManagementModalProps) {
   const { addToast } = useNotifications();
   const dialogRef = useRef<HTMLDivElement | null>(null);
@@ -60,6 +66,8 @@ export function SettingsManagementModal({
   const [tagToDelete, setTagToDelete] = useState<TagFilterSummary | null>(null);
   const [groupToDelete, setGroupToDelete] = useState<GroupSummary | null>(null);
   const [isCleanupConfirmOpen, setIsCleanupConfirmOpen] = useState(false);
+  const [repositoryToPurge, setRepositoryToPurge] = useState<ArchivedTrackedRepository | null>(null);
+  const [busyRepositoryId, setBusyRepositoryId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -72,6 +80,8 @@ export function SettingsManagementModal({
     setTagToDelete(null);
     setGroupToDelete(null);
     setIsCleanupConfirmOpen(false);
+    setRepositoryToPurge(null);
+    setBusyRepositoryId(null);
   }, [isOpen, initialTab]);
 
   useEffect(() => {
@@ -96,7 +106,7 @@ export function SettingsManagementModal({
 
     const previousOverflow = document.body.style.overflow;
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !tagToDelete && !groupToDelete && !isCleanupConfirmOpen) {
+      if (event.key === 'Escape' && !tagToDelete && !groupToDelete && !isCleanupConfirmOpen && !repositoryToPurge) {
         onClose();
       }
     };
@@ -108,7 +118,7 @@ export function SettingsManagementModal({
       document.body.style.overflow = previousOverflow;
       document.removeEventListener('keydown', handleKeyDown);
     };
-  }, [groupToDelete, isCleanupConfirmOpen, isOpen, onClose, tagToDelete]);
+  }, [groupToDelete, isCleanupConfirmOpen, isOpen, onClose, repositoryToPurge, tagToDelete]);
 
   const danglingLabel = useMemo(() => danglingTagNames.join(', '), [danglingTagNames]);
 
@@ -304,6 +314,33 @@ export function SettingsManagementModal({
     setIsCleanupConfirmOpen(true);
   };
 
+  const handleRestoreRepository = async (repository: ArchivedTrackedRepository) => {
+    setBusyRepositoryId(repository.id);
+    try {
+      await onRestoreRepository(repository.id);
+      addToast({ variant: 'success', title: 'Repository restored', message: `${repository.display_name} is active again.` });
+    } catch (error) {
+      addToast({ variant: 'error', title: 'Restore failed', message: error instanceof Error ? error.message : 'The repository could not be restored.' });
+    } finally {
+      setBusyRepositoryId(null);
+    }
+  };
+
+  const confirmPurgeRepository = async () => {
+    if (!repositoryToPurge) return;
+    const repository = repositoryToPurge;
+    setRepositoryToPurge(null);
+    setBusyRepositoryId(repository.id);
+    try {
+      await onPurgeRepository(repository.id);
+      addToast({ variant: 'success', title: 'Repository purged', message: `${repository.display_name} was removed from the local catalog.` });
+    } catch (error) {
+      addToast({ variant: 'error', title: 'Purge failed', message: error instanceof Error ? error.message : 'The repository could not be purged.' });
+    } finally {
+      setBusyRepositoryId(null);
+    }
+  };
+
   const confirmCleanup = async () => {
     setIsCleanupConfirmOpen(false);
 
@@ -342,24 +379,24 @@ export function SettingsManagementModal({
         className="app-modal app-modal-wide"
         role="dialog"
         aria-modal="true"
-        aria-labelledby="settings-management-modal-title"
+        aria-labelledby="data-management-modal-title"
         onClick={(event) => event.stopPropagation()}
       >
         <div className="app-modal-header">
-          <h3 id="settings-management-modal-title">Tag and Group Management</h3>
+          <h3 id="data-management-modal-title">Data Management</h3>
           <Button type="button" variant="close" className="app-modal-close" onClick={onClose} aria-label="Close management modal">
             <XIcon size={14} weight="bold" />
           </Button>
         </div>
 
-        <div className="management-tabs" role="tablist" aria-label="Tag and group management sections">
+        <div className="management-tabs" role="tablist" aria-label="Workspace management sections">
           <Button
             type="button"
             variant="basic"
             role="tab"
-            id="settings-management-tab-tags"
+            id="data-management-tab-tags"
             aria-selected={tab === 'tags'}
-            aria-controls="settings-management-panel-tags"
+            aria-controls="data-management-panel-tags"
             className={`management-tab${tab === 'tags' ? ' is-active' : ''}`}
             onClick={() => setTab('tags')}
           >
@@ -369,19 +406,31 @@ export function SettingsManagementModal({
             type="button"
             variant="basic"
             role="tab"
-            id="settings-management-tab-groups"
+            id="data-management-tab-groups"
             aria-selected={tab === 'groups'}
-            aria-controls="settings-management-panel-groups"
+            aria-controls="data-management-panel-groups"
             className={`management-tab${tab === 'groups' ? ' is-active' : ''}`}
             onClick={() => setTab('groups')}
           >
             Groups
           </Button>
+          <Button
+            type="button"
+            variant="basic"
+            role="tab"
+            id="data-management-tab-archived-repositories"
+            aria-selected={tab === 'archived-repositories'}
+            aria-controls="data-management-panel-archived-repositories"
+            className={`management-tab${tab === 'archived-repositories' ? ' is-active' : ''}`}
+            onClick={() => setTab('archived-repositories')}
+          >
+            Archived repositories{archivedRepos.length > 0 ? ` (${archivedRepos.length})` : ''}
+          </Button>
         </div>
 
         <div className="app-modal-body">
           {tab === 'tags' && (
-            <div id="settings-management-panel-tags" role="tabpanel" aria-labelledby="settings-management-tab-tags" tabIndex={0} className="management-list">
+            <div id="data-management-panel-tags" role="tabpanel" aria-labelledby="data-management-tab-tags" tabIndex={0} className="management-list">
               <form className="management-create-row" onSubmit={handleCreateTag}>
                 <input
                   type="text"
@@ -472,7 +521,7 @@ export function SettingsManagementModal({
           )}
 
           {tab === 'groups' && (
-            <div id="settings-management-panel-groups" role="tabpanel" aria-labelledby="settings-management-tab-groups" tabIndex={0} className="management-list">
+            <div id="data-management-panel-groups" role="tabpanel" aria-labelledby="data-management-tab-groups" tabIndex={0} className="management-list">
               <form className="management-create-row" onSubmit={handleCreateGroup}>
                 <input
                   type="text"
@@ -544,6 +593,45 @@ export function SettingsManagementModal({
               })}
             </div>
           )}
+
+          {tab === 'archived-repositories' && (
+            <div id="data-management-panel-archived-repositories" role="tabpanel" aria-labelledby="data-management-tab-archived-repositories" tabIndex={0} className="management-list">
+              <p className="management-helper-text">
+                Archived repositories are hidden from the workspace but remain on disk. Restore one to monitor it again, or purge its cached catalog data permanently.
+              </p>
+              {archivedRepos.length === 0 ? (
+                <div className="management-empty-state">No archived repositories.</div>
+              ) : (
+                archivedRepos.map((repository) => (
+                  <div key={repository.id} className="management-row archived-repository-row">
+                    <div className="archived-repository-details">
+                      <strong>{repository.display_name}</strong>
+                      <span>{repository.absolute_path}</span>
+                      {repository.archived_at && <small>Archived {new Date(repository.archived_at).toLocaleString()}</small>}
+                    </div>
+                    <Button
+                      type="button"
+                      variant="basic"
+                      disabled={busyRepositoryId === repository.id}
+                      onClick={() => void handleRestoreRepository(repository)}
+                    >
+                      <ArrowCounterClockwise size={14} weight="bold" />
+                      {busyRepositoryId === repository.id ? 'Working…' : 'Restore'}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="danger"
+                      disabled={busyRepositoryId === repository.id}
+                      onClick={() => setRepositoryToPurge(repository)}
+                    >
+                      <Trash size={14} weight="bold" />
+                      Purge
+                    </Button>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
         </div>
       </div>
 
@@ -562,6 +650,21 @@ export function SettingsManagementModal({
           void confirmDeleteTag();
         }}
         onCancel={() => setTagToDelete(null)}
+      />
+
+      <ConfirmationModal
+        isOpen={Boolean(repositoryToPurge)}
+        title="Purge archived repository"
+        message={
+          <>
+            Permanently remove <strong>{repositoryToPurge?.display_name}</strong> from the local catalog? This does not delete any files from disk and cannot be undone here.
+          </>
+        }
+        confirmLabel="Purge repository"
+        cancelLabel="Cancel"
+        variant="danger"
+        onConfirm={() => void confirmPurgeRepository()}
+        onCancel={() => setRepositoryToPurge(null)}
       />
 
       <ConfirmationModal

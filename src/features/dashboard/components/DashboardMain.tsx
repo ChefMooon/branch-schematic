@@ -117,7 +117,7 @@ export function DashboardMain({ onOpenManagementModal, onCleanupDanglingTags }: 
     if (selectedRepos.length === 0) return;
 
     const confirmed = window.confirm(
-      `Untrack ${selectedRepos.length} selected workspace${selectedRepos.length === 1 ? "" : "s"}?`
+      `Archive ${selectedRepos.length} selected workspace${selectedRepos.length === 1 ? "" : "s"}? You can restore them later.`
     );
     if (!confirmed) return;
 

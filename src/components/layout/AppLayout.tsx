@@ -69,7 +69,7 @@ export function AppLayout({ children }: AppLayoutProps) {
   const [isDiagnosticsOpen, setIsDiagnosticsOpen] = useState(false);
   const [activeRepositoryModal, setActiveRepositoryModal] = useState<RepositoryModalAction | null>(null);
   const [isManagementModalOpen, setIsManagementModalOpen] = useState(false);
-  const [managementInitialTab, setManagementInitialTab] = useState<'tags' | 'groups'>('tags');
+  const [managementInitialTab, setManagementInitialTab] = useState<'tags' | 'groups' | 'archived-repositories'>('tags');
   const [isProfileDropdownOpen, setIsProfileDropdownOpen] = useState(false);
   const [profileDropdownAnchor, setProfileDropdownAnchor] = useState<HTMLButtonElement | null>(null);
   const [isProfileManagementModalOpen, setIsProfileManagementModalOpen] = useState(false);
@@ -103,6 +103,9 @@ export function AppLayout({ children }: AppLayoutProps) {
     updateGlobalTag,
     deleteGlobalTag,
     cleanupDanglingTags,
+    archivedRepos,
+    restoreRepository,
+    purgeRepository,
   } = useWorkspaceStore();
   const {
     inbox,
@@ -128,7 +131,7 @@ export function AppLayout({ children }: AppLayoutProps) {
     activeProfile?.auth_level === 'full_oauth';
 
   const HEADER_H = 48;
-  const openManagementModal = (initialTab: 'tags' | 'groups' = 'tags') => {
+  const openManagementModal = (initialTab: 'tags' | 'groups' | 'archived-repositories' = 'tags') => {
     setManagementInitialTab(initialTab);
     setIsManagementModalOpen(true);
   };
@@ -168,7 +171,7 @@ export function AppLayout({ children }: AppLayoutProps) {
 
   useEffect(() => {
     const handleOpenManagementModal = (event: Event) => {
-      const initialTab = (event as CustomEvent<{ initialTab?: 'tags' | 'groups' }>).detail?.initialTab ?? 'tags';
+      const initialTab = (event as CustomEvent<{ initialTab?: 'tags' | 'groups' | 'archived-repositories' }>).detail?.initialTab ?? 'tags';
       setManagementInitialTab(initialTab);
       setIsManagementModalOpen(true);
     };
@@ -508,6 +511,7 @@ export function AppLayout({ children }: AppLayoutProps) {
             initialTab={managementInitialTab}
             groups={groupDirectory}
             tags={tagDirectory}
+            archivedRepos={archivedRepos}
             danglingTagNames={quickFilterMetadata?.dangling_tags.map((tag) => tag.tag_name) ?? []}
             onClose={() => {
               setIsManagementModalOpen(false);
@@ -520,6 +524,8 @@ export function AppLayout({ children }: AppLayoutProps) {
             onUpdateTag={updateGlobalTag}
             onDeleteTag={deleteGlobalTag}
             onCleanupDanglingTags={cleanupDanglingTags}
+            onRestoreRepository={restoreRepository}
+            onPurgeRepository={purgeRepository}
           />
         )}
 

@@ -155,7 +155,7 @@ pub async fn refresh_repository_full(
         return Err(format!("Failed to commit repository refresh: {error}"));
     }
 
-    mark_refresh_success(pool, path_id).await?;
+    mark_refresh_success(pool, path_id, health::verification_succeeded()).await?;
     Ok(RefreshOutcome {
         path_id: path_id.to_string(),
         operation: RefreshOperation::Full,
@@ -287,12 +287,20 @@ async fn reconcile_branch_snapshot(
     transaction.commit().await
 }
 
-async fn mark_refresh_success(pool: &SqlitePool, path_id: &str) -> Result<(), String> {
+async fn mark_refresh_success(
+    pool: &SqlitePool,
+    path_id: &str,
+    transition: health::HealthTransition,
+) -> Result<(), String> {
     sqlx::query(
-        "UPDATE tracked_paths SET health_state = 'healthy', is_cache_stale = 0,
+        "UPDATE tracked_paths SET health_state = ?, is_cache_stale = ?,
          last_verified_at = CURRENT_TIMESTAMP, last_successful_verification_at = CURRENT_TIMESTAMP,
-         verification_failure_count = 0, last_verification_error = NULL WHERE id = ?",
+         verification_failure_count = ?, last_verification_error = ? WHERE id = ?",
     )
+    .bind("healthy")
+    .bind(if transition.is_cache_stale { 1_i64 } else { 0_i64 })
+    .bind(i64::from(transition.failure_count))
+    .bind(transition.error)
     .bind(path_id)
     .execute(pool)
     .await

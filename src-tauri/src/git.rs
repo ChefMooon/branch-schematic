@@ -212,8 +212,6 @@ struct GitHubRepoOwnerPayload {
 struct GitHubRepoPermissionsPayload {
     #[serde(default)]
     push: bool,
-    #[serde(default)]
-    admin: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1609,13 +1607,52 @@ pub async fn untrack_repository(
     manager: tauri::State<'_, WatcherManager>,
     path_id: String,
 ) -> Result<(), String> {
-    manager.stop_monitored(&path_id).await?;
     crate::db::untrack_repository_path(state.inner().pool(), &path_id)
         .await
-        .map_err(|err| format!("Failed to untrack target repository row: {}", err))?;
+        .map_err(|err| format!("Failed to archive target repository row: {}", err))?;
 
-    println!("Successfully hidden/untracked repo reference: {}", path_id);
+    if let Err(error) = manager.stop_monitored(&path_id).await {
+        return Err(format!(
+            "Repository archived, but its watcher could not be stopped: {}",
+            error
+        ));
+    }
+
+    println!("Successfully archived repository reference: {}", path_id);
     Ok(())
+}
+
+#[tauri::command]
+pub async fn restore_repository(
+    state: tauri::State<'_, DbState>,
+    manager: tauri::State<'_, WatcherManager>,
+    path_id: String,
+) -> Result<(), String> {
+    let absolute_path = crate::db::restore_tracked_path(state.inner().pool(), &path_id)
+        .await
+        .map_err(|err| format!("Failed to restore repository row: {}", err))?;
+
+    if let Err(error) = manager
+        .ensure_monitored(path_id.clone(), absolute_path, RefreshPriority::Foreground)
+        .await
+    {
+        return Err(format!(
+            "Repository restored, but its watcher could not be started: {}",
+            error
+        ));
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn purge_repository(
+    state: tauri::State<'_, DbState>,
+    path_id: String,
+) -> Result<(), String> {
+    crate::db::purge_tracked_path(state.inner().pool(), &path_id)
+        .await
+        .map_err(|err| format!("Failed to permanently purge archived repository: {}", err))
 }
 
 #[tauri::command]
@@ -1665,7 +1702,8 @@ pub async fn get_tracked_workspaces(
             LEFT JOIN cached_git_branches
                 ON cached_git_branches.path_id = tracked_paths.id
                 AND cached_git_branches.is_head = 1
-         WHERE tracked_paths.is_active = 1",
+                 WHERE tracked_paths.is_active = 1
+                     AND tracked_paths.archived_at IS NULL",
     )
     .fetch_all(state.inner().pool())
     .await

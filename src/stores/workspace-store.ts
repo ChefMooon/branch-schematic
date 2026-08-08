@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
-import type { CustomGroup, GroupSummary, QuickFilterMetadata, RepoGitStatusSnapshot, RepoTag, TagFilterSummary, TrackedPath } from '../types/git';
+import type { ArchivedTrackedRepository, CustomGroup, GroupSummary, QuickFilterMetadata, RepoGitStatusSnapshot, RepoTag, TagFilterSummary, TrackedPath } from '../types/git';
 
 const WORKSPACE_UPDATED_EVENT = 'workspace-updated';
 const MAX_EVENT_BATCH_SIZE = 250;
@@ -113,6 +113,7 @@ function parseRepoTags(tagsJson: unknown): RepoTag[] {
 
 interface WorkspaceState {
   repos: TrackedPath[];
+  archivedRepos: ArchivedTrackedRepository[];
   activeRepoId: string | null;
   isHydrated: boolean;
   isLoading: boolean;
@@ -121,6 +122,7 @@ interface WorkspaceState {
   groupDirectory: GroupSummary[];
   tagDirectory: TagFilterSummary[];
   hydrateFromBackend: () => Promise<void>;
+  hydrateArchivedRepositories: () => Promise<void>;
   subscribeToWorkspaceUpdates: () => Promise<() => void>;
   hydrateQuickFilterMetadata: () => Promise<void>;
   hydrateManagementDirectory: () => Promise<void>;
@@ -128,6 +130,8 @@ interface WorkspaceState {
   setRepos: (repos: TrackedPath[]) => void;
   addRepo: (repo: TrackedPath) => void;
   removeRepo: (repoId: string) => void;
+  restoreRepository: (repoId: string) => Promise<void>;
+  purgeRepository: (repoId: string) => Promise<void>;
   setRepositoryFavorite: (repoId: string, favorite: boolean) => Promise<void>;
   setRepositoryPinned: (repoId: string, pinned: boolean) => Promise<void>;
   setRepositoryGroup: (repoId: string, groupId: string | null) => Promise<void>;
@@ -153,6 +157,7 @@ interface WorkspaceState {
 
 export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   repos: [],
+  archivedRepos: [],
   activeRepoId: null,
   isHydrated: false,
   isLoading: false,
@@ -276,12 +281,36 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       });
       await get().hydrateQuickFilterMetadata();
       await get().hydrateManagementDirectory();
+      await get().hydrateArchivedRepositories();
     } catch (error) {
       set({
         error: error instanceof Error ? error.message : 'Failed to hydrate workspace state',
         isHydrated: true,
         isLoading: false,
       });
+    }
+  },
+
+  hydrateArchivedRepositories: async () => {
+    try {
+      const rows = await invoke<Array<{
+        id: string;
+        display_name: string;
+        absolute_path: string;
+        remote_url?: string | null;
+        archived_at?: string | null;
+      }>>('get_archived_tracked_paths');
+      set({
+        archivedRepos: rows.map((repo) => ({
+          id: repo.id,
+          display_name: repo.display_name,
+          absolute_path: repo.absolute_path,
+          remote_url: repo.remote_url ?? null,
+          archived_at: repo.archived_at ?? null,
+        })),
+      });
+    } catch (error) {
+      console.error('Failed to hydrate archived repositories:', error);
     }
   },
 
@@ -327,6 +356,17 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       repos: nextRepos,
       activeRepoId: get().activeRepoId === repoId ? nextRepos[0]?.id ?? null : get().activeRepoId,
     });
+  },
+
+  restoreRepository: async (repoId) => {
+    await invoke('restore_repository', { pathId: repoId });
+    await get().hydrateFromBackend();
+    await get().hydrateArchivedRepositories();
+  },
+
+  purgeRepository: async (repoId) => {
+    await invoke('purge_repository', { pathId: repoId });
+    await get().hydrateArchivedRepositories();
   },
 
   setRepositoryFavorite: async (repoId, favorite) => {
