@@ -804,6 +804,47 @@ async fn get_workspace_nodes(
 }
 
 #[tauri::command]
+async fn export_workspace_metadata_command(
+    state: tauri::State<'_, DbState>,
+    path: String,
+) -> Result<(), String> {
+    let export = db::export_workspace_metadata(state.inner().pool())
+        .await
+        .map_err(|error| format!("Failed to export workspace metadata: {error}"))?;
+    let json = serde_json::to_string_pretty(&export)
+        .map_err(|error| format!("Failed to serialize workspace metadata: {error}"))?;
+    std::fs::write(&path, format!("{json}\n"))
+        .map_err(|error| format!("Failed to write workspace metadata export: {error}"))
+}
+
+#[tauri::command]
+async fn import_workspace_metadata_command(
+    state: tauri::State<'_, DbState>,
+    manager: tauri::State<'_, manager::WatcherManager>,
+    path: String,
+) -> Result<(), String> {
+    let contents = std::fs::read_to_string(&path)
+        .map_err(|error| format!("Failed to read workspace metadata export: {error}"))?;
+    let export: db::WorkspaceMetadataExport = serde_json::from_str(&contents)
+        .map_err(|error| format!("Invalid workspace metadata export: {error}"))?;
+    db::import_workspace_metadata(state.inner().pool(), &export)
+        .await
+        .map_err(|error| format!("Failed to import workspace metadata: {error}"))?;
+    let active_paths = db::fetch_active_tracked_paths(state.inner().pool())
+        .await
+        .map_err(|error| format!("Failed to refresh repository monitoring: {error}"))?;
+    let updated_ids = active_paths
+        .iter()
+        .map(|path| path.id.clone())
+        .collect::<Vec<_>>();
+    manager.reconcile_active_paths(active_paths).await;
+    manager
+        .notify_workspace_updated(updated_ids, "workspace_metadata_import")
+        .await;
+    Ok(())
+}
+
+#[tauri::command]
 async fn update_card_position(
     state: tauri::State<'_, DbState>,
     view_id: String,
@@ -1227,6 +1268,8 @@ pub fn run() {
             set_canvas_view_scope,
             get_canvas_view_scope,
             get_workspace_nodes,
+            export_workspace_metadata_command,
+            import_workspace_metadata_command,
             update_card_position,
             restore_saved_card_locations,
             get_manual_edges,

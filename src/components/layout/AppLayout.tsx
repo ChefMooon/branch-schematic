@@ -526,6 +526,9 @@ export function AppLayout({ children }: AppLayoutProps) {
             onCleanupDanglingTags={cleanupDanglingTags}
             onRestoreRepository={restoreRepository}
             onPurgeRepository={purgeRepository}
+            onMetadataImported={async () => {
+              await Promise.all([hydrateFromBackend(), hydrateQuickFilterMetadata()]);
+            }}
           />
         )}
 

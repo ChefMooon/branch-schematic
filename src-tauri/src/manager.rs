@@ -970,6 +970,56 @@ impl WatcherManager {
         }
     }
 
+    pub async fn reconcile_active_paths(&self, paths: Vec<TrackedPathRow>) {
+        let desired_ids = paths
+            .iter()
+            .map(|path| path.id.as_str())
+            .collect::<HashSet<_>>();
+        let current_ids = self
+            .state
+            .entries
+            .lock()
+            .await
+            .keys()
+            .cloned()
+            .collect::<Vec<_>>();
+        for path_id in current_ids {
+            if !desired_ids.contains(path_id.as_str()) {
+                let still_active = sqlx::query_scalar::<_, i64>(
+                    "SELECT is_active FROM tracked_paths WHERE id = ? AND archived_at IS NULL",
+                )
+                .bind(&path_id)
+                .fetch_optional(&self.pool)
+                .await
+                .ok()
+                .flatten()
+                .is_some_and(|is_active| is_active != 0);
+                if still_active {
+                    continue;
+                }
+                let _ = self.stop_monitored(&path_id).await;
+            }
+        }
+        self.register_active_paths(paths).await;
+    }
+
+    pub async fn notify_workspace_updated(&self, repository_ids: Vec<String>, trigger_reason: &str) {
+        if repository_ids.is_empty() {
+            let Some(app_handle) = &self.app_handle else {
+                return;
+            };
+            let revision = self.state.revision.fetch_add(1, Ordering::AcqRel) + 1;
+            for event in workspace_updated_events(revision, Vec::new(), trigger_reason.to_string()) {
+                self.state.event_batches.fetch_add(1, Ordering::Relaxed);
+                let _ = app_handle.emit(WORKSPACE_UPDATED_EVENT, event);
+            }
+            return;
+        }
+        for repository_id in repository_ids {
+            self.queue_workspace_updated(&repository_id, trigger_reason).await;
+        }
+    }
+
     fn spawn_refresh(&self, path_id: String, generation: u64) {
         let manager = self.clone();
         tauri::async_runtime::spawn(async move {

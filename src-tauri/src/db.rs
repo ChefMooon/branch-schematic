@@ -119,6 +119,60 @@ pub struct GroupSummaryRow {
     pub repo_count: i64,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceMetadataExport {
+    pub format: String,
+    pub version: i64,
+    pub exported_at: String,
+    pub repositories: Vec<WorkspaceMetadataRepository>,
+    pub groups: Vec<WorkspaceMetadataGroup>,
+    pub tags: Vec<WorkspaceMetadataTag>,
+    pub assignments: Vec<WorkspaceMetadataAssignment>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, FromRow)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceMetadataRepository {
+    pub id: String,
+    pub display_name: String,
+    pub alias_name: Option<String>,
+    pub absolute_path: String,
+    pub remote_url: Option<String>,
+    pub repo_origin_type: String,
+    pub group_id: Option<String>,
+    pub is_favorite: i64,
+    pub theme_color_hex: Option<String>,
+    pub icon_name: Option<String>,
+    pub is_pinned: i64,
+    pub is_active: i64,
+    pub archived_at: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, FromRow)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceMetadataGroup {
+    pub id: String,
+    pub group_name: String,
+    pub color_hex: String,
+    pub created_at: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, FromRow)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceMetadataTag {
+    pub id: String,
+    pub tag_name: String,
+    pub color_hex: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, FromRow)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceMetadataAssignment {
+    pub repository_id: String,
+    pub tag_id: String,
+}
+
 #[derive(Debug, Serialize, Clone)]
 pub struct QuickFilterMetadata {
     pub groups: Vec<String>,
@@ -601,7 +655,10 @@ pub async fn validate_schema(pool: &SqlitePool) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{clamp_detail_status_refresh_interval, migrate_database, validate_schema};
+    use super::{
+        clamp_detail_status_refresh_interval, export_workspace_metadata, import_workspace_metadata,
+        migrate_database, validate_schema,
+    };
     use sqlx::sqlite::SqlitePool;
 
     #[test]
@@ -642,6 +699,62 @@ mod tests {
         .unwrap()
         .unwrap_or((0, "unverified".to_string(), 1, 0));
         assert_eq!(health_defaults, (0, "unverified".to_string(), 1, 0));
+    }
+
+    #[tokio::test]
+    async fn workspace_metadata_round_trips_groups_tags_and_assignments() {
+        let source = SqlitePool::connect("sqlite::memory:").await.unwrap();
+        migrate_database(&source).await.unwrap();
+        sqlx::query("INSERT INTO custom_groups (id, group_name, color_hex, created_at) VALUES (?, ?, ?, ?)")
+            .bind("group-1")
+            .bind("Clients")
+            .bind("#123456")
+            .bind("2026-01-01T00:00:00Z")
+            .execute(&source)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO tracked_paths (id, display_name, absolute_path, group_id) VALUES (?, ?, ?, ?)")
+            .bind("repo-1")
+            .bind("Repository")
+            .bind("C:/repos/repository")
+            .bind("group-1")
+            .execute(&source)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO global_tags (id, tag_name, color_hex) VALUES (?, ?, ?)")
+            .bind("tag-1")
+            .bind("Important")
+            .bind("#654321")
+            .execute(&source)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO tracked_path_tags (repo_path_id, tag_id) VALUES (?, ?)")
+            .bind("repo-1")
+            .bind("tag-1")
+            .execute(&source)
+            .await
+            .unwrap();
+
+        let export = export_workspace_metadata(&source).await.unwrap();
+        let destination = SqlitePool::connect("sqlite::memory:").await.unwrap();
+        migrate_database(&destination).await.unwrap();
+        import_workspace_metadata(&destination, &export).await.unwrap();
+
+        let group_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM custom_groups WHERE group_name = 'Clients'")
+            .fetch_one(&destination)
+            .await
+            .unwrap();
+        let assignment_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM tracked_path_tags
+             JOIN tracked_paths ON tracked_paths.id = tracked_path_tags.repo_path_id
+             JOIN global_tags ON global_tags.id = tracked_path_tags.tag_id
+             WHERE tracked_paths.absolute_path = 'C:/repos/repository' AND global_tags.tag_name = 'Important'",
+        )
+        .fetch_one(&destination)
+        .await
+        .unwrap();
+        assert_eq!(group_count, 1);
+        assert_eq!(assignment_count, 1);
     }
 }
 
@@ -2128,6 +2241,222 @@ pub async fn fetch_quick_filter_metadata(
         tags,
         dangling_tags,
     })
+}
+
+pub async fn export_workspace_metadata(
+    pool: &SqlitePool,
+) -> Result<WorkspaceMetadataExport, sqlx::Error> {
+    let repositories = sqlx::query_as::<_, WorkspaceMetadataRepository>(
+        "SELECT id, display_name, alias_name, absolute_path, remote_url, repo_origin_type,
+                group_id, is_favorite, theme_color_hex, icon_name, is_pinned, is_active, archived_at
+         FROM tracked_paths
+         ORDER BY absolute_path COLLATE NOCASE ASC",
+    )
+    .fetch_all(pool)
+    .await?;
+    let groups = sqlx::query_as::<_, WorkspaceMetadataGroup>(
+        "SELECT id, group_name, color_hex, created_at
+         FROM custom_groups ORDER BY group_name COLLATE NOCASE ASC",
+    )
+    .fetch_all(pool)
+    .await?;
+    let tags = sqlx::query_as::<_, WorkspaceMetadataTag>(
+        "SELECT id, tag_name, color_hex
+         FROM global_tags ORDER BY tag_name COLLATE NOCASE ASC",
+    )
+    .fetch_all(pool)
+    .await?;
+    let assignments = sqlx::query_as::<_, WorkspaceMetadataAssignment>(
+        "SELECT repo_path_id AS repository_id, tag_id
+         FROM tracked_path_tags ORDER BY repo_path_id, tag_id",
+    )
+    .fetch_all(pool)
+    .await?;
+
+    Ok(WorkspaceMetadataExport {
+        format: "branch-schematic-workspace-metadata".to_string(),
+        version: 1,
+        exported_at: chrono::Utc::now().to_rfc3339(),
+        repositories,
+        groups,
+        tags,
+        assignments,
+    })
+}
+
+pub async fn import_workspace_metadata(
+    pool: &SqlitePool,
+    export: &WorkspaceMetadataExport,
+) -> Result<(), sqlx::Error> {
+    if export.format != "branch-schematic-workspace-metadata" || export.version != 1 {
+        return Err(sqlx::Error::Protocol(
+            "Unsupported workspace metadata export format".to_string(),
+        ));
+    }
+
+    let mut tx = pool.begin().await?;
+    let mut group_ids = HashMap::new();
+    for group in &export.groups {
+        let existing = sqlx::query_scalar::<_, String>(
+            "SELECT id FROM custom_groups WHERE group_name = ? COLLATE NOCASE LIMIT 1",
+        )
+        .bind(group.group_name.trim())
+        .fetch_optional(&mut *tx)
+        .await?;
+        let id = if existing.is_some() {
+            existing.unwrap()
+        } else {
+            let id_in_use = sqlx::query_scalar::<_, String>(
+                "SELECT id FROM custom_groups WHERE id = ? LIMIT 1",
+            )
+            .bind(&group.id)
+            .fetch_optional(&mut *tx)
+            .await?
+            .is_some();
+            if id_in_use {
+                Uuid::new_v4().to_string()
+            } else {
+                group.id.clone()
+            }
+        };
+        sqlx::query(
+            "INSERT INTO custom_groups (id, group_name, color_hex, created_at)
+             VALUES (?, ?, ?, ?)
+             ON CONFLICT(id) DO UPDATE SET group_name = excluded.group_name, color_hex = excluded.color_hex",
+        )
+        .bind(&id)
+        .bind(group.group_name.trim())
+        .bind(&group.color_hex)
+        .bind(&group.created_at)
+        .execute(&mut *tx)
+        .await?;
+        group_ids.insert(group.id.clone(), id);
+    }
+
+    let mut repository_ids = HashMap::new();
+    for repository in &export.repositories {
+        let existing = sqlx::query_as::<_, (String, Option<String>)>(
+            "SELECT id, group_id FROM tracked_paths WHERE absolute_path = ? COLLATE NOCASE LIMIT 1",
+        )
+        .bind(&repository.absolute_path)
+        .fetch_optional(&mut *tx)
+        .await?;
+        let (id, existing_group_id) = if let Some(existing) = existing {
+            existing
+        } else {
+            let id_in_use = sqlx::query_scalar::<_, String>(
+                "SELECT id FROM tracked_paths WHERE id = ? LIMIT 1",
+            )
+            .bind(&repository.id)
+            .fetch_optional(&mut *tx)
+            .await?
+            .is_some();
+            (
+                if id_in_use {
+                    Uuid::new_v4().to_string()
+                } else {
+                    repository.id.clone()
+                },
+                None,
+            )
+        };
+        let group_id = match repository.group_id.as_ref() {
+            Some(imported_group_id) => group_ids
+                .get(imported_group_id)
+                .cloned()
+                .or(existing_group_id),
+            None => None,
+        };
+        sqlx::query(
+            "INSERT INTO tracked_paths
+                (id, display_name, alias_name, absolute_path, remote_url, repo_origin_type,
+                 group_id, is_favorite, theme_color_hex, icon_name, is_pinned, is_active, archived_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             ON CONFLICT(id) DO UPDATE SET
+                display_name = excluded.display_name, alias_name = excluded.alias_name,
+                remote_url = excluded.remote_url, repo_origin_type = excluded.repo_origin_type,
+                group_id = excluded.group_id, is_favorite = excluded.is_favorite,
+                theme_color_hex = excluded.theme_color_hex, icon_name = excluded.icon_name,
+                is_pinned = excluded.is_pinned, is_active = excluded.is_active,
+                archived_at = excluded.archived_at",
+        )
+        .bind(&id)
+        .bind(&repository.display_name)
+        .bind(&repository.alias_name)
+        .bind(&repository.absolute_path)
+        .bind(&repository.remote_url)
+        .bind(&repository.repo_origin_type)
+        .bind(group_id)
+        .bind(repository.is_favorite)
+        .bind(&repository.theme_color_hex)
+        .bind(&repository.icon_name)
+        .bind(repository.is_pinned)
+        .bind(repository.is_active)
+        .bind(&repository.archived_at)
+        .execute(&mut *tx)
+        .await?;
+        repository_ids.insert(repository.id.clone(), id);
+    }
+
+    let mut tag_ids = HashMap::new();
+    for tag in &export.tags {
+        let existing = sqlx::query_scalar::<_, String>(
+            "SELECT id FROM global_tags WHERE tag_name = ? COLLATE NOCASE LIMIT 1",
+        )
+        .bind(tag.tag_name.trim())
+        .fetch_optional(&mut *tx)
+        .await?;
+        let id = if existing.is_some() {
+            existing.unwrap()
+        } else {
+            let id_in_use = sqlx::query_scalar::<_, String>(
+                "SELECT id FROM global_tags WHERE id = ? LIMIT 1",
+            )
+            .bind(&tag.id)
+            .fetch_optional(&mut *tx)
+            .await?
+            .is_some();
+            if id_in_use {
+                Uuid::new_v4().to_string()
+            } else {
+                tag.id.clone()
+            }
+        };
+        sqlx::query(
+            "INSERT INTO global_tags (id, tag_name, color_hex)
+             VALUES (?, ?, ?)
+             ON CONFLICT(id) DO UPDATE SET tag_name = excluded.tag_name, color_hex = excluded.color_hex",
+        )
+        .bind(&id)
+        .bind(tag.tag_name.trim())
+        .bind(&tag.color_hex)
+        .execute(&mut *tx)
+        .await?;
+        tag_ids.insert(tag.id.clone(), id);
+    }
+
+    for repository_id in repository_ids.values() {
+        sqlx::query("DELETE FROM tracked_path_tags WHERE repo_path_id = ?")
+            .bind(repository_id)
+            .execute(&mut *tx)
+            .await?;
+    }
+    for assignment in &export.assignments {
+        if let (Some(repository_id), Some(tag_id)) = (
+            repository_ids.get(&assignment.repository_id),
+            tag_ids.get(&assignment.tag_id),
+        ) {
+            sqlx::query(
+                "INSERT OR IGNORE INTO tracked_path_tags (repo_path_id, tag_id) VALUES (?, ?)",
+            )
+            .bind(repository_id)
+            .bind(tag_id)
+            .execute(&mut *tx)
+            .await?;
+        }
+    }
+
+    tx.commit().await
 }
 
 pub async fn fetch_canvas_manual_edges(

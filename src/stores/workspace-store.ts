@@ -175,6 +175,12 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
           scheduleWorkspaceReconciliation();
           return;
         }
+        if (payload.repositoryIds.length === 0) {
+          scheduleWorkspaceReconciliation();
+          const synchronize = branchMapSynchronization;
+          if (synchronize) void synchronize();
+          return;
+        }
 
         const isNewRevision = payload.repositoryIds.some((repositoryId) => {
           const previousRevision = repositoryRevisions.get(repositoryId) ?? 0;

@@ -2444,6 +2444,13 @@
   color: var(--modal-text);
 }
 
+.management-metadata-actions {
+  display: flex;
+  gap: 0.35rem;
+  margin-left: auto;
+  margin-right: 0.5rem;
+}
+
 .app-modal-close {
   border: none;
   background: transparent;
