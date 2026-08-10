@@ -1309,6 +1309,7 @@ pub fn run() {
             repository_open::detect_repository_editors,
             repository_open::resolve_default_application_target,
             repository_open::resolve_default_editor,
+            repository_open::launch_repository_file_explorer,
             repository_open::launch_repository_terminal,
             repository_open::launch_repository_editor,
         ])

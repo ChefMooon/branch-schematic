@@ -4,6 +4,7 @@ import {
   ArrowDown,
   ArrowUp,
   DotsThreeVertical,
+  FolderOpen,
   MagnifyingGlass,
   PencilSimple,
   Star,
@@ -256,7 +257,16 @@ export function RepoCardOverflowMenu({
           <div className="overflow-divider" />
 
           <div className="overflow-section">
-            <div className="overflow-section-title">Workspace Management</div>
+            <button
+              type="button"
+              className="overflow-menu-item"
+              onClick={() => handleNativeAction(repositoryOpenActions.openFileExplorer)}
+              disabled={isBusy || isRepositoryMissing}
+              title={isRepositoryMissing ? "Repository path is unavailable" : undefined}
+            >
+              <FolderOpen size={16} />
+              <span>Open in File Explorer</span>
+            </button>
             <button
               type="button"
               className="overflow-menu-item"
@@ -292,6 +302,12 @@ export function RepoCardOverflowMenu({
               <PencilSimple size={16} />
               <span>Open with...</span>
             </button>
+          </div>
+
+          <div className="overflow-divider" />
+
+          <div className="overflow-section">
+            <div className="overflow-section-title">Workspace Management</div>
             <button
               type="button"
               className="overflow-menu-item"

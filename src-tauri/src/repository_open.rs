@@ -562,6 +562,56 @@ pub fn resolve_default_editor(
 }
 
 #[tauri::command]
+pub fn launch_repository_file_explorer(repository_path: String) -> RepositoryOpenResult<()> {
+    let repository = match validate_repository_directory(&repository_path) {
+        Ok(path) => path,
+        Err(error) => return failure(&error.code, error.message),
+    };
+
+    #[cfg(windows)]
+    let launch = env::var_os("WINDIR")
+        .map(PathBuf::from)
+        .map(|windows| windows.join("explorer.exe"))
+        .filter(|path| path.is_file())
+        .or_else(|| command_exists("explorer.exe"))
+        .map(|path| {
+            let repository = repository.to_string_lossy();
+            let repository = repository
+                .strip_prefix("\\\\?\\UNC\\")
+                .map(|path| format!("\\\\{path}"))
+                .or_else(|| repository.strip_prefix("\\\\?\\").map(str::to_string))
+                .unwrap_or_else(|| repository.to_string());
+            (path, vec![repository])
+        });
+    #[cfg(target_os = "macos")]
+    let launch =
+        command_exists("open").map(|path| (path, vec![repository.to_string_lossy().into_owned()]));
+    #[cfg(target_os = "linux")]
+    let launch = command_exists("xdg-open")
+        .map(|path| (path, vec![repository.to_string_lossy().into_owned()]));
+    #[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
+    let launch: Option<(PathBuf, Vec<String>)> = None;
+
+    let Some((executable, args)) = launch else {
+        return failure(
+            "file_explorer_unavailable",
+            "No supported file explorer was found.",
+        );
+    };
+
+    Command::new(executable)
+        .args(args)
+        .spawn()
+        .map(|_| success(()))
+        .unwrap_or_else(|error| {
+            failure(
+                "file_explorer_launch_failed",
+                format!("Could not open the file explorer: {error}"),
+            )
+        })
+}
+
+#[tauri::command]
 pub fn launch_repository_terminal(repository_path: String) -> RepositoryOpenResult<()> {
     let repository = match validate_repository_directory(&repository_path) {
         Ok(path) => path,

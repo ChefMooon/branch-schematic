@@ -2,6 +2,7 @@
 
 Branch Schematic provides three repository-opening options:
 
+- **Open in File Explorer** opens the repository in the platform's file manager.
 - **Open in terminal** starts a supported terminal with the repository as its working directory.
 - **Open in the detected editor** uses the operating system's default text editor association.
 - **Open with...** detects known editors or lets the user browse for an executable.
@@ -9,6 +10,22 @@ Branch Schematic provides three repository-opening options:
 All editor launches are routed through the Rust `repository_open` command. The
 command validates the repository, validates any selected file, and validates
 that the editor executable still exists before spawning it.
+
+## File Explorer
+
+The **Open in File Explorer** action appears before **Open in terminal**.
+It validates that the tracked repository still exists and opens the folder
+using the platform-native file manager:
+
+| Platform | Launcher |
+| --- | --- |
+| Windows | `explorer.exe` |
+| macOS | `/usr/bin/open` |
+| Linux | `xdg-open` |
+
+Windows extended-length paths are normalized before being passed to
+`explorer.exe`. If the platform launcher is unavailable or fails to start, the
+repository action notification reports the failure.
 
 ## Known editor detection
 

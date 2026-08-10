@@ -26,6 +26,10 @@ export function launchTerminal(repositoryPath: string) {
   return invokeRepositoryOpen<void>('launch_repository_terminal', { repositoryPath });
 }
 
+export function launchFileExplorer(repositoryPath: string) {
+  return invokeRepositoryOpen<void>('launch_repository_file_explorer', { repositoryPath });
+}
+
 export function launchEditor(executablePath: string, repositoryPath: string, targetPath?: string) {
   return invokeRepositoryOpen<void>('launch_repository_editor', {
     request: { executablePath, repositoryPath, targetPath: targetPath ?? null },

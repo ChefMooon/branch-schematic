@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
-import { detectEditors, launchEditor, launchTerminal, resolveDefaultEditor } from '../repositoryOpenApi';
+import { detectEditors, launchEditor, launchFileExplorer, launchTerminal, resolveDefaultEditor } from '../repositoryOpenApi';
 import type { DefaultEditorTarget } from '../types';
 
 export type RepositoryOpenActions = {
   isOpenWithOpen: boolean;
   defaultEditor: DefaultEditorTarget | null;
   openDefaultApplication: () => Promise<void>;
+  openFileExplorer: () => Promise<void>;
   openTerminal: () => Promise<void>;
   openWith: () => void;
   closeOpenWith: () => void;
@@ -26,6 +27,7 @@ export function useRepositoryOpenActions(repositoryPath: string): RepositoryOpen
     setDefaultEditor(target);
   }, [repositoryPath]);
   const openTerminalAction = useCallback(() => launchTerminal(repositoryPath), [repositoryPath]);
+  const openFileExplorerAction = useCallback(() => launchFileExplorer(repositoryPath), [repositoryPath]);
   const openWithAction = useCallback(() => setIsOpenWithOpen(true), []);
   const closeOpenWithAction = useCallback(() => setIsOpenWithOpen(false), []);
 
@@ -33,6 +35,7 @@ export function useRepositoryOpenActions(repositoryPath: string): RepositoryOpen
     isOpenWithOpen,
     defaultEditor,
     openDefaultApplication: openDefaultApplicationAction,
+    openFileExplorer: openFileExplorerAction,
     openTerminal: openTerminalAction,
     openWith: openWithAction,
     closeOpenWith: closeOpenWithAction,
