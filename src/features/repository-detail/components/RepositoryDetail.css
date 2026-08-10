@@ -15,7 +15,7 @@
 }
 
 .repository-view-modal {
-  width: min(1080px, 96vw);
+  width: min(1400px, calc(100vw - 48px));
   height: min(92vh, 980px);
   min-height: min(80vh, 780px);
   max-height: min(92vh, 980px);
