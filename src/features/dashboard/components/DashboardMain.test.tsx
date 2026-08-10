@@ -5,6 +5,7 @@ import { DashboardMain } from './DashboardMain';
 
 const mockStore = {
   repos: [] as Array<Record<string, unknown>>,
+  isHydrated: true,
   quickFilterMetadata: { tags: [], groups: [] },
   groupDirectory: [] as Array<{ group_name: string }>,
   hydrateFromBackend: vi.fn(),
@@ -46,6 +47,7 @@ describe('DashboardMain', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockStore.repos = [];
+    mockStore.isHydrated = true;
     mockStore.quickFilterMetadata = { tags: [], groups: [] };
     mockStore.groupDirectory = [];
     mockStore.hydrateFromBackend.mockResolvedValue(undefined);
@@ -110,5 +112,37 @@ describe('DashboardMain', () => {
     rerender(<DashboardMain />);
 
     expect(verifyRepositoriesMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows repository card skeletons before the initial workspace hydration completes', () => {
+    mockStore.isHydrated = false;
+
+    render(<DashboardMain />);
+
+    expect(screen.getAllByTestId('repository-card-skeleton')).toHaveLength(6);
+    expect(screen.queryByText('No workspace references matching criteria found.')).not.toBeInTheDocument();
+  });
+
+  it('shows repository cards as soon as the workspace rows are hydrated', () => {
+    mockStore.isHydrated = false;
+    const { rerender } = render(<DashboardMain />);
+
+    mockStore.isHydrated = true;
+    mockStore.repos = [{
+      id: 'repo-1',
+      display_name: 'Repo 1',
+      absolute_path: 'C:/repos/repo-1',
+      tags: [],
+    }];
+    rerender(<DashboardMain />);
+
+    expect(screen.getByText('repo')).toBeInTheDocument();
+    expect(screen.queryByTestId('repository-card-skeleton')).not.toBeInTheDocument();
+  });
+
+  it('shows the empty state after hydration when no repositories match', () => {
+    render(<DashboardMain />);
+
+    expect(screen.getByText('No workspace references matching criteria found.')).toBeInTheDocument();
   });
 });

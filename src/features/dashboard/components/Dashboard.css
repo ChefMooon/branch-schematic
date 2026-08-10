@@ -539,6 +539,68 @@
   box-shadow: 0 1px 3px rgba(0,0,0,0.05);
 }
 
+.repo-card-skeleton {
+  min-height: 246px;
+  gap: 1rem;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.repo-skeleton-icon,
+.repo-skeleton-line,
+.repo-skeleton-branch {
+  background: color-mix(in srgb, var(--card-border) 68%, var(--card-bg));
+  border-radius: 6px;
+  animation: repo-skeleton-pulse 1.5s ease-in-out infinite;
+}
+
+.repo-skeleton-icon {
+  width: 2.5rem;
+  height: 2.5rem;
+  flex: 0 0 2.5rem;
+  border-radius: 8px;
+}
+
+.repo-skeleton-line {
+  height: 0.8rem;
+}
+
+.repo-skeleton-title {
+  width: min(70%, 11rem);
+  height: 1.1rem;
+}
+
+.repo-skeleton-path {
+  width: min(90%, 14rem);
+}
+
+.repo-skeleton-branch {
+  width: 100%;
+  height: 2.25rem;
+  margin-top: auto;
+}
+
+.repo-skeleton-footer {
+  width: 45%;
+}
+
+@keyframes repo-skeleton-pulse {
+  0%, 100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 0.95;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .repo-skeleton-icon,
+  .repo-skeleton-line,
+  .repo-skeleton-branch {
+    animation: none;
+  }
+}
+
 .repo-card:hover {
   border-color: var(--card-border-hover);
   box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05), 0 2px 4px -1px rgba(0,0,0,0.03);

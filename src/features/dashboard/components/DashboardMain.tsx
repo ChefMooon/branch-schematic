@@ -6,6 +6,7 @@ import { OWNER_GROUPING_FILTER_VALUE, WorkspaceQuickFilters } from "./WorkspaceQ
 import { BulkActionToolbar } from "./BulkActionToolbar";
 import { RepoThemeModal } from "./RepositoryCard/RepoThemeModal";
 import { FilterDropdown } from "./common/FilterDropdown";
+import { RepositoryCardSkeletons } from "./RepositoryCardSkeleton";
 import { useWorkspaceStore } from "../../../stores/workspace-store";
 import { useProfileStore } from "../../auth-profile/stores/profileStore";
 import { resolveRepoOrigin } from "../hooks/useResolveRepoOrigin";
@@ -33,6 +34,7 @@ export function DashboardMain({ onOpenManagementModal, onCleanupDanglingTags }: 
   const lastVerifiedSignatureRef = useRef<string | null>(null);
   const {
     repos: allRepos,
+    isHydrated,
     hydrateFromBackend: fetchRepositoriesData,
     quickFilterMetadata,
     hydrateQuickFilterMetadata,
@@ -242,6 +244,8 @@ export function DashboardMain({ onOpenManagementModal, onCleanupDanglingTags }: 
       .map(([owner, repositories]) => ({ owner, repositories }));
   }, [groupByOwner, processedRepositories]);
 
+  const isInitialLoading = !isHydrated && allRepos.length === 0;
+
   return (
     <div className="dashboard-container">
       <header className="dashboard-header-actions">
@@ -295,9 +299,9 @@ export function DashboardMain({ onOpenManagementModal, onCleanupDanglingTags }: 
         onCleanupDanglingTags={onCleanupDanglingTags ?? cleanupDanglingTagsFromStore}
       />
 
-      <section className="repo-grid-section">
+      <section className="repo-grid-section" aria-busy={isInitialLoading}>
         <h2 className="repo-grid-title">
-          Tracked Repositories ({processedRepositories.length})
+          {isInitialLoading ? "Tracked Repositories" : `Tracked Repositories (${processedRepositories.length})`}
         </h2>
 
         {selectedRepoIds.size > 0 ? (
@@ -323,7 +327,11 @@ export function DashboardMain({ onOpenManagementModal, onCleanupDanglingTags }: 
         onSubmit={handleBulkThemeSubmit}
       />
         
-        {processedRepositories.length === 0 ? (
+        {isInitialLoading ? (
+          <div className="repo-responsive-grid" aria-label="Loading tracked repositories">
+            <RepositoryCardSkeletons />
+          </div>
+        ) : processedRepositories.length === 0 ? (
           <div className="repo-grid-empty-state">
             No workspace references matching criteria found.
           </div>
