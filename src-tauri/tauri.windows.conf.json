@@ -2,7 +2,7 @@
   "app": {
     "windows": [
       {
-        "title": "branch-schematic",
+        "title": "Branch Schematic",
         "width": 800,
         "height": 600,
         "visible": false,
