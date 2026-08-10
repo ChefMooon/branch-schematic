@@ -12,9 +12,14 @@ const mockStore = {
   refreshRepositoryGitStatus: vi.fn(),
   cleanupDanglingTags: vi.fn(),
 };
+const verifyRepositoriesMock = vi.hoisted(() => vi.fn());
 
 vi.mock('../../../stores/workspace-store', () => ({
   useWorkspaceStore: () => mockStore,
+}));
+
+vi.mock('../hooks/useVerifyRepositories', () => ({
+  useVerifyRepositories: () => ({ verifyRepositories: verifyRepositoriesMock }),
 }));
 
 vi.mock('../../../components/notifications/NotificationProvider', () => ({
@@ -47,6 +52,7 @@ describe('DashboardMain', () => {
     mockStore.hydrateQuickFilterMetadata.mockResolvedValue(undefined);
     mockStore.refreshRepositoryGitStatus.mockResolvedValue(undefined);
     mockStore.cleanupDanglingTags.mockResolvedValue(0);
+    verifyRepositoriesMock.mockReset();
   });
 
   it('defaults the sort dropdown to Last Accessed', () => {
@@ -85,5 +91,24 @@ describe('DashboardMain', () => {
     await user.keyboard('{Escape}');
 
     expect(input).toHaveValue('');
+  });
+
+  it('does not reverify when repository status changes', () => {
+    const repository = {
+      id: 'repo-1',
+      absolute_path: 'C:/repos/repo-1',
+      display_name: 'Repo 1',
+      status: 'unknown',
+      tags: [],
+    };
+    mockStore.repos = [repository];
+
+    const { rerender } = render(<DashboardMain />);
+    expect(verifyRepositoriesMock).toHaveBeenCalledTimes(1);
+
+    mockStore.repos = [{ ...repository, status: 'resolved' }];
+    rerender(<DashboardMain />);
+
+    expect(verifyRepositoriesMock).toHaveBeenCalledTimes(1);
   });
 });

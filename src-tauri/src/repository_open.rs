@@ -158,44 +158,11 @@ fn expand_windows_environment_variables(value: &str) -> String {
 }
 
 #[cfg(windows)]
-fn windows_shell_default_editor() -> Option<(String, String)> {
-    let association = Command::new("cmd.exe")
-        .args(["/D", "/C", "assoc .txt"])
-        .output()
-        .ok()?;
-    let association = String::from_utf8_lossy(&association.stdout);
-    let prog_id = association
-        .lines()
-        .find_map(|line| line.trim().strip_prefix(".txt="))
-        .map(str::trim)
-        .filter(|value| !value.is_empty())?
-        .to_string();
-
-    let file_type = Command::new("cmd.exe")
-        .args(["/D", "/C", "ftype"])
-        .output()
-        .ok()?;
-    let file_type = String::from_utf8_lossy(&file_type.stdout);
-    let command = file_type
-        .lines()
-        .find_map(|line| {
-            let (name, command) = line.split_once('=')?;
-            name.trim()
-                .eq_ignore_ascii_case(&prog_id)
-                .then_some(command.trim())
-        })?
-        .to_string();
-
-    Some((prog_id, command))
-}
-
-#[cfg(windows)]
 fn detect_default_editor() -> Result<EditorDescriptor, RepositoryOpenError> {
     use winreg::enums::{HKEY_CLASSES_ROOT, HKEY_CURRENT_USER};
     use winreg::RegKey;
 
     let classes_root = RegKey::predef(HKEY_CLASSES_ROOT);
-    let shell_association = windows_shell_default_editor();
     let prog_id = RegKey::predef(HKEY_CURRENT_USER)
         .open_subkey(r"Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\.txt\UserChoice")
         .and_then(|key| key.get_value::<String, _>("ProgId"))
@@ -206,11 +173,6 @@ fn detect_default_editor() -> Result<EditorDescriptor, RepositoryOpenError> {
                 .and_then(|key| key.get_value::<String, _>(""))
                 .ok()
         })
-        .or_else(|| {
-            shell_association
-                .as_ref()
-                .map(|(prog_id, _)| prog_id.clone())
-        })
         .ok_or_else(|| RepositoryOpenError {
             code: "default_editor_unavailable".into(),
             message: "Windows does not have a default text editor configured.".into(),
@@ -220,12 +182,6 @@ fn detect_default_editor() -> Result<EditorDescriptor, RepositoryOpenError> {
         .open_subkey(format!(r"{prog_id}\shell\open\command"))
         .ok()
         .and_then(|key| key.get_value::<String, _>("").ok())
-        .or_else(|| {
-            shell_association
-                .as_ref()
-                .filter(|(shell_prog_id, _)| shell_prog_id.eq_ignore_ascii_case(&prog_id))
-                .map(|(_, command)| command.clone())
-        })
         .ok_or_else(|| RepositoryOpenError {
             code: "default_editor_unavailable".into(),
             message: "The default text editor command could not be resolved.".into(),

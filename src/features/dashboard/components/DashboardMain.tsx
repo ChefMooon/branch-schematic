@@ -61,7 +61,7 @@ export function DashboardMain({ onOpenManagementModal, onCleanupDanglingTags }: 
     }
 
     const repoSignature = allRepos
-      .map((repo) => `${repo.id}:${repo.absolute_path}:${repo.status ?? "unknown"}`)
+      .map((repo) => `${repo.id}:${repo.absolute_path}`)
       .sort()
       .join("|");
 

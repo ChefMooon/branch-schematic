@@ -85,12 +85,7 @@ export function RepoCardOverflowMenu({
   };
 
   const handleDefaultEditorAction = () => {
-    if (repositoryOpenActions.defaultEditor) {
-      handleNativeAction(repositoryOpenActions.openDefaultApplication);
-      return;
-    }
-    setIsOpen(false);
-    repositoryOpenActions.openWith();
+    handleNativeAction(repositoryOpenActions.openDefaultApplication);
   };
 
   useLayoutEffect(() => {
@@ -277,18 +272,16 @@ export function RepoCardOverflowMenu({
               <Terminal size={16} />
               <span>Open in terminal</span>
             </button>
-            {repositoryOpenActions.defaultEditor ? (
-              <button
-                type="button"
-                className="overflow-menu-item"
-                onClick={handleDefaultEditorAction}
-                disabled={isBusy || isRepositoryMissing}
-                title={isRepositoryMissing ? "Repository path is unavailable" : undefined}
-              >
-                <Desktop size={16} />
-                <span>Open in {repositoryOpenActions.defaultEditor.editor.label}</span>
-              </button>
-            ) : null}
+            <button
+              type="button"
+              className="overflow-menu-item"
+              onClick={handleDefaultEditorAction}
+              disabled={isBusy || isRepositoryMissing}
+              title={isRepositoryMissing ? "Repository path is unavailable" : undefined}
+            >
+              <Desktop size={16} />
+              <span>Open in default editor</span>
+            </button>
             <button
               type="button"
               className="overflow-menu-item"

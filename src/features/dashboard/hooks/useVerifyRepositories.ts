@@ -1,12 +1,20 @@
-import { useCallback, useTransition } from 'react';
+import { useCallback, useEffect, useRef, useTransition } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { useWorkspaceStore } from '../../../stores/workspace-store';
 import type { TrackedPath } from '../../../types/git';
 
 export function useVerifyRepositories() {
   const [isPending, startTransition] = useTransition();
+  const isMountedRef = useRef(true);
   const markRepositoriesMissing = useWorkspaceStore((state) => state.markRepositoriesMissing);
   const markRepositoryResolved = useWorkspaceStore((state) => state.markRepositoryResolved);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   const verifyRepositories = useCallback(async (repos: TrackedPath[]) => {
     const paths = repos.map((repo) => repo.absolute_path).filter(Boolean);
@@ -14,6 +22,8 @@ export function useVerifyRepositories() {
 
     try {
       const missingPaths = await invoke<string[]>('verify_repo_paths', { paths });
+      if (!isMountedRef.current) return;
+
       startTransition(() => {
         if (missingPaths.length > 0) {
           markRepositoriesMissing(missingPaths);
