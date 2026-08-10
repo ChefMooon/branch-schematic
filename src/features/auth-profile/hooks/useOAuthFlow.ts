@@ -67,6 +67,21 @@ function resolveClientId() {
   return configuredClientId ?? 'branch-schematic';
 }
 
+function formatOAuthError(error: unknown) {
+  if (typeof error === 'string' && error.trim()) {
+    return error.trim();
+  }
+
+  if (error && typeof error === 'object' && 'message' in error) {
+    const message = (error as { message?: unknown }).message;
+    if (typeof message === 'string' && message.trim()) {
+      return message.trim();
+    }
+  }
+
+  return 'The authorization request could not be completed.';
+}
+
 const DEFAULT_OAUTH_REDIRECT_URI = 'http://127.0.0.1:3000/callback';
 
 function resolveRedirectUri(explicitRedirectUri?: string) {
@@ -197,7 +212,7 @@ export function useOAuthFlow({ profileId, providerUrl, redirectUri }: UseOAuthFl
           } catch (error) {
             console.warn('Unable to exchange OAuth code:', error);
             unlisten?.();
-            setStatus('Authorization failed. Please try again.');
+            setStatus(`Authorization failed: ${formatOAuthError(error)}`);
             if (!settled) {
               settled = true;
               resolve(null);

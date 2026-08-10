@@ -323,6 +323,31 @@ fn parse_access_token(body: &str) -> Option<String> {
     None
 }
 
+fn format_oauth_provider_error(status: reqwest::StatusCode, body: &str) -> String {
+    let parsed = serde_json::from_str::<serde_json::Value>(body).ok();
+    let error = parsed
+        .as_ref()
+        .and_then(|value| value.get("error"))
+        .and_then(serde_json::Value::as_str)
+        .filter(|value| !value.trim().is_empty());
+    let description = parsed
+        .as_ref()
+        .and_then(|value| value.get("error_description"))
+        .and_then(serde_json::Value::as_str)
+        .filter(|value| !value.trim().is_empty());
+
+    match (error, description) {
+        (Some(error), Some(description)) => {
+            format!("GitHub rejected the OAuth request ({status}): {error} - {description}")
+        }
+        (Some(error), None) => format!("GitHub rejected the OAuth request ({status}): {error}"),
+        (None, Some(description)) => {
+            format!("GitHub rejected the OAuth request ({status}): {description}")
+        }
+        (None, None) => format!("GitHub rejected the OAuth request ({status})."),
+    }
+}
+
 fn parse_github_user_profile(body: &str) -> Result<GitHubUserProfilePayload, String> {
     let parsed = serde_json::from_str::<serde_json::Value>(body)
         .map_err(|error| format!("Unable to parse GitHub user profile response: {error}"))?;
@@ -437,11 +462,8 @@ async fn exchange_code_with_provider(payload: &OAuthExchangePayload) -> Result<S
 
     if !response.status().is_success() {
         let status = response.status();
-        let _ = response.text().await;
-        return Err(format!(
-            "OAuth token exchange failed ({})",
-            status
-        ));
+        let body = response.text().await.unwrap_or_default();
+        return Err(format_oauth_provider_error(status, &body));
     }
 
     let body = response.text().await.map_err(|error| error.to_string())?;
@@ -890,7 +912,12 @@ pub async fn exchange_code_for_token(
 
     let github_profile = fetch_github_user_profile(&token, payload.provider_url.as_deref())
         .await
-        .ok();
+        .map(Some)
+        .map_err(|error| {
+            format!(
+                "GitHub authorization succeeded, but loading your GitHub profile failed: {error}"
+            )
+        })?;
     let resolved_display_name = github_profile
         .as_ref()
         .and_then(|profile| profile.display_name.clone())
@@ -1039,9 +1066,9 @@ pub async fn resolve_profile_for_remote(
 #[cfg(test)]
 mod tests {
     use super::{
-        determine_token_status, generate_code_challenge, parse_access_token,
-        parse_github_user_profile, resolve_oauth_redirect_uri, resolve_oauth_token_url,
-        normalize_keyring_token,
+        determine_token_status, format_oauth_provider_error, generate_code_challenge,
+        normalize_keyring_token, parse_access_token, parse_github_user_profile,
+        resolve_oauth_redirect_uri, resolve_oauth_token_url,
     };
 
     #[test]
@@ -1084,6 +1111,27 @@ mod tests {
         assert_eq!(
             parse_access_token("access_token=abc123&scope=repo"),
             Some("abc123".to_string())
+        );
+    }
+
+    #[test]
+    fn preserves_safe_github_provider_error_details() {
+        let message = format_oauth_provider_error(
+            reqwest::StatusCode::BAD_REQUEST,
+            r#"{"error":"redirect_uri_mismatch","error_description":"The redirect URI does not match."}"#,
+        );
+
+        assert_eq!(
+            message,
+            "GitHub rejected the OAuth request (400 Bad Request): redirect_uri_mismatch - The redirect URI does not match."
+        );
+    }
+
+    #[test]
+    fn uses_status_when_github_error_body_has_no_safe_details() {
+        assert_eq!(
+            format_oauth_provider_error(reqwest::StatusCode::BAD_GATEWAY, "not json"),
+            "GitHub rejected the OAuth request (502 Bad Gateway)."
         );
     }
 
