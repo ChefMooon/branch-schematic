@@ -121,6 +121,8 @@ export function RepoCardHeader({
             currentThemeColor={repo.theme_color_hex ?? null}
             currentIconName={repo.icon_name ?? null}
             onThemeChange={onThemeChange}
+            repositoryPath={repo.absolute_path}
+            isRepositoryMissing={repo.status === 'missing'}
           />
         </div>
       </div>

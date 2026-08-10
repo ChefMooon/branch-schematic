@@ -51,3 +51,6 @@ tempfile = "3"
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-window-state = "2"
 
+[target.'cfg(windows)'.dependencies]
+winreg = "0.55"
+

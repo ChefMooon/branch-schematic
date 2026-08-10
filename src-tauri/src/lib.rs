@@ -1,3 +1,4 @@
+use crate::manager::WatcherManager;
 use serde::Serialize;
 use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePool};
 use std::sync::{
@@ -13,7 +14,6 @@ use tauri::{
 };
 use tauri_plugin_autostart::ManagerExt;
 use tauri_plugin_window_state::{AppHandleExt, WindowExt};
-use crate::manager::WatcherManager;
 
 mod auth;
 mod db;
@@ -22,6 +22,7 @@ mod health;
 mod layout;
 mod manager;
 mod refresh;
+mod repository_open;
 
 fn ensure_sqlite_db_file(path: &std::path::Path) -> Result<(), String> {
     if let Some(parent) = path.parent() {
@@ -1305,6 +1306,11 @@ pub fn run() {
             set_selected_repository_command,
             get_watcher_manager_diagnostics_command,
             get_watcher_manager_debug_snapshot_command,
+            repository_open::detect_repository_editors,
+            repository_open::resolve_default_application_target,
+            repository_open::resolve_default_editor,
+            repository_open::launch_repository_terminal,
+            repository_open::launch_repository_editor,
         ])
         .build(context)
         .expect("error while building tauri application")

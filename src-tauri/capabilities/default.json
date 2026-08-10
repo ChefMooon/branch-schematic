@@ -12,6 +12,32 @@
     "core:window:allow-close",
     "core:window:allow-start-dragging",
     "opener:default",
+    "opener:allow-open-path",
+    {
+      "identifier": "shell:allow-spawn",
+      "allow": [
+        {
+          "name": "open-vscode",
+          "cmd": "code",
+          "args": true
+        },
+        {
+          "name": "open-vscode-insiders",
+          "cmd": "code-insiders",
+          "args": true
+        },
+        {
+          "name": "open-sublime",
+          "cmd": "subl",
+          "args": true
+        },
+        {
+          "name": "open-sublime-text",
+          "cmd": "sublime_text",
+          "args": true
+        }
+      ]
+    },
     "sql:default",
     "sql:allow-execute",
     "dialog:default"

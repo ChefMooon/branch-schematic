@@ -10,10 +10,15 @@ import {
   Trash,
   Info,
   PushPin,
+  Desktop,
+  Terminal,
 } from "@phosphor-icons/react";
 import { ConfirmationModal } from "../../../../components/Modal/ConfirmationModal.tsx";
 import { RepoThemeModal } from "./RepoThemeModal.tsx";
 import { getViewportSafeMenuPosition } from "./menuPosition.ts";
+import { OpenWithModal } from "../../../repository-open/components/OpenWithModal";
+import { useRepositoryOpenActions } from "../../../repository-open/hooks/useRepositoryOpenActions";
+import { useNotifications } from "../../../../components/notifications/NotificationProvider";
 
 type RepoCardOverflowMenuProps = {
   isFavorite: boolean;
@@ -33,6 +38,8 @@ type RepoCardOverflowMenuProps = {
   currentThemeColor: string | null;
   currentIconName: string | null;
   onThemeChange: (colorHex: string | null, iconName: string | null) => void | Promise<void>;
+  repositoryPath: string;
+  isRepositoryMissing: boolean;
 };
 
 export function RepoCardOverflowMenu({
@@ -53,6 +60,8 @@ export function RepoCardOverflowMenu({
   currentThemeColor,
   currentIconName,
   onThemeChange,
+  repositoryPath,
+  isRepositoryMissing,
 }: RepoCardOverflowMenuProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [menuPosition, setMenuPosition] = useState<{ top: number; left: number; maxHeight: number } | null>(null);
@@ -60,6 +69,28 @@ export function RepoCardOverflowMenu({
   const [isThemeModalOpen, setIsThemeModalOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const { addToast } = useNotifications();
+  const repositoryOpenActions = useRepositoryOpenActions(repositoryPath);
+
+  const handleNativeAction = (action: () => Promise<void>) => {
+    setIsOpen(false);
+    void action().catch((error: unknown) => {
+      addToast({
+        variant: "error",
+        title: "Repository action failed",
+        message: error instanceof Error ? error.message : "The repository could not be opened.",
+      });
+    });
+  };
+
+  const handleDefaultEditorAction = () => {
+    if (repositoryOpenActions.defaultEditor) {
+      handleNativeAction(repositoryOpenActions.openDefaultApplication);
+      return;
+    }
+    setIsOpen(false);
+    repositoryOpenActions.openWith();
+  };
 
   useLayoutEffect(() => {
     if (!isOpen) {
@@ -229,6 +260,41 @@ export function RepoCardOverflowMenu({
             <button
               type="button"
               className="overflow-menu-item"
+              onClick={() => handleNativeAction(repositoryOpenActions.openTerminal)}
+              disabled={isBusy || isRepositoryMissing}
+              title={isRepositoryMissing ? "Repository path is unavailable" : undefined}
+            >
+              <Terminal size={16} />
+              <span>Open in terminal</span>
+            </button>
+            {repositoryOpenActions.defaultEditor ? (
+              <button
+                type="button"
+                className="overflow-menu-item"
+                onClick={handleDefaultEditorAction}
+                disabled={isBusy || isRepositoryMissing}
+                title={isRepositoryMissing ? "Repository path is unavailable" : undefined}
+              >
+                <Desktop size={16} />
+                <span>Open in {repositoryOpenActions.defaultEditor.editor.label}</span>
+              </button>
+            ) : null}
+            <button
+              type="button"
+              className="overflow-menu-item"
+              onClick={() => {
+                setIsOpen(false);
+                repositoryOpenActions.openWith();
+              }}
+              disabled={isBusy || isRepositoryMissing}
+              title={isRepositoryMissing ? "Repository path is unavailable" : undefined}
+            >
+              <PencilSimple size={16} />
+              <span>Open with...</span>
+            </button>
+            <button
+              type="button"
+              className="overflow-menu-item"
               onClick={handleOpenDetails}
             >
               <Info size={16} />
@@ -326,6 +392,14 @@ export function RepoCardOverflowMenu({
         currentIconName={currentIconName}
         onClose={() => setIsThemeModalOpen(false)}
         onThemeChange={onThemeChange}
+      />
+
+      <OpenWithModal
+        isOpen={repositoryOpenActions.isOpenWithOpen}
+        repositoryPath={repositoryPath}
+        onClose={repositoryOpenActions.closeOpenWith}
+        onError={(message) => addToast({ variant: "error", title: "Repository action failed", message })}
+        detectEditors={repositoryOpenActions.detectEditors}
       />
     </div>
   );

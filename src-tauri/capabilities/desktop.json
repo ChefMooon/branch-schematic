@@ -10,6 +10,31 @@
   ],
   "permissions": [
     "window-state:default",
-    "dialog:default"
+    "dialog:default",
+    {
+      "identifier": "shell:allow-spawn",
+      "allow": [
+        {
+          "name": "open-vscode",
+          "cmd": "code",
+          "args": true
+        },
+        {
+          "name": "open-vscode-insiders",
+          "cmd": "code-insiders",
+          "args": true
+        },
+        {
+          "name": "open-sublime",
+          "cmd": "subl",
+          "args": true
+        },
+        {
+          "name": "open-sublime-text",
+          "cmd": "sublime_text",
+          "args": true
+        }
+      ]
+    }
   ]
 }
