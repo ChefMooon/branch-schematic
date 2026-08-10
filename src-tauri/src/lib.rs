@@ -1067,6 +1067,7 @@ pub fn run() {
                 let pool = SqlitePool::connect_with(connect_options)
                     .await
                     .map_err(|error| format!("Failed to connect to SQLite database: {error}"))?;
+                db::migrate_database(&pool).await?;
                 db::validate_schema(&pool).await?;
                 Ok::<SqlitePool, String>(pool)
             });

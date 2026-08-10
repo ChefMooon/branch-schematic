@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, Row, SqlitePool};
+use sqlx::migrate::{Migration as SqlxMigration, MigrationType, Migrator};
+use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use tauri::Manager;
 use tauri_plugin_sql::{Migration, MigrationKind};
@@ -450,6 +452,30 @@ pub fn get_migrations() -> Vec<Migration> {
     ]
 }
 
+pub async fn migrate_database(pool: &SqlitePool) -> Result<(), String> {
+    let migrations = get_migrations()
+        .into_iter()
+        .map(|migration| {
+            SqlxMigration::new(
+                migration.version,
+                migration.description.into(),
+                MigrationType::ReversibleUp,
+                migration.sql.into(),
+                false,
+            )
+        })
+        .collect();
+    let migrator = Migrator {
+        migrations: Cow::Owned(migrations),
+        ..Migrator::DEFAULT
+    };
+
+    migrator
+        .run(pool)
+        .await
+        .map_err(|error| format!("Failed to migrate SQLite database: {error}"))
+}
+
 pub fn clamp_detail_status_refresh_interval(value: i64) -> i64 {
     value.clamp(
         MIN_DETAIL_STATUS_REFRESH_INTERVAL,
@@ -575,7 +601,7 @@ pub async fn validate_schema(pool: &SqlitePool) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{clamp_detail_status_refresh_interval, get_migrations, validate_schema};
+    use super::{clamp_detail_status_refresh_interval, migrate_database, validate_schema};
     use sqlx::sqlite::SqlitePool;
 
     #[test]
@@ -586,34 +612,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn validates_fresh_reset_schema_after_all_migrations() {
+    async fn migrates_and_validates_fresh_reset_schema() {
         let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
-        sqlx::query(
-            "CREATE TABLE _sqlx_migrations (
-                version BIGINT PRIMARY KEY NOT NULL,
-                description TEXT NOT NULL,
-                success BOOLEAN NOT NULL,
-                checksum BLOB NOT NULL,
-                execution_time BIGINT NOT NULL
-            )",
-        )
-        .execute(&pool)
-        .await
-        .unwrap();
-
-        for migration in get_migrations() {
-            sqlx::query(migration.sql).execute(&pool).await.unwrap();
-            sqlx::query(
-                "INSERT INTO _sqlx_migrations (version, description, success, checksum, execution_time)
-                 VALUES (?, ?, 1, X'', 0)",
-            )
-            .bind(migration.version)
-            .bind(migration.description)
-            .execute(&pool)
-            .await
-            .unwrap();
-        }
-
+        migrate_database(&pool).await.unwrap();
         validate_schema(&pool).await.unwrap();
 
         let interval: i64 =

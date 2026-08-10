@@ -5,6 +5,9 @@ import { Button } from '../button/Button';
 import { ConfirmationModal } from '../Modal/ConfirmationModal';
 import './DatabaseRecoveryGate.css';
 
+const STARTUP_POLL_INTERVAL_MS = 100;
+const MAX_STARTUP_POLLS = 30;
+
 type DatabaseStartupInfo = {
   status: 'starting' | 'ready' | 'recovery_required';
   message: string | null;
@@ -24,11 +27,21 @@ export function DatabaseRecoveryGate({ children }: DatabaseRecoveryGateProps) {
 
   useEffect(() => {
     let isMounted = true;
+    let pollCount = 0;
+    let retryTimeout: ReturnType<typeof setTimeout> | undefined;
 
     async function loadStartupState() {
       try {
         const nextStartup = await invoke<DatabaseStartupInfo>('get_database_startup_state');
-        if (isMounted) setStartup(nextStartup);
+        if (!isMounted) return;
+
+        setStartup(nextStartup);
+        if (nextStartup.status === 'starting' && pollCount < MAX_STARTUP_POLLS) {
+          pollCount += 1;
+          retryTimeout = setTimeout(() => void loadStartupState(), STARTUP_POLL_INTERVAL_MS);
+        } else if (nextStartup.status === 'starting') {
+          setStartupError('Database startup timed out.');
+        }
       } catch (error) {
         if (isMounted) {
           setStartupError(String(error));
@@ -39,10 +52,15 @@ export function DatabaseRecoveryGate({ children }: DatabaseRecoveryGateProps) {
     void loadStartupState();
     return () => {
       isMounted = false;
+      if (retryTimeout) clearTimeout(retryTimeout);
     };
   }, []);
 
   if (!startup && !startupError) {
+    return <div className="database-recovery-loading" aria-live="polite">Preparing database...</div>;
+  }
+
+  if (startup?.status === 'starting' && !startupError) {
     return <div className="database-recovery-loading" aria-live="polite">Preparing database...</div>;
   }
 
