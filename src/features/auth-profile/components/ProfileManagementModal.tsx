@@ -159,6 +159,7 @@ export function ProfileManagementModal({
     setIsBusy(true);
     try {
       await onDeleteProfile(targetProfileId);
+      await hydrateProfileStore();
       setProfileToDelete(null);
     } finally {
       setIsBusy(false);
@@ -538,6 +539,12 @@ export function ProfileManagementModal({
           message={
             <>
               Delete profile <strong>{profileToDelete?.display_name ?? 'this profile'}</strong>? This action cannot be undone.
+              {profiles.length <= 1 && (
+                <>
+                  <br />
+                  <strong>A fresh default profile will be recreated automatically.</strong>
+                </>
+              )}
             </>
           }
           confirmLabel="Delete profile"

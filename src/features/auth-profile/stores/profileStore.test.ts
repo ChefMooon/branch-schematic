@@ -77,4 +77,29 @@ describe('profile store token health', () => {
       profile: expect.objectContaining({ auth_level: 'full_oauth' }),
     }));
   });
+
+  it('includes the api_base_url when updating a profile so saved edits persist', async () => {
+    invokeMock.mockImplementation(async (command: string, payload: { profile?: { api_base_url?: string; auth_level?: string } }) => {
+      if (command === 'update_profile') {
+        expect(payload.profile?.api_base_url).toBe('https://github.example.com');
+        expect(payload.profile?.auth_level).toBe('full_oauth');
+        return {
+          id: 'profile-1',
+          display_name: 'OAuth Profile',
+          auth_level: 'full_oauth',
+          api_base_url: 'https://github.example.com',
+          is_active: 0,
+        };
+      }
+
+      throw new Error(`Unexpected command: ${command}`);
+    });
+
+    await useProfileStore.getState().updateProfile('profile-1', { api_base_url: 'https://github.example.com' });
+
+    expect(invokeMock).toHaveBeenCalledWith('update_profile', expect.objectContaining({
+      profileId: 'profile-1',
+      profile: expect.objectContaining({ api_base_url: 'https://github.example.com' }),
+    }));
+  });
 });

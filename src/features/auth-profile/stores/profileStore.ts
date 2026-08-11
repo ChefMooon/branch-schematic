@@ -150,13 +150,10 @@ export const useProfileStore = create<ProfileStoreState>((set, get) => ({
       const nextProfiles = sortProfiles((rows ?? []).map((entry) => normalizeProfile(entry as Partial<UserProfile>)));
 
       if (nextProfiles.length === 0) {
-        const fallbackProfiles = [seedProfile];
         set({
-          profiles: fallbackProfiles,
-          activeProfileId: fallbackProfiles[0]?.id ?? null,
-          tokenHealthMap: {
-            [fallbackProfiles[0].id]: inferHealthStatus(fallbackProfiles[0]),
-          },
+          profiles: [],
+          activeProfileId: null,
+          tokenHealthMap: {},
           isHydrated: true,
           isLoading: false,
         });
@@ -185,7 +182,7 @@ export const useProfileStore = create<ProfileStoreState>((set, get) => ({
       await get().refreshTokenHealth();
     } catch (error) {
       console.warn('Falling back to local profile state:', error);
-      const fallbackProfiles = get().profiles.length > 0 ? get().profiles : [seedProfile];
+      const fallbackProfiles = get().profiles.length > 0 ? get().profiles : [];
       const fallbackActiveId = fallbackProfiles.find((profile) => profile.id === get().activeProfileId)?.id ?? fallbackProfiles[0]?.id ?? null;
       set({
         profiles: fallbackProfiles,

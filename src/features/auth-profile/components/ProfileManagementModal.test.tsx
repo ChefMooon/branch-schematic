@@ -293,4 +293,27 @@ describe('ProfileManagementModal', () => {
 
     expect(onDeleteProfile).toHaveBeenCalledWith('profile-1');
   });
+
+  it('warns that a fresh default profile will be recreated after deleting the final profile', async () => {
+    const user = userEvent.setup();
+    const onDeleteProfile = vi.fn().mockResolvedValue(undefined);
+
+    render(
+      <ProfileManagementModal
+        isOpen
+        onClose={vi.fn()}
+        profile={profiles[0]}
+        profiles={profiles}
+        tokenHealthMap={{}}
+        onCreateProfile={vi.fn()}
+        onSaveProfile={vi.fn()}
+        onDeleteProfile={onDeleteProfile}
+        onSelectProfile={vi.fn()}
+      />
+    );
+
+    await user.click(screen.getByRole('button', { name: /^delete$/i }));
+
+    expect(screen.getByText(/A fresh default profile will be recreated automatically/i)).toBeInTheDocument();
+  });
 });

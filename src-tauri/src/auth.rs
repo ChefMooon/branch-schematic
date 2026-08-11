@@ -638,7 +638,6 @@ pub async fn get_profiles(
     state: tauri::State<'_, crate::DbState>,
 ) -> Result<Vec<AuthProfileRow>, String> {
     let pool = state.inner().pool();
-    ensure_seed_profile(pool).await?;
 
     let rows = sqlx::query(
         "SELECT id FROM auth_profiles ORDER BY is_favorite DESC, is_active DESC, profile_name ASC"
@@ -664,7 +663,6 @@ pub async fn add_profile(
     profile: AuthProfileInput,
 ) -> Result<AuthProfileRow, String> {
     let pool = state.inner().pool();
-    ensure_seed_profile(pool).await?;
 
     let profile_id = profile.id.unwrap_or_else(|| Uuid::new_v4().to_string());
     let should_activate = profile.is_active.unwrap_or(0) == 1
@@ -710,7 +708,6 @@ pub async fn update_profile(
     profile: AuthProfileInput,
 ) -> Result<AuthProfileRow, String> {
     let pool = state.inner().pool();
-    ensure_seed_profile(pool).await?;
 
     let should_activate = profile.is_active.unwrap_or(0) == 1;
     if should_activate {
@@ -726,6 +723,7 @@ pub async fn update_profile(
     .bind(profile.commit_email.unwrap_or_else(|| "local@example.com".to_string()))
     .bind(profile.username)
     .bind(profile.avatar_url)
+    .bind(profile.api_base_url.unwrap_or_else(|| "https://api.github.com".to_string()))
     .bind(profile.is_favorite.unwrap_or(0))
     .bind(&profile_id)
     .execute(pool)
@@ -755,7 +753,6 @@ pub async fn delete_profile(
     profile_id: String,
 ) -> Result<(), String> {
     let pool = state.inner().pool();
-    ensure_seed_profile(pool).await?;
 
     let active_profile: Option<String> = sqlx::query_scalar::<_, String>(
         "SELECT id FROM auth_profiles WHERE id = $1 AND is_active = 1",
@@ -774,6 +771,16 @@ pub async fn delete_profile(
     let provider_name = resolve_provider_name(None, Some("github"));
     if let Err(error) = clear_token_from_keyring(&profile_id, &provider_name).await {
         eprintln!("Failed to clear stored token: {error}");
+    }
+
+    let remaining_profile_count: i64 = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM auth_profiles")
+        .fetch_one(pool)
+        .await
+        .map_err(|error| error.to_string())?;
+
+    if remaining_profile_count == 0 {
+        ensure_seed_profile(pool).await?;
+        return Ok(());
     }
 
     if active_profile.is_some() {
