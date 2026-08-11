@@ -2129,8 +2129,9 @@ pub async fn get_quick_filter_metadata(
         .map_err(|err| format!("Failed to fetch quick filter metadata: {}", err))
 }
 
-/// Finds the closest common ancestor (merge base) between two branches
-/// and calculates structural relationship topology.
+/// Returns a direct parent-to-child topology relation when one branch is an
+/// ancestor of the other. Diverged sibling branches intentionally do not
+/// produce an automatic connection.
 #[tauri::command]
 pub fn determine_branch_topology(
     absolute_path: &str,
@@ -2161,19 +2162,24 @@ pub fn determine_branch_topology(
     let oid_a = ref_a.id();
     let oid_b = ref_b.id();
 
-    let merge_base_oid = repo
-        .merge_base(oid_a, oid_b)
-        .map_err(|e| format!("No common ancestor found between branches: {}", e))?;
+    let (parent_branch, child_branch, parent_oid, child_oid) =
+        if repo.graph_descendant_of(oid_a, oid_b).map_err(|e| e.to_string())? {
+            (normalized_branch_b, normalized_branch_a, oid_b, oid_a)
+        } else if repo.graph_descendant_of(oid_b, oid_a).map_err(|e| e.to_string())? {
+            (normalized_branch_a, normalized_branch_b, oid_a, oid_b)
+        } else {
+            return Err("Branches are not in a direct ancestor relationship".to_string());
+        };
 
     let mut revwalk = repo.revwalk().map_err(|e| e.to_string())?;
-    revwalk.push(oid_a).map_err(|e| e.to_string())?;
-    revwalk.hide(merge_base_oid).map_err(|e| e.to_string())?;
+    revwalk.push(child_oid).map_err(|e| e.to_string())?;
+    revwalk.hide(parent_oid).map_err(|e| e.to_string())?;
     let distance = revwalk.count();
 
     Ok(GitTopologyRelation {
-        source_branch: normalized_branch_b.to_string(),
-        target_branch: normalized_branch_a.to_string(),
-        common_ancestor: merge_base_oid.to_string(),
+        source_branch: parent_branch.to_string(),
+        target_branch: child_branch.to_string(),
+        common_ancestor: parent_oid.to_string(),
         distance_from_ancestor: distance,
     })
 }
@@ -3563,7 +3569,7 @@ mod tests {
     }
 
     #[test]
-    fn test_determine_branch_topology_returns_merge_base_distance() {
+    fn test_determine_branch_topology_returns_parent_to_child_distance() {
         let (repo_path, repo) = create_test_repo("test_topology_merge_base_distance");
         create_initial_commit(&repo, &repo_path);
 
@@ -3612,9 +3618,27 @@ mod tests {
         assert!(result.is_ok());
 
         let topology = result.unwrap();
-        assert_eq!(topology.source_branch, "feature");
-        assert_eq!(topology.target_branch, secondary_branch);
-        assert!(topology.distance_from_ancestor >= 0);
+        assert_eq!(topology.source_branch, secondary_branch);
+        assert_eq!(topology.target_branch, "feature");
+        assert_eq!(topology.distance_from_ancestor, 1);
+
+        fs::remove_dir_all(repo_path).unwrap();
+    }
+
+    #[test]
+    fn test_determine_branch_topology_rejects_diverged_siblings() {
+        let (repo_path, repo) = create_test_repo("test_topology_rejects_diverged_siblings");
+        create_initial_commit(&repo, &repo_path);
+        let base_commit = repo.head().unwrap().peel_to_commit().unwrap();
+        repo.branch("feature-a", &base_commit, false).unwrap();
+        repo.branch("feature-b", &base_commit, false).unwrap();
+
+        let result = determine_branch_topology(
+            repo_path.to_str().unwrap(),
+            "feature-a",
+            "feature-b",
+        );
+        assert!(result.unwrap_err().contains("direct ancestor relationship"));
 
         fs::remove_dir_all(repo_path).unwrap();
     }

@@ -63,3 +63,6 @@ This is a desktop application providing a visual representation of Git repositor
 ## Alpha Dev Guidelines
 - If Database changes are required, continue to improve database migration 2. If any changes are required to the database, inform the user to reset the database and re-import their repositories. This is only while in alpha.
 - If startup DB initialization logic is changed, require explicit verification that deleting the DB file still allows clean startup and automatic regeneration.
+
+### Temporary Rust Test Workaround
+- Do not run the focused Rust test suite while this note is present. On the current Windows environment, the compiled Rust test binary repeatedly fails to launch with `STATUS_ENTRYPOINT_NOT_FOUND` after compiling successfully. Use `cargo check` for Rust validation instead until this note is removed.

@@ -9,6 +9,7 @@ import {
   OnConnect,
   applyNodeChanges,
   applyEdgeChanges,
+  MarkerType,
 } from '@xyflow/react';
 import type { BranchCardNode } from '../features/branch-map/components/BranchCard';
 import type { RepoTag } from '../types/git';
@@ -173,11 +174,6 @@ interface GitTopologyRelation {
   target_branch: string;
   common_ancestor: string;
   distance_from_ancestor: number;
-}
-
-interface ResolvedTopologyLookup {
-  branchPair: [string, string] | null;
-  relation: GitTopologyRelation | null;
 }
 
 function buildManualEdgeId(nodeA: string, nodeB: string) {
@@ -848,8 +844,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
       get().isBranchMapActive;
 
     try {
-      const paths = await invoke<{ absolute_path: string }[]>('get_active_tracked_paths');
-      const trackedWorkspaces = await invoke<{ absolute_path: string; current_branch?: string | null; default_branch_name?: string | null }[]>('get_tracked_workspaces');
+      const paths = await invoke<{ id: string; absolute_path: string }[]>('get_active_tracked_paths');
       const dbNodes = await invoke<WorkspaceNodeRecord[]>('get_workspace_nodes', { viewId });
       if (!isCurrentHydration()) return;
       const visibleRepositoryIds = Array.from(
@@ -862,47 +857,6 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
       if (!isCurrentHydration()) return;
       await publishVisibleRepositories(visibleRepositoryIds);
       if (!isCurrentHydration()) return;
-      const topologyLookup = await (async (): Promise<ResolvedTopologyLookup> => {
-        if (!paths || paths.length === 0) return { branchPair: null, relation: null };
-
-        const targetPath = paths[0];
-        const branchNames = new Set<string>();
-        const headBranch = dbNodes.find((node) => node.is_head === 1 && node.branch_name)?.branch_name;
-
-        if (headBranch) {
-          branchNames.add(headBranch.replace('refs/heads/', '').trim());
-        }
-
-        const workspaceDetails = trackedWorkspaces.find((workspace) => workspace.absolute_path === targetPath.absolute_path);
-        const defaultBranchName = workspaceDetails?.default_branch_name?.replace('refs/heads/', '').trim();
-        if (defaultBranchName) {
-          branchNames.add(defaultBranchName);
-        }
-
-        if (workspaceDetails?.current_branch) {
-          branchNames.add(workspaceDetails.current_branch.replace('refs/heads/', '').trim());
-        }
-
-        const branchCandidates = Array.from(branchNames).filter(Boolean);
-        if (branchCandidates.length < 2) {
-          return { branchPair: null, relation: null };
-        }
-
-        const [branchA, branchB] = branchCandidates;
-        try {
-          const relation = await invoke<GitTopologyRelation>('determine_branch_topology', {
-            absolutePath: targetPath.absolute_path,
-            branchA,
-            branchB,
-          });
-
-          return { branchPair: [branchA, branchB], relation };
-        } catch (e) {
-          return { branchPair: [branchA, branchB], relation: null };
-        }
-      })();
-
-      const topology = topologyLookup.relation ? [topologyLookup.relation] : [];
       const currentInMemoryNodes = options?.preserveInMemoryPositions === false ? [] : get().nodes;
       const activeTagFilters = get().activeTagFilters;
 
@@ -920,11 +874,55 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
         }
       });
 
+      const topology = (await (async (): Promise<Array<{ repoPathId: string; relation: GitTopologyRelation }>> => {
+        const relations: Array<{ repoPathId: string; relation: GitTopologyRelation }> = [];
+
+        for (const [repoPathId, records] of repoGroups) {
+          const branchCandidates = Array.from(
+            new Set(records.map((record) => normalizeBranchName(record.branch_name)).filter(Boolean)),
+          );
+          if (branchCandidates.length < 2) continue;
+
+          const path = paths.find((candidate) => candidate.id === repoPathId);
+          if (!path) continue;
+
+          for (let leftIndex = 0; leftIndex < branchCandidates.length; leftIndex += 1) {
+            for (let rightIndex = leftIndex + 1; rightIndex < branchCandidates.length; rightIndex += 1) {
+              try {
+                const relation = await invoke<GitTopologyRelation>('determine_branch_topology', {
+                  absolutePath: path.absolute_path,
+                  branchA: branchCandidates[leftIndex],
+                  branchB: branchCandidates[rightIndex],
+                });
+                relations.push({ repoPathId, relation });
+              } catch {
+                // Branches without a common ancestor do not produce topology edges.
+              }
+            }
+          }
+        }
+
+        return relations;
+      })()).filter(({ repoPathId, relation }, _index, relations) => {
+        const hasVisibleIntermediate = relations.some((candidate) =>
+          candidate.repoPathId === repoPathId &&
+          candidate.relation.source_branch === relation.source_branch &&
+          candidate.relation.target_branch !== relation.target_branch &&
+          relations.some((next) =>
+            next.repoPathId === repoPathId &&
+            next.relation.source_branch === candidate.relation.target_branch &&
+            next.relation.target_branch === relation.target_branch,
+          ),
+        );
+
+        return !hasVisibleIntermediate;
+      });
+
       // Map backend database node definitions intelligently
       const formattedNodes: BranchCardNode[] = dbNodes.map((record, index) => {
         const repoPathId = getNodeRepoPathId(record);
         const normalizedBranchName = normalizeBranchName(record.branch_name);
-        const isBranchNode = (record.explode_branches === 1 || record.is_explicit_branch === 1) && record.branch_name;
+        const isBranchNode = record.explode_branches === 1 && record.branch_name;
         const nodeId = isBranchNode
           ? `${repoPathId}__${normalizedBranchName}`
           : repoPathId;
@@ -932,8 +930,9 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
         const columns = Math.min(3, Math.max(1, Math.ceil(Math.sqrt(Math.max(dbNodes.length, 1)))));
         const colIndex = index % columns;
         const rowIndex = Math.floor(index / columns);
-        const fallbackX = 160 + colIndex * 340;
-        const fallbackY = 160 + rowIndex * 260;
+        const fallbackX = 160 + colIndex * 420;
+        const fallbackRowGap = dbNodes.some((node) => node.view_mode === 'EXPANDED') ? 620 : 320;
+        const fallbackY = 160 + rowIndex * fallbackRowGap;
 
         const storedX = record.pos_x ?? 0;
         const storedY = record.pos_y ?? 0;
@@ -971,8 +970,8 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
           if (childIndex >= 0) {
             const centerOffset = childIndex - (explodedChildren.length - 1) / 2;
             const lane = Math.floor(childIndex / 5);
-            finalX = anchorX + 300 + lane * 180;
-            finalY = anchorY + centerOffset * 120 + ((childIndex % 2 === 0) ? -24 : 24);
+            finalX = anchorX + 420 + lane * 220;
+            finalY = anchorY + centerOffset * 180 + ((childIndex % 2 === 0) ? -24 : 24);
           } else {
             finalX = anchorX;
             finalY = anchorY;
@@ -1023,21 +1022,25 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
         return (activeNode || candidates[0]).id;
       };
 
-      topology.forEach((relation) => {
+      topology.forEach(({ repoPathId, relation }) => {
         if (!relation || !relation.source_branch || !relation.target_branch) return;
 
         const cleanSrc = relation.source_branch.replace('refs/heads/', '').trim();
         const cleanTgt = relation.target_branch.replace('refs/heads/', '').trim();
 
-        const sourceNode = dbNodes.find((node) => normalizeBranchName(node.branch_name) === cleanSrc);
-        const targetNode = dbNodes.find((node) => normalizeBranchName(node.branch_name) === cleanTgt);
+        const sourceNode = dbNodes.find((node) =>
+          getNodeRepoPathId(node) === repoPathId && normalizeBranchName(node.branch_name) === cleanSrc,
+        );
+        const targetNode = dbNodes.find((node) =>
+          getNodeRepoPathId(node) === repoPathId && normalizeBranchName(node.branch_name) === cleanTgt,
+        );
 
         if (sourceNode && targetNode) {
-          const sourceIsBranchNode = (sourceNode.explode_branches === 1 || sourceNode.is_explicit_branch === 1) && sourceNode.branch_name;
+          const sourceIsBranchNode = sourceNode.explode_branches === 1 && sourceNode.branch_name;
           const sourceNodeId = sourceIsBranchNode
             ? `${getNodeRepoPathId(sourceNode)}__${normalizeBranchName(sourceNode.branch_name)}`
             : getNodeRepoPathId(sourceNode);
-          const targetIsBranchNode = (targetNode.explode_branches === 1 || targetNode.is_explicit_branch === 1) && targetNode.branch_name;
+          const targetIsBranchNode = targetNode.explode_branches === 1 && targetNode.branch_name;
           const targetNodeId = targetIsBranchNode
             ? `${getNodeRepoPathId(targetNode)}__${normalizeBranchName(targetNode.branch_name)}`
             : getNodeRepoPathId(targetNode);
@@ -1053,8 +1056,18 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
               sourceHandle: 'source-right',
               targetHandle: 'target-left',
               animated: false,
-              data: { kind: 'topology' },
-              label: `+${relation.distance_from_ancestor} commits`,
+              data: {
+                kind: 'topology',
+                parentBranch: cleanSrc,
+                childBranch: cleanTgt,
+                commitDifferenceLabel: `${cleanTgt} is ${relation.distance_from_ancestor} commits ahead of ${cleanSrc}`,
+              },
+              label: `${cleanTgt} +${relation.distance_from_ancestor} vs ${cleanSrc}`,
+              ariaLabel: `${cleanTgt} is ${relation.distance_from_ancestor} commits ahead of ${cleanSrc}`,
+              markerEnd: {
+                type: MarkerType.ArrowClosed,
+                color: sourceNode.theme_color_hex || '#6366f1',
+              },
               labelStyle: { fill: '#71717a', fontSize: 10, fontWeight: 500 },
               style: { 
                 stroke: sourceNode.theme_color_hex || '#6366f1', 

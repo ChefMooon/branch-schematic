@@ -234,7 +234,7 @@ export function BranchCard({ data }: NodeProps<BranchCardNode>) {
 
           <div style={{ fontSize: '10px', fontWeight: 'bold', color: '#a1a1aa', marginTop: '4px' }}>DETAILS</div>
 
-          <div style={{ fontSize: '10px', fontWeight: 'bold', color: '#a1a1aa', marginTop: '4px' }}>STRUCTURE VIEW</div>
+          <div style={{ fontSize: '10px', fontWeight: 'bold', color: '#a1a1aa', marginTop: '4px' }}>CARD STRUCTURE</div>
           <div style={{ display: 'flex', gap: '4px' }}>
             <button
               onClick={() => updateNodeConfig(data.repoPathId, data.viewMode, data.commitDensity, accentColor, false)}
@@ -246,7 +246,7 @@ export function BranchCard({ data }: NodeProps<BranchCardNode>) {
               onClick={() => updateNodeConfig(data.repoPathId, data.viewMode, data.commitDensity, accentColor, true)}
               style={{ fontSize: '11px', padding: '2px 6px', cursor: 'pointer', backgroundColor: data.explodeBranches ? accentColor : 'transparent', color: data.explodeBranches ? '#fff' : (isDark ? '#fff' : '#000'), border: `1px solid ${isDark ? '#2d2d30' : '#e5e7eb'}`, borderRadius: '4px' }}
             >
-              Explode Branches
+              Branch Cards
             </button>
           </div>
 

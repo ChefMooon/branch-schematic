@@ -1286,15 +1286,17 @@ pub async fn fetch_workspace_nodes(
                 AND (
                     COALESCE(visible_paths.is_visible, 0) = 1
                 )
-                AND COALESCE(visible_branches.is_visible, 1) = 1
                 AND (
-                    (COALESCE(card_layout.explode_branches, 0) = 1 AND cached_git_branches.id IS NOT NULL)
+                    (
+                        COALESCE(card_layout.explode_branches, 0) = 1
+                        AND cached_git_branches.id IS NOT NULL
+                        AND COALESCE(visible_branches.is_visible, 1) = 1
+                    )
                     OR (
                         COALESCE(card_layout.explode_branches, 0) = 0
                         AND (
                             cached_git_branches.id IS NULL
                             OR cached_git_branches.id = head_branch.id
-                            OR visible_branches.branch_id IS NOT NULL
                         )
                     )
                 )
@@ -1303,7 +1305,7 @@ pub async fn fetch_workspace_nodes(
             selected_branches.path_id AS repo_path_id,
             COALESCE(tracked_paths.display_name, selected_branches.path_id) AS display_name,
             COALESCE(card_layout.explode_branches, 0) AS explode_branches,
-            selected_branches.is_explicit_branch AS is_explicit_branch,
+            0 AS is_explicit_branch,
             COALESCE(selected_branches.branch_id, '') AS branch_id,
             COALESCE(selected_branches.branch_name, '') AS branch_name,
             COALESCE(selected_branches.is_head, 0) AS is_head,
@@ -1313,13 +1315,11 @@ pub async fn fetch_workspace_nodes(
             commits.commit_message,
             CASE
                                 WHEN COALESCE(card_layout.explode_branches, 0) = 1
-                                    OR selected_branches.is_explicit_branch = 1
                                         THEN COALESCE(branch_layout.pos_x, card_layout.pos_x, 100.0)
                 ELSE COALESCE(card_layout.pos_x, 100.0)
             END AS pos_x,
             CASE
                                 WHEN COALESCE(card_layout.explode_branches, 0) = 1
-                                    OR selected_branches.is_explicit_branch = 1
                                         THEN COALESCE(branch_layout.pos_y, card_layout.pos_y, 100.0)
                 ELSE COALESCE(card_layout.pos_y, 100.0)
             END AS pos_y,
