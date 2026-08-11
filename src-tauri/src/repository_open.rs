@@ -132,6 +132,16 @@ fn shell_command_for_editor_name(name: &str) -> Option<&'static str> {
     }
 }
 
+fn editor_friendly_name(command_name: &str) -> String {
+    match command_name.to_ascii_lowercase().as_str() {
+        "idea" | "idea64" => "IntelliJ IDEA".to_string(),
+        "webstorm" => "WebStorm".to_string(),
+        "pycharm" => "PyCharm".to_string(),
+        "rider" => "Rider".to_string(),
+        _ => command_name.to_string(),
+    }
+}
+
 #[cfg(windows)]
 fn expand_windows_environment_variables(value: &str) -> String {
     let mut expanded = String::with_capacity(value.len());
@@ -450,6 +460,15 @@ fn known_editor_candidates() -> Vec<(
     ]
 }
 
+fn known_editor_label_for_command(command_name: &str, fallback: &str) -> String {
+    let label = editor_friendly_name(command_name);
+    if label == command_name {
+        fallback.to_string()
+    } else {
+        label
+    }
+}
+
 fn deduplicate_editors(editors: Vec<EditorDescriptor>) -> Vec<EditorDescriptor> {
     let mut result = Vec::new();
     for editor in editors {
@@ -477,7 +496,7 @@ pub fn detect_repository_editors() -> RepositoryOpenResult<Vec<EditorDescriptor>
             if let Some(path) = command_exists(command_name).or_else(|| installed_editor_path(id)) {
                 editors.push(EditorDescriptor {
                     id: id.to_string(),
-                    label: label.to_string(),
+                    label: known_editor_label_for_command(command_name, label),
                     executable_path: path.to_string_lossy().into_owned(),
                     shell_command: shell_command_for_editor_name(command_name).map(str::to_string),
                     folder_support: folder_support.clone(),
@@ -739,6 +758,14 @@ mod tests {
             },
         ]);
         assert_eq!(editors.len(), 1);
+    }
+
+    #[test]
+    fn build_editor_label_for_jetbrains_products() {
+        assert_eq!(editor_friendly_name("idea"), "IntelliJ IDEA");
+        assert_eq!(editor_friendly_name("idea64"), "IntelliJ IDEA");
+        assert_eq!(editor_friendly_name("webstorm"), "WebStorm");
+        assert_eq!(editor_friendly_name("pycharm"), "PyCharm");
     }
 
     #[cfg(windows)]
