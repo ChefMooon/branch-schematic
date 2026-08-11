@@ -67,7 +67,7 @@ export function AddLocalRepositoryModal({ isOpen, onClose }: AddLocalRepositoryM
         title: result.outcome === 'already_tracked' ? 'Repository already tracked' : 'Repository added',
         message: result.message,
         variant: result.outcome === 'already_tracked' ? 'warning' : 'success',
-        target: 'both',
+        target: 'toast',
         duration: 6000,
       });
 

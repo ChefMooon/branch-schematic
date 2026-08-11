@@ -530,7 +530,7 @@ export function CloneRemoteRepositoryModal({
 				title: 'Repository cloned',
 				message: response.message,
 				variant: 'success',
-				target: 'both',
+				target: 'toast',
 				duration: 7000,
 			});
 
@@ -601,7 +601,7 @@ export function CloneRemoteRepositoryModal({
 				title: 'Repository cloned',
 				message: response.message,
 				variant: 'success',
-				target: 'both',
+				target: 'toast',
 				duration: 7000,
 			});
 

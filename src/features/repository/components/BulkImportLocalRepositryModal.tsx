@@ -138,7 +138,7 @@ export function BulkImportLocalRepositoryModal({
         title: skippedCount > 0 ? 'Bulk import completed' : 'Repositories imported',
         message: summaryMessage,
         variant: skippedCount > 0 ? 'warning' : 'success',
-        target: 'both',
+        target: 'toast',
         duration: 7000,
       });
 

@@ -286,7 +286,7 @@ describe('CloneRemoteRepositoryModal', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'Clone from URL' }));
     await userEvent.type(screen.getByRole('textbox', { name: 'Repository URL' }), 'https://github.com/octocat/alpha.git');
-    await userEvent.type(screen.getByRole('textbox', { name: 'Destination' }), 'C:/Users/you/projects');
+    await userEvent.type(screen.getByPlaceholderText('C:/Users/you/projects'), 'C:/Users/you/projects');
     await userEvent.click(screen.getByRole('checkbox', { name: 'Clone into subfolder' }));
     await userEvent.click(screen.getByRole('button', { name: 'Clone' }));
 
@@ -298,6 +298,162 @@ describe('CloneRemoteRepositoryModal', () => {
         destinationPath: 'C:/Users/you/projects',
         cloneIntoSubfolder: false,
       });
+    });
+  });
+
+  it('uses a toast-only notification when cloning from a URL succeeds', async () => {
+    mockUseProfileContext.mockReturnValue({
+      activeProfile: {
+        id: 'profile-1',
+        display_name: 'Test Profile',
+        auth_level: 'full_oauth',
+        api_base_url: 'https://api.github.com',
+      },
+      tokenHealthMap: { 'profile-1': 'healthy' },
+    });
+    invokeMock.mockImplementation((command: string) => {
+      if (command === 'clone_remote_repository') return Promise.resolve({ message: 'Repository cloned.' });
+      if (command === 'parse_remote_repository_slug') return Promise.resolve({ owner: 'octocat', repo_name: 'alpha' });
+      return Promise.resolve({ items: [], page: 1, per_page: 100, has_more: false });
+    });
+
+    render(<CloneRemoteRepositoryModal isOpen onClose={() => undefined} onOpenProfileManagement={() => undefined} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Clone from URL' }));
+    await userEvent.type(screen.getByRole('textbox', { name: 'Repository URL' }), 'https://github.com/octocat/alpha.git');
+    await userEvent.type(screen.getByPlaceholderText('C:/Users/you/projects'), 'C:/Users/you/projects');
+    await userEvent.click(screen.getByRole('button', { name: 'Clone' }));
+
+    await waitFor(() => {
+      expect(addToastMock).toHaveBeenCalledWith(expect.objectContaining({
+        title: 'Repository cloned',
+        variant: 'success',
+        target: 'toast',
+      }));
+    });
+  });
+
+  it('keeps URL clone failures in the notification inbox', async () => {
+    mockUseProfileContext.mockReturnValue({
+      activeProfile: {
+        id: 'profile-1',
+        display_name: 'Test Profile',
+        auth_level: 'full_oauth',
+        api_base_url: 'https://api.github.com',
+      },
+      tokenHealthMap: { 'profile-1': 'healthy' },
+    });
+    invokeMock.mockImplementation((command: string) => {
+      if (command === 'clone_remote_repository') return Promise.reject(new Error('Clone failed.'));
+      if (command === 'parse_remote_repository_slug') return Promise.resolve({ owner: 'octocat', repo_name: 'alpha' });
+      return Promise.resolve({ items: [], page: 1, per_page: 100, has_more: false });
+    });
+
+    render(<CloneRemoteRepositoryModal isOpen onClose={() => undefined} onOpenProfileManagement={() => undefined} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Clone from URL' }));
+    await userEvent.type(screen.getByRole('textbox', { name: 'Repository URL' }), 'https://github.com/octocat/alpha.git');
+    await userEvent.type(screen.getByRole('textbox', { name: 'Destination' }), 'C:/Users/you/projects');
+    await userEvent.click(screen.getByRole('button', { name: 'Clone' }));
+
+    await waitFor(() => {
+      expect(addToastMock).toHaveBeenCalledWith(expect.objectContaining({
+        title: 'Clone failed',
+        variant: 'error',
+        target: 'both',
+        message: 'Clone failed.',
+      }));
+    });
+  });
+
+  it('uses a toast-only notification when cloning a selected repository succeeds', async () => {
+    mockUseProfileContext.mockReturnValue({
+      activeProfile: {
+        id: 'profile-1',
+        display_name: 'Test Profile',
+        auth_level: 'full_oauth',
+        api_base_url: 'https://api.github.com',
+      },
+      tokenHealthMap: { 'profile-1': 'healthy' },
+    });
+    mockUseGithubRepositories.mockReturnValue({
+      installations: [],
+      selectedInstallationId: null,
+      selectedInstallation: null,
+      repositories: [sampleRepository],
+      lastUpdatedAt: null,
+      isUsingCache: false,
+      page: 1,
+      hasMore: false,
+      hasLoadedOnce: true,
+      isLoading: false,
+      isRefreshing: false,
+      isLoadingMore: false,
+      error: null,
+      reload: vi.fn(async () => undefined),
+      loadMore: vi.fn(async () => undefined),
+    });
+    invokeMock.mockImplementation((command: string) => {
+      if (command === 'clone_remote_repository') return Promise.resolve({ message: 'Repository cloned.' });
+      return Promise.resolve({ items: [], page: 1, per_page: 100, has_more: false });
+    });
+
+    render(<CloneRemoteRepositoryModal isOpen onClose={() => undefined} onOpenProfileManagement={() => undefined} />);
+    await userEvent.click(await screen.findByText('alpha'));
+    await userEvent.type(screen.getByPlaceholderText('C:/Users/you/projects'), 'C:/Users/you/projects');
+    await userEvent.click(screen.getByRole('button', { name: 'Clone' }));
+
+    await waitFor(() => {
+      expect(addToastMock).toHaveBeenCalledWith(expect.objectContaining({
+        title: 'Repository cloned',
+        variant: 'success',
+        target: 'toast',
+      }));
+    });
+  });
+
+  it('keeps selected-repository clone failures in the notification inbox', async () => {
+    mockUseProfileContext.mockReturnValue({
+      activeProfile: {
+        id: 'profile-1',
+        display_name: 'Test Profile',
+        auth_level: 'full_oauth',
+        api_base_url: 'https://api.github.com',
+      },
+      tokenHealthMap: { 'profile-1': 'healthy' },
+    });
+    mockUseGithubRepositories.mockReturnValue({
+      installations: [],
+      selectedInstallationId: null,
+      selectedInstallation: null,
+      repositories: [sampleRepository],
+      lastUpdatedAt: null,
+      isUsingCache: false,
+      page: 1,
+      hasMore: false,
+      hasLoadedOnce: true,
+      isLoading: false,
+      isRefreshing: false,
+      isLoadingMore: false,
+      error: null,
+      reload: vi.fn(async () => undefined),
+      loadMore: vi.fn(async () => undefined),
+    });
+    invokeMock.mockImplementation((command: string) => {
+      if (command === 'clone_remote_repository') return Promise.reject(new Error('Clone failed.'));
+      return Promise.resolve({ items: [], page: 1, per_page: 100, has_more: false });
+    });
+
+    render(<CloneRemoteRepositoryModal isOpen onClose={() => undefined} onOpenProfileManagement={() => undefined} />);
+    await userEvent.click(await screen.findByText('alpha'));
+    await userEvent.type(screen.getByPlaceholderText('C:/Users/you/projects'), 'C:/Users/you/projects');
+    await userEvent.click(screen.getByRole('button', { name: 'Clone' }));
+
+    await waitFor(() => {
+      expect(addToastMock).toHaveBeenCalledWith(expect.objectContaining({
+        title: 'Clone failed',
+        variant: 'error',
+        target: 'both',
+        message: 'Clone failed.',
+      }));
     });
   });
 
