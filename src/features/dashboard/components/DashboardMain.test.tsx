@@ -28,7 +28,9 @@ vi.mock('../../../components/notifications/NotificationProvider', () => ({
 }));
 
 vi.mock('./RepositoryCard', () => ({
-  RepositoryCard: () => <div>repo</div>,
+  RepositoryCard: ({ repo }: { repo: { display_name: string } }) => (
+    <div data-testid="mock-repository-card">{repo.display_name}</div>
+  ),
 }));
 
 vi.mock('./WorkspaceQuickFilters', async (importOriginal) => {
@@ -57,10 +59,46 @@ describe('DashboardMain', () => {
     verifyRepositoriesMock.mockReset();
   });
 
-  it('defaults the sort dropdown to Last Accessed', () => {
+  it('defaults the sort dropdown to Alphabetical', () => {
     render(<DashboardMain />);
 
-    expect(screen.getByRole('button', { name: /sort repositories/i })).toHaveTextContent('Last Accessed');
+    expect(screen.getByRole('button', { name: /sort repositories/i })).toHaveTextContent('Alphabetical');
+  });
+
+  it('lists Alphabetical before Last Accessed in the sort dropdown', async () => {
+    const user = userEvent.setup();
+    render(<DashboardMain />);
+
+    await user.click(screen.getByRole('button', { name: /sort repositories/i }));
+
+    expect(screen.getAllByRole('option').map((option) => option.textContent)).toEqual([
+      'Alphabetical',
+      'Last Accessed',
+      'Pending Changes',
+    ]);
+  });
+
+  it('renders repositories alphabetically by default', () => {
+    mockStore.repos = [
+      {
+        id: 'repo-zulu',
+        absolute_path: 'C:/repos/zulu',
+        display_name: 'Zulu',
+        last_accessed_at: '2026-08-11T12:00:00Z',
+        tags: [],
+      },
+      {
+        id: 'repo-alpha',
+        absolute_path: 'C:/repos/alpha',
+        display_name: 'Alpha',
+        last_accessed_at: '2026-08-10T12:00:00Z',
+        tags: [],
+      },
+    ];
+
+    render(<DashboardMain />);
+
+    expect(screen.getAllByTestId('mock-repository-card').map((card) => card.textContent)).toEqual(['Alpha', 'Zulu']);
   });
 
   it('shows a clear button when the search input has text and clears it on click', async () => {
@@ -136,7 +174,7 @@ describe('DashboardMain', () => {
     }];
     rerender(<DashboardMain />);
 
-    expect(screen.getByText('repo')).toBeInTheDocument();
+    expect(screen.getByText('Repo 1')).toBeInTheDocument();
     expect(screen.queryByTestId('repository-card-skeleton')).not.toBeInTheDocument();
   });
 

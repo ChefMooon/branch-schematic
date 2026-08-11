@@ -24,7 +24,7 @@ type SortOption = "LAST_VIEWED" | "ALPHABETICAL" | "PENDING_CHANGES";
 export function DashboardMain({ onOpenManagementModal, onCleanupDanglingTags }: DashboardMainProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedRepoTypeIds, setSelectedRepoTypeIds] = useState<string[]>([]);
-  const [sortBy, setSortBy] = useState<SortOption>("LAST_VIEWED");
+  const [sortBy, setSortBy] = useState<SortOption>("ALPHABETICAL");
   const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
   const [selectedGroup, setSelectedGroup] = useState<string | null>(null);
   const [favoritesOnly, setFavoritesOnly] = useState(false);
@@ -166,8 +166,8 @@ export function DashboardMain({ onOpenManagementModal, onCleanupDanglingTags }: 
 
   const sortOptions = useMemo(
     () => [
-      { label: "Last Accessed", value: "LAST_VIEWED" },
       { label: "Alphabetical", value: "ALPHABETICAL" },
+      { label: "Last Accessed", value: "LAST_VIEWED" },
       { label: "Pending Changes", value: "PENDING_CHANGES" },
     ],
     []
