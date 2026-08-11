@@ -1356,6 +1356,10 @@ pub struct DiscoveredRepo {
 pub struct RepositoryTrackResult {
     pub outcome: String,
     pub message: String,
+    pub id: String,
+    pub display_name: String,
+    pub absolute_path: String,
+    pub metadata_ready: bool,
 }
 
 #[tauri::command]
@@ -1421,7 +1425,7 @@ pub fn crawl_repositories_command(
 async fn track_repository_path(
     pool: &sqlx::SqlitePool,
     absolute_path: &str,
-    profile_id: Option<&str>,
+    _profile_id: Option<&str>,
 ) -> Result<RepositoryTrackResult, String> {
     let path = Path::new(absolute_path);
 
@@ -1449,29 +1453,22 @@ async fn track_repository_path(
         .unwrap_or("Unknown Repository")
         .to_string();
 
-    let mut repo_origin_type = "LOCAL_ONLY".to_string();
-    let mut github_owner_login: Option<String> = None;
-
-    if remote_url.is_some() {
-        let (derived_origin_type, derived_owner_login) =
-            resolve_repository_origin_metadata(pool, remote_url.as_deref(), profile_id, true).await;
-        repo_origin_type = derived_origin_type;
-        github_owner_login = derived_owner_login;
-    }
-
     let existing_path_state = db::fetch_tracked_path_state_by_absolute_path(pool, absolute_path)
         .await
         .map_err(|err| format!("Database lookup failure: {}", err))?;
 
-    let id = Uuid::new_v4().to_string();
+    let id = existing_path_state
+        .as_ref()
+        .map(|(existing_id, _)| existing_id.clone())
+        .unwrap_or_else(|| Uuid::new_v4().to_string());
     db::insert_tracked_path(
         pool,
         &id,
         &display_name,
         absolute_path,
         remote_url.as_deref(),
-        &repo_origin_type,
-        github_owner_login.as_deref(),
+        "LOCAL_ONLY",
+        None,
     )
     .await
     .map_err(|err| format!("Database indexing loop failure: {}", err))?;
@@ -1486,6 +1483,10 @@ async fn track_repository_path(
                 "Repository '{}' is already in your workspace catalog, so it was not added again.",
                 display_name
             ),
+            id,
+            display_name,
+            absolute_path: absolute_path.to_string(),
+            metadata_ready: false,
         });
     }
 
@@ -1496,6 +1497,10 @@ async fn track_repository_path(
     Ok(RepositoryTrackResult {
         outcome: "added".to_string(),
         message: format!("Added '{}' to your workspace catalog.", display_name),
+        id,
+        display_name,
+        absolute_path: absolute_path.to_string(),
+        metadata_ready: false,
     })
 }
 
@@ -1505,8 +1510,39 @@ pub async fn add_new_tracked_path(
     manager: tauri::State<'_, WatcherManager>,
     absolute_path: String,
 ) -> Result<RepositoryTrackResult, String> {
-    let result = track_repository_path(state.inner().pool(), &absolute_path, None).await?;
-    let path_id = db::fetch_tracked_path_id_by_absolute_path(state.inner().pool(), &absolute_path)
+    let pool = state.inner().pool().clone();
+    let result = track_repository_path(&pool, &absolute_path, None).await?;
+    let metadata_pool = pool.clone();
+    let metadata_id = result.id.clone();
+    tauri::async_runtime::spawn(async move {
+        let remote_url = sqlx::query_scalar::<_, Option<String>>(
+            "SELECT remote_url FROM tracked_paths WHERE id = ? LIMIT 1",
+        )
+        .bind(&metadata_id)
+        .fetch_optional(&metadata_pool)
+        .await
+        .ok()
+        .flatten()
+        .flatten();
+
+        if let Some(remote_url) = remote_url {
+            let (origin_type, owner_login) = resolve_repository_origin_metadata(
+                &metadata_pool,
+                Some(&remote_url),
+                None,
+                true,
+            )
+            .await;
+            let _ = db::update_tracked_path_origin_metadata(
+                &metadata_pool,
+                &metadata_id,
+                &origin_type,
+                owner_login.as_deref(),
+            )
+            .await;
+        }
+    });
+    let path_id = db::fetch_tracked_path_id_by_absolute_path(&pool, &absolute_path)
         .await
         .map_err(|error| format!("Failed to resolve tracked repository id: {error}"))?
         .ok_or_else(|| "The tracked repository id could not be resolved.".to_string())?;
@@ -1598,6 +1634,10 @@ pub async fn relink_repository_path(
             "Reattached '{}' to its new workspace location.",
             display_name
         ),
+        id: path_id,
+        display_name,
+        absolute_path,
+        metadata_ready: true,
     })
 }
 

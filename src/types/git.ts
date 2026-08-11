@@ -109,6 +109,15 @@ export interface TrackedPath {
   status?: 'active' | 'missing' | 'verifying';
 }
 
+export interface RepositoryTrackResult {
+  outcome: 'added' | 'already_tracked' | 'updated';
+  message: string;
+  id: string;
+  display_name: string;
+  absolute_path: string;
+  metadata_ready: boolean;
+}
+
 export interface ArchivedTrackedRepository {
   id: string;
   display_name: string;

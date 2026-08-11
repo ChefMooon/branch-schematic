@@ -7,11 +7,7 @@ import { RepositoryModalShell } from './RepositoryModalShell';
 import { useWorkspaceStore } from '../../../stores/workspace-store';
 import { useNotifications } from '../../../components/notifications/NotificationProvider';
 import type { DiscoveredRepository } from '../types';
-
-interface RepositoryTrackResult {
-  outcome: 'added' | 'already_tracked';
-  message: string;
-}
+import { useImportStore } from '../stores/import-store';
 
 interface BulkImportLocalRepositoryModalProps {
   isOpen: boolean;
@@ -30,6 +26,10 @@ export function BulkImportLocalRepositoryModal({
   const [discoveries, setDiscoveries] = useState<DiscoveredRepository[]>([]);
   const [selectedPaths, setSelectedPaths] = useState<Record<string, boolean>>({});
   const { hydrateFromBackend, hydrateQuickFilterMetadata } = useWorkspaceStore();
+  const importJob = useImportStore((state) => state.job);
+  const startImport = useImportStore((state) => state.startImport);
+  const cancelImport = useImportStore((state) => state.cancelImport);
+  const clearJob = useImportStore((state) => state.clearJob);
   const { addToast } = useNotifications();
 
   useEffect(() => {
@@ -42,7 +42,10 @@ export function BulkImportLocalRepositoryModal({
     setError(null);
     setDiscoveries([]);
     setSelectedPaths({});
-  }, [isOpen]);
+    if (useImportStore.getState().job?.status !== 'running') {
+      clearJob();
+    }
+  }, [clearJob, isOpen]);
 
   const handlePickDirectory = async () => {
     try {
@@ -110,50 +113,29 @@ export function BulkImportLocalRepositoryModal({
     setError(null);
 
     try {
-      let addedCount = 0;
-      let skippedCount = 0;
-
-      for (const repository of selectedRepositories) {
-        const result = await invoke<RepositoryTrackResult>('add_new_tracked_path', {
-          absolutePath: repository.absolute_path,
-        });
-
-        if (result.outcome === 'added') {
-          addedCount += 1;
-        } else {
-          skippedCount += 1;
-        }
-      }
+      const job = await startImport(selectedRepositories.map((repository) => ({
+        path: repository.absolute_path,
+        displayName: repository.display_name,
+      })));
 
       await hydrateFromBackend();
       await hydrateQuickFilterMetadata();
 
-      const repositoryLabel = addedCount === 1 ? 'repository' : 'repositories';
-      const summaryMessage =
-        skippedCount > 0
-          ? `Imported ${addedCount} ${repositoryLabel}. Skipped ${skippedCount} because it was already tracked.`
-          : `Imported ${addedCount} ${repositoryLabel}.`;
+      const repositoryLabel = job.counts.added === 1 ? 'repository' : 'repositories';
+      const summaryMessage = `Imported ${job.counts.added} ${repositoryLabel}. Skipped ${job.counts.skipped}. Failed ${job.counts.failed}.`;
 
       addToast({
-        title: skippedCount > 0 ? 'Bulk import completed' : 'Repositories imported',
+        title: job.counts.failed === job.counts.total ? 'Bulk import failed' : job.counts.failed > 0 ? 'Bulk import partially completed' : job.counts.skipped > 0 ? 'Bulk import completed' : 'Repositories imported',
         message: summaryMessage,
-        variant: skippedCount > 0 ? 'warning' : 'success',
-        target: 'toast',
+        variant: job.counts.failed === job.counts.total ? 'error' : job.counts.failed > 0 ? 'warning' : 'success',
+        target: job.counts.failed === job.counts.total ? 'both' : 'toast',
         duration: 7000,
       });
 
       onClose();
     } catch (err) {
       console.error('Failed to import repositories:', err);
-      const message = err instanceof Error ? err.message : 'The selected repositories could not be imported.';
-      setError(message);
-      addToast({
-        title: 'Bulk import failed',
-        message,
-        variant: 'error',
-        target: 'both',
-        duration: 7000,
-      });
+      setError(err instanceof Error ? err.message : 'The selected repositories could not be imported.');
     } finally {
       setIsImporting(false);
     }
@@ -168,8 +150,13 @@ export function BulkImportLocalRepositoryModal({
       footer={
         <>
           <Button type="button" variant="basic" onClick={onClose}>
-            Cancel
+            {isImporting ? 'Hide' : 'Cancel'}
           </Button>
+          {isImporting ? (
+            <Button type="button" variant="basic" onClick={cancelImport}>
+              Cancel remaining
+            </Button>
+          ) : null}
           <Button
             type="button"
             variant="submit"
@@ -231,6 +218,14 @@ export function BulkImportLocalRepositoryModal({
 
         {error ? <p style={{ margin: 0, fontSize: 12, color: '#ef4444' }}>{error}</p> : null}
 
+        {isImporting && importJob ? (
+          <div style={progressStyle} aria-live="polite">
+            <strong>{importJob.counts.completed} of {importJob.counts.total} processed</strong>
+            <span>{importJob.counts.remaining} remaining · {importJob.counts.failed} failed · {importJob.counts.skipped} already tracked</span>
+            {importJob.currentPath ? <span>Working on {importJob.currentPath}</span> : null}
+          </div>
+        ) : null}
+
         <div style={{ display: 'grid', gap: 8, maxHeight: 280, overflowY: 'auto', paddingRight: 4 }}>
           {discoveries.length === 0 ? (
             <p style={{ margin: 0, fontSize: 12, color: 'var(--app-muted)' }}>
@@ -286,4 +281,15 @@ const inputStyle: React.CSSProperties = {
   fontSize: 13,
   background: 'var(--app-bg)',
   color: 'var(--app-text)',
+};
+
+const progressStyle: React.CSSProperties = {
+  display: 'grid',
+  gap: 4,
+  padding: '10px 12px',
+  borderRadius: 8,
+  border: '1px solid var(--app-border)',
+  background: 'var(--app-surface-muted)',
+  color: 'var(--app-muted)',
+  fontSize: 12,
 };

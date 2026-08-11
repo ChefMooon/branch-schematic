@@ -1693,6 +1693,25 @@ pub async fn insert_tracked_path(
     Ok(())
 }
 
+pub async fn update_tracked_path_origin_metadata(
+    pool: &SqlitePool,
+    path_id: &str,
+    repo_origin_type: &str,
+    github_owner_login: Option<&str>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "UPDATE tracked_paths
+         SET repo_origin_type = ?, github_owner_login = ?
+         WHERE id = ?;",
+    )
+    .bind(repo_origin_type)
+    .bind(github_owner_login)
+    .bind(path_id)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
 pub async fn relink_tracked_path(
     pool: &SqlitePool,
     path_id: &str,

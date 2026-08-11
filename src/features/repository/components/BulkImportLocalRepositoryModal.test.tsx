@@ -2,11 +2,13 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { BulkImportLocalRepositoryModal } from './BulkImportLocalRepositryModal';
+import { useImportStore } from '../stores/import-store';
 
 const invokeMock = vi.fn();
 const addToastMock = vi.fn();
 const hydrateFromBackendMock = vi.fn(async () => undefined);
 const hydrateQuickFilterMetadataMock = vi.fn(async () => undefined);
+const reconcileImportedRepositoryMock = vi.fn();
 
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: (...args: unknown[]) => invokeMock(...args),
@@ -17,10 +19,13 @@ vi.mock('@tauri-apps/plugin-dialog', () => ({
 }));
 
 vi.mock('../../../stores/workspace-store', () => ({
-  useWorkspaceStore: () => ({
-    hydrateFromBackend: hydrateFromBackendMock,
-    hydrateQuickFilterMetadata: hydrateQuickFilterMetadataMock,
-  }),
+  useWorkspaceStore: Object.assign(
+    () => ({
+      hydrateFromBackend: hydrateFromBackendMock,
+      hydrateQuickFilterMetadata: hydrateQuickFilterMetadataMock,
+    }),
+    { getState: () => ({ reconcileImportedRepository: reconcileImportedRepositoryMock }) },
+  ),
 }));
 
 vi.mock('../../../components/notifications/NotificationProvider', () => ({
@@ -39,6 +44,8 @@ describe('BulkImportLocalRepositoryModal notifications', () => {
     addToastMock.mockReset();
     hydrateFromBackendMock.mockClear();
     hydrateQuickFilterMetadataMock.mockClear();
+    reconcileImportedRepositoryMock.mockClear();
+    useImportStore.setState({ job: null });
   });
 
   async function prepareImport() {
@@ -79,7 +86,7 @@ describe('BulkImportLocalRepositoryModal notifications', () => {
         title: 'Bulk import failed',
         variant: 'error',
         target: 'both',
-        message: 'Import failed.',
+        message: 'Imported 0 repositories. Skipped 0. Failed 1.',
       }));
     });
   });

@@ -21,6 +21,7 @@ import { ProfileDropdown } from '../../features/auth-profile/components/ProfileD
 import { useProfileContext } from '../../features/auth-profile/hooks/useProfileContext';
 import { Button } from '../button/Button';
 import type { RepositoryModalAction } from '../../features/repository/types';
+import { ImportStatusOverlay } from '../../features/repository/components/ImportStatusOverlay';
 import type { UserProfile } from '../../features/auth-profile/types';
 
 interface AppLayoutProps {
@@ -549,6 +550,8 @@ export function AppLayout({ children }: AppLayoutProps) {
           />
         )}
       </Suspense>
+
+      <ImportStatusOverlay />
 
       {/* ── MAIN CONTENT ── */}
       <main style={{ ...styles.main, top: HEADER_H }}>

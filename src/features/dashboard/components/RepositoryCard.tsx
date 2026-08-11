@@ -56,6 +56,7 @@ export function RepositoryCard({ repo, onRefresh, onOpenManagement, onOpenManage
   const createGlobalTag = useWorkspaceStore((state) => state.createGlobalTag);
   const deleteGlobalTag = useWorkspaceStore((state) => state.deleteGlobalTag);
   const getCustomGroups = useWorkspaceStore((state) => state.getCustomGroups);
+  const isRepositoryVerifying = repo.status === 'verifying';
   const createCustomGroup = useWorkspaceStore((state) => state.createCustomGroup);
   const tagDirectory = useWorkspaceStore((state) => state.tagDirectory);
   const groupDirectory = useWorkspaceStore((state) => state.groupDirectory);
@@ -77,6 +78,7 @@ export function RepositoryCard({ repo, onRefresh, onOpenManagement, onOpenManage
   };
 
   const handleBranchChange = async (targetBranch: string) => {
+    if (isRepositoryVerifying) return;
     setLoadingAction("checkout");
     try {
       // Matches the Rust implementation signature: execute_git_checkout(absolute_path, branch_name)
@@ -93,6 +95,7 @@ export function RepositoryCard({ repo, onRefresh, onOpenManagement, onOpenManage
   };
 
   const executeGitOperation = async (operation: "fetch" | "pull" | "push") => {
+    if (isRepositoryVerifying) return;
     setLoadingAction(operation);
     try {
       const message = await invoke<string>(`git_${operation}_operation`, { pathId: repo.id });
@@ -115,6 +118,7 @@ export function RepositoryCard({ repo, onRefresh, onOpenManagement, onOpenManage
   };
 
   const handleRefreshGitStatus = async () => {
+    if (isRepositoryVerifying) return;
     setLoadingAction("refresh");
     try {
       await refreshRepositoryGitStatus(repo.id, repo.absolute_path);
@@ -397,7 +401,7 @@ export function RepositoryCard({ repo, onRefresh, onOpenManagement, onOpenManage
         </div>
         <RepoCardHeader
           repo={repo}
-          originType={originType}
+          originType={isRepositoryVerifying ? 'LOCAL_ONLY' : originType}
           isSelected={isSelected}
           onToggleSelection={onToggleSelection}
           isEditingAlias={isEditingAlias}
@@ -549,12 +553,18 @@ export function RepositoryCard({ repo, onRefresh, onOpenManagement, onOpenManage
       {!isMissing ? (
         <>
           {/* Dynamic Embedded Branch Selector Dropper */}
+          {isRepositoryVerifying ? (
+            <div className="repo-status-loading" role="status">
+              <CircleNotch size={15} className="animate-spin-svg" />
+              <span>Loading repository status...</span>
+            </div>
+          ) : null}
           <RepoBranchDropdown
-            branches={repo.available_branches && repo.available_branches.length > 0 ? repo.available_branches : [repo.current_branch ?? "main"]}
-            currentBranch={repo.current_branch ?? "main"}
+            branches={repo.available_branches ?? []}
+            currentBranch={repo.current_branch ?? ""}
             defaultBranch={repo.default_branch_name}
             isLoading={loadingAction === "checkout"}
-            disabled={isAnyLoading}
+            disabled={isAnyLoading || isRepositoryVerifying}
             onSelect={handleBranchChange}
           />
 

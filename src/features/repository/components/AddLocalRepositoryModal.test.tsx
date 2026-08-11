@@ -7,6 +7,7 @@ const invokeMock = vi.fn();
 const addToastMock = vi.fn();
 const hydrateFromBackendMock = vi.fn(async () => undefined);
 const hydrateQuickFilterMetadataMock = vi.fn(async () => undefined);
+const reconcileImportedRepositoryMock = vi.fn();
 
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: (...args: unknown[]) => invokeMock(...args),
@@ -20,6 +21,7 @@ vi.mock('../../../stores/workspace-store', () => ({
   useWorkspaceStore: () => ({
     hydrateFromBackend: hydrateFromBackendMock,
     hydrateQuickFilterMetadata: hydrateQuickFilterMetadataMock,
+    reconcileImportedRepository: reconcileImportedRepositoryMock,
   }),
 }));
 
@@ -33,10 +35,18 @@ describe('AddLocalRepositoryModal notifications', () => {
     addToastMock.mockReset();
     hydrateFromBackendMock.mockClear();
     hydrateQuickFilterMetadataMock.mockClear();
+    reconcileImportedRepositoryMock.mockClear();
   });
 
   it('uses a toast-only notification when a repository is added', async () => {
-    invokeMock.mockResolvedValue({ outcome: 'added', message: 'Repository added.' });
+    invokeMock.mockResolvedValue({
+      outcome: 'added',
+      message: 'Repository added.',
+      id: 'repo-1',
+      display_name: 'Example',
+      absolute_path: 'C:/repos/example',
+      metadata_ready: false,
+    });
 
     render(<AddLocalRepositoryModal isOpen onClose={vi.fn()} />);
     await userEvent.type(screen.getByRole('textbox'), 'C:/repos/example');

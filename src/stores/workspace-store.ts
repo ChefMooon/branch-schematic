@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
-import type { ArchivedTrackedRepository, CustomGroup, GroupSummary, QuickFilterMetadata, RepoGitStatusSnapshot, RepoTag, TagFilterSummary, TrackedPath } from '../types/git';
+import type { ArchivedTrackedRepository, CustomGroup, GroupSummary, QuickFilterMetadata, RepoGitStatusSnapshot, RepoTag, RepositoryTrackResult, TagFilterSummary, TrackedPath } from '../types/git';
 
 const WORKSPACE_UPDATED_EVENT = 'workspace-updated';
 const MAX_EVENT_BATCH_SIZE = 250;
@@ -30,6 +30,7 @@ let reconciliationTimer: ReturnType<typeof setTimeout> | undefined;
 let latestRevision = 0;
 const repositoryRevisions = new Map<string, number>();
 let hydrationGeneration = 0;
+let hydrationQueued = false;
 let branchMapSynchronization: (() => void | Promise<void>) | undefined;
 
 export function registerBranchMapSynchronization(
@@ -129,6 +130,7 @@ interface WorkspaceState {
   selectRepo: (repo: TrackedPath | null) => void;
   setRepos: (repos: TrackedPath[]) => void;
   addRepo: (repo: TrackedPath) => void;
+  reconcileImportedRepository: (result: RepositoryTrackResult) => void;
   removeRepo: (repoId: string) => void;
   restoreRepository: (repoId: string) => Promise<void>;
   purgeRepository: (repoId: string) => Promise<void>;
@@ -228,7 +230,10 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   },
 
   hydrateFromBackend: async () => {
-    if (get().isLoading) return;
+    if (get().isLoading) {
+      hydrationQueued = true;
+      return;
+    }
 
     const requestGeneration = hydrationGeneration + 1;
     hydrationGeneration = requestGeneration;
@@ -294,6 +299,11 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         isHydrated: true,
         isLoading: false,
       });
+    } finally {
+      if (hydrationQueued) {
+        hydrationQueued = false;
+        void get().hydrateFromBackend();
+      }
     }
   },
 
@@ -354,6 +364,20 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       : [...currentRepos, repo];
 
     set({ repos: nextRepos, activeRepoId: get().activeRepoId ?? repo.id });
+  },
+
+  reconcileImportedRepository: (result) => {
+    const existing = get().repos.find((repo) => repo.id === result.id);
+    const importedRepository: TrackedPath = {
+      ...(existing ?? {}),
+      id: result.id,
+      display_name: result.display_name,
+      absolute_path: result.absolute_path,
+      repo_origin_type: 'LOCAL_ONLY',
+      health_state: 'unverified',
+      status: 'verifying',
+    };
+    get().addRepo(importedRepository);
   },
 
   removeRepo: (repoId) => {
