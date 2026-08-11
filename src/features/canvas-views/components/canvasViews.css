@@ -388,11 +388,51 @@
 
 .canvas-view-manager__panel-description,
 .canvas-view-manager__helper,
-.canvas-view-manager__status {
+.canvas-view-manager__status,
+.canvas-scope-selector__status {
   margin: 0;
   color: var(--app-muted);
   font-size: 0.74rem;
   line-height: 1.45;
+}
+
+.canvas-scope-selector__status-slot {
+  display: inline-flex;
+  align-items: center;
+  box-sizing: border-box;
+  min-height: 1.65rem;
+  min-width: 0;
+  width: 100%;
+  padding: 0.25rem 0.45rem;
+  border-radius: 6px;
+  color: var(--app-muted);
+  background: color-mix(in srgb, var(--app-accent) 10%, var(--app-surface));
+  font-size: 0.7rem;
+  line-height: 1.25;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.canvas-scope-selector__status-slot[aria-hidden='true'] {
+  visibility: hidden;
+}
+
+.canvas-scope-selector__status-slot--error {
+  color: var(--app-danger, #b42318);
+  background: color-mix(in srgb, var(--app-danger, #b42318) 10%, var(--app-surface));
+}
+
+.canvas-scope-selector__status {
+  padding: 0.4rem 0.55rem;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--app-accent) 10%, var(--app-surface));
+}
+
+.canvas-scope-selector__status--error {
+  color: var(--app-danger, #b42318);
+  background: color-mix(in srgb, var(--app-danger, #b42318) 10%, var(--app-surface));
 }
 
 .canvas-view-manager__field {
@@ -467,6 +507,10 @@
   gap: 0.8rem;
 }
 
+.canvas-scope-selector__header > div:first-child {
+  min-width: 0;
+}
+
 .canvas-scope-selector__title {
   margin: 0;
   color: var(--app-text);
@@ -482,16 +526,18 @@
 }
 
 .canvas-scope-selector__toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
+  display: grid;
+  grid-template-columns: minmax(9rem, 1fr) max-content max-content;
+  align-items: center;
   gap: 0.35rem;
+  min-width: 0;
   flex-shrink: 0;
 }
 
 .canvas-scope-selector__toolbar .app-btn {
   padding: 0.42rem 0.6rem;
   font-size: 0.72rem;
+  white-space: nowrap;
 }
 
 .canvas-scope-selector__filters {
@@ -786,6 +832,11 @@
   }
 
   .canvas-scope-selector__toolbar {
-    justify-content: flex-start;
+    grid-template-columns: minmax(0, 1fr) max-content;
+    justify-content: stretch;
+  }
+
+  .canvas-scope-selector__status-slot {
+    grid-column: 1 / -1;
   }
 }

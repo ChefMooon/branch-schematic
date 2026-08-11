@@ -140,4 +140,15 @@ describe('RepositoryScopeSelector', () => {
 
     expect(container.querySelector('.canvas-scope-selector--scrollable')).toBeInTheDocument();
   });
+
+  it('keeps scope controls interactive while a repository save is pending', () => {
+    renderSelector({
+      savingRepositories: { alpha: true },
+      onSelectAll: vi.fn(),
+      onClearAll: vi.fn(),
+    });
+
+    expect(screen.getByRole('status')).toHaveTextContent('Saving view selection...');
+    expect(screen.getByRole('checkbox', { name: 'Select repository Frontend' })).toBeEnabled();
+  });
 });

@@ -232,7 +232,7 @@ interface CanvasState {
   moveViewOrder: (viewId: string, direction: -1 | 1) => Promise<void>;
   togglePathVisibility: (viewId: string, repoPathId: string, visible: boolean) => Promise<CanvasViewScopeState | null>;
   toggleBranchVisibility: (viewId: string, branchId: string, visible: boolean) => Promise<CanvasViewScopeState | null>;
-  setCanvasViewScope: (viewId: string, pathVisibility: Record<string, boolean>, branchVisibility: Record<string, boolean>) => Promise<CanvasViewScopeState | null>;
+  setCanvasViewScope: (viewId: string, pathVisibility: Record<string, boolean>, branchVisibility: Record<string, boolean>, options?: { hydrate?: boolean }) => Promise<CanvasViewScopeState | null>;
   setRepositoryScope: (viewId: string, repoPathId: string, visible: boolean, branchVisibility: Record<string, boolean>) => Promise<CanvasViewScopeState | null>;
   snapshotBaselineViewport: (viewId: string, zoom: number, x: number, y: number) => Promise<void>;
   saveCardState: (viewId: string, cardStateJson: string) => Promise<void>;
@@ -682,7 +682,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
     }
   },
 
-  setCanvasViewScope: async (viewId, pathVisibility, branchVisibility) => {
+  setCanvasViewScope: async (viewId, pathVisibility, branchVisibility, options) => {
     const operation = scopeVisibilityUpdate.then(async () => {
       try {
         await invoke('set_canvas_view_scope', {
@@ -691,13 +691,13 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
           branchVisibility,
         });
         const scope = await invoke<CanvasViewScopeState>('get_canvas_view_scope', { viewId });
-        if (get().activeViewId === viewId) {
+        if (options?.hydrate !== false && get().activeViewId === viewId) {
           await get().hydrateWorkspaceNodes();
         }
         return scope;
       } catch (error) {
         console.error('Failed updating canvas view scope state:', error);
-        if (get().activeViewId === viewId) {
+        if (options?.hydrate !== false && get().activeViewId === viewId) {
           try {
             await get().hydrateWorkspaceNodes();
           } catch (hydrationError) {

@@ -15,13 +15,15 @@ type RepositoryScopeSelectorProps = {
   repositoryVisibility: Record<string, boolean>;
   selectedBranches: Record<string, string[]>;
   expandedRepositories: Record<string, boolean>;
-  busyRepositories?: Record<string, boolean>;
+  savingRepositories?: Record<string, boolean>;
   onToggleRepository: (repositoryId: string, checked: boolean) => void;
   onToggleBranch: (repositoryId: string, branchName: string, checked: boolean) => void;
   onToggleExpansion: (repositoryId: string) => void;
   onSelectAll?: () => void;
   onClearAll?: () => void;
   bulkActionsDisabled?: boolean;
+  saveError?: string | null;
+  saveStatus?: 'saving' | 'saved' | null;
   emptyMessage?: string;
   scrollableList?: boolean;
 };
@@ -66,13 +68,15 @@ export function RepositoryScopeSelector({
   repositoryVisibility,
   selectedBranches,
   expandedRepositories,
-  busyRepositories = {},
+  savingRepositories = {},
   onToggleRepository,
   onToggleBranch,
   onToggleExpansion,
   onSelectAll,
   onClearAll,
   bulkActionsDisabled = false,
+  saveError = null,
+  saveStatus = null,
   emptyMessage = 'No tracked repositories available.',
   scrollableList = false,
 }: RepositoryScopeSelectorProps) {
@@ -115,6 +119,7 @@ export function RepositoryScopeSelector({
   );
   const hasSearchResults = filteredRepositories.length > 0;
   const hasRepositories = orderedRepositories.length > 0;
+  const isSaving = Object.values(savingRepositories).some(Boolean);
 
   return (
     <section
@@ -130,6 +135,15 @@ export function RepositoryScopeSelector({
         </div>
         {(onSelectAll || onClearAll) && (
           <div className="canvas-scope-selector__toolbar">
+            <div
+              className={`canvas-scope-selector__status-slot${saveError ? ' canvas-scope-selector__status-slot--error' : ''}`}
+              role={saveError ? 'alert' : 'status'}
+              aria-live="polite"
+              aria-hidden={!saveError && !saveStatus && !isSaving}
+              title={saveError ?? undefined}
+            >
+              {saveError || (saveStatus === 'saved' ? 'Saved' : saveStatus === 'saving' || isSaving ? 'Saving view selection...' : '')}
+            </div>
             {onSelectAll && (
               <Button type="button" variant="basic" onClick={onSelectAll} disabled={bulkActionsDisabled}>
                 Select all repositories
@@ -201,7 +215,7 @@ export function RepositoryScopeSelector({
             selected,
             repositoryVisibility[repository.id] === true,
           );
-          const isBusy = busyRepositories[repository.id] === true;
+          const isSaving = savingRepositories[repository.id] === true;
           const isExpanded = expandedRepositories[repository.id] === true;
           const title = repository.alias_name || repository.display_name;
           const selectedCount = selected.length;
@@ -212,7 +226,7 @@ export function RepositoryScopeSelector({
               : `${selectedCount} of ${branches.length} branches selected`;
 
           return (
-            <div className="canvas-scope-selector__repository" key={repository.id}>
+            <div className="canvas-scope-selector__repository" key={repository.id} aria-busy={isSaving}>
               <div className="canvas-scope-selector__repository-row">
                 <Button
                   type="button"
@@ -222,7 +236,6 @@ export function RepositoryScopeSelector({
                   title={isExpanded ? `Collapse ${title}` : `Expand ${title}`}
                   aria-label={isExpanded ? `Collapse ${title}` : `Expand ${title}`}
                   aria-expanded={isExpanded}
-                  disabled={isBusy}
                 >
                   {isExpanded ? <CaretDown size={15} weight="bold" /> : <CaretRight size={15} weight="bold" />}
                 </Button>
@@ -230,7 +243,6 @@ export function RepositoryScopeSelector({
                 <IndeterminateCheckbox
                   checked={selectionState === 'checked'}
                   indeterminate={selectionState === 'mixed'}
-                  disabled={isBusy}
                   ariaLabel={`Select repository ${title}`}
                   onChange={(checked) => onToggleRepository(repository.id, checked)}
                 />
@@ -255,7 +267,6 @@ export function RepositoryScopeSelector({
                           className="canvas-scope-selector__checkbox"
                           type="checkbox"
                           checked={checked}
-                          disabled={isBusy}
                           aria-label={`Select branch ${branchName} in ${title}`}
                           onChange={(event) => onToggleBranch(repository.id, branchName, event.target.checked)}
                         />

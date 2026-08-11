@@ -16,15 +16,28 @@ type TabScopeSettingsProps = {
 };
 
 export function TabScopeSettings({ viewId }: TabScopeSettingsProps) {
-  const setRepositoryScope = useCanvasStore((state) => state.setRepositoryScope);
   const setCanvasViewScope = useCanvasStore((state) => state.setCanvasViewScope);
 
   const [repositories, setRepositories] = useState<WorkspaceScopeRecord[]>([]);
   const [expandedRepositories, setExpandedRepositories] = useState<Record<string, boolean>>({});
   const [repositoryVisibility, setRepositoryVisibility] = useState<Record<string, boolean>>({});
   const [selectedBranches, setSelectedBranches] = useState<Record<string, string[]>>({});
-  const [busyRepositories, setBusyRepositories] = useState<Record<string, boolean>>({});
+  const [savingRepositories, setSavingRepositories] = useState<Record<string, boolean>>({});
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saveStatus, setSaveStatus] = useState<'saving' | 'saved' | null>(null);
   const scopeRequestRef = useRef(0);
+  const scopeSnapshotRef = useRef({
+    pathVisibility: {} as Record<string, boolean>,
+    branchVisibility: {} as Record<string, boolean>,
+  });
+  const scopeVersionRef = useRef(0);
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const saveInFlightRef = useRef(false);
+  const saveQueuedRef = useRef(false);
+  const hydrationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const saveCompleteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isMountedRef = useRef(true);
+  const editorViewIdRef = useRef(viewId);
 
   const applyScopeState = (workspaceRows: WorkspaceScopeRecord[], scopeState: CanvasViewScopeState) => {
     const visiblePaths = new Set(scopeState.visible_path_ids ?? []);
@@ -42,6 +55,15 @@ export function TabScopeSettings({ viewId }: TabScopeSettingsProps) {
 
     setRepositoryVisibility(nextRepositoryVisibility);
     setSelectedBranches(nextSelectedBranches);
+    scopeSnapshotRef.current = {
+      pathVisibility: nextRepositoryVisibility,
+      branchVisibility: Object.fromEntries(
+        workspaceRows.flatMap((repository) => (repository.available_branches ?? []).map((branchName) => [
+          `${repository.id}::${branchName}`,
+          branchVisibility[`${repository.id}::${branchName}`] !== false,
+        ])),
+      ),
+    };
   };
 
   const hydrateScope = async (requestId = scopeRequestRef.current) => {
@@ -71,6 +93,8 @@ export function TabScopeSettings({ viewId }: TabScopeSettingsProps) {
 
   useEffect(() => {
     let isCancelled = false;
+    isMountedRef.current = true;
+    editorViewIdRef.current = viewId;
     const requestId = ++scopeRequestRef.current;
 
     void hydrateScope(requestId).catch((error) => {
@@ -83,44 +107,119 @@ export function TabScopeSettings({ viewId }: TabScopeSettingsProps) {
 
     return () => {
       isCancelled = true;
+      if (editorViewIdRef.current === viewId) isMountedRef.current = false;
+      scopeRequestRef.current += 1;
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+      if (hydrationTimerRef.current) clearTimeout(hydrationTimerRef.current);
+      if (saveCompleteTimerRef.current) clearTimeout(saveCompleteTimerRef.current);
     };
   }, [viewId]);
 
-  const updateRepositoryScope = async (
+  const scheduleHydration = () => {
+    if (hydrationTimerRef.current) clearTimeout(hydrationTimerRef.current);
+    hydrationTimerRef.current = setTimeout(() => {
+      hydrationTimerRef.current = null;
+      void useCanvasStore.getState().hydrateWorkspaceNodes();
+    }, 180);
+  };
+
+  const scheduleSave = (delay = 180) => {
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => {
+      saveTimerRef.current = null;
+      void processSave();
+    }, delay);
+  };
+
+  const processSave = async () => {
+    if (saveInFlightRef.current) {
+      saveQueuedRef.current = true;
+      return;
+    }
+
+    saveInFlightRef.current = true;
+    saveQueuedRef.current = false;
+    const version = scopeVersionRef.current;
+    const snapshot = scopeSnapshotRef.current;
+    const requestId = scopeRequestRef.current;
+    const isCurrentEditor = () => isMountedRef.current && editorViewIdRef.current === viewId;
+
+    try {
+      const scopeState = await setCanvasViewScope(
+        viewId,
+        snapshot.pathVisibility,
+        snapshot.branchVisibility,
+        { hydrate: false },
+      );
+
+      if (version !== scopeVersionRef.current || requestId !== scopeRequestRef.current) {
+        if (isCurrentEditor()) scheduleSave(0);
+        return;
+      }
+
+      if (scopeState) {
+        applyScopeState(repositories, scopeState);
+        if (isCurrentEditor()) {
+          setSaveError(null);
+          setSaveStatus('saved');
+          if (saveCompleteTimerRef.current) clearTimeout(saveCompleteTimerRef.current);
+          saveCompleteTimerRef.current = setTimeout(() => {
+            saveCompleteTimerRef.current = null;
+            if (isCurrentEditor()) setSaveStatus(null);
+          }, 800);
+        }
+        scheduleHydration();
+      } else {
+        if (isCurrentEditor()) {
+          setSaveError('Unable to save the view selection. Reloading the saved selection.');
+        }
+        await hydrateScope(requestId);
+      }
+    } finally {
+      saveInFlightRef.current = false;
+      if (isCurrentEditor() && version === scopeVersionRef.current && requestId === scopeRequestRef.current) {
+        setSavingRepositories({});
+      } else if (isCurrentEditor() && (saveQueuedRef.current || version !== scopeVersionRef.current)) {
+        scheduleSave(0);
+      }
+    }
+  };
+
+  const updateRepositoryScope = (
     repository: WorkspaceScopeRecord,
     visible: boolean,
     nextBranches: string[],
   ) => {
-    const requestId = ++scopeRequestRef.current;
+    scopeRequestRef.current += 1;
+    scopeVersionRef.current += 1;
     const normalizedBranches = normalizeSelectedBranches(repository, nextBranches);
-    const branchVisibility = Object.fromEntries(
-      (repository.available_branches ?? []).map((branchName) => [
-        `${repository.id}::${branchName}`,
-        normalizedBranches.includes(branchName),
-      ]),
-    );
+    const branchVisibility = { ...scopeSnapshotRef.current.branchVisibility };
+    for (const branchName of repository.available_branches ?? []) {
+      branchVisibility[`${repository.id}::${branchName}`] = normalizedBranches.includes(branchName);
+    }
 
+    scopeSnapshotRef.current = {
+      pathVisibility: {
+        ...scopeSnapshotRef.current.pathVisibility,
+        [repository.id]: visible,
+      },
+      branchVisibility,
+    };
+
+    setSaveError(null);
+    setSaveStatus('saving');
+    if (saveCompleteTimerRef.current) clearTimeout(saveCompleteTimerRef.current);
     setRepositoryVisibility((current) => ({ ...current, [repository.id]: visible }));
     setSelectedBranches((current) => ({ ...current, [repository.id]: normalizedBranches }));
-    setBusyRepositories((current) => ({ ...current, [repository.id]: true }));
-
-    try {
-      const scopeState = await setRepositoryScope(viewId, repository.id, visible, branchVisibility);
-      if (scopeState && requestId === scopeRequestRef.current) {
-        applyScopeState(repositories, scopeState);
-      } else if (!scopeState && requestId === scopeRequestRef.current) {
-        await hydrateScope(requestId);
-      }
-    } finally {
-      setBusyRepositories((current) => ({ ...current, [repository.id]: false }));
-    }
+    setSavingRepositories((current) => ({ ...current, [repository.id]: true }));
+    scheduleSave();
   };
 
   const handleRepositoryChange = (repositoryId: string, checked: boolean) => {
     const repository = repositories.find((entry) => entry.id === repositoryId);
     if (!repository) return;
 
-    void updateRepositoryScope(
+    updateRepositoryScope(
       repository,
       checked,
       getRepositoryBranchSelection(repository, checked),
@@ -139,10 +238,12 @@ export function TabScopeSettings({ viewId }: TabScopeSettingsProps) {
       ? repositoryVisibility[repositoryId] === true
       : nextBranches.length > 0;
 
-    void updateRepositoryScope(repository, visible, nextBranches);
+    updateRepositoryScope(repository, visible, nextBranches);
   };
 
-  const updateAllRepositories = async (visible: boolean) => {
+  const updateAllRepositories = (visible: boolean) => {
+    scopeRequestRef.current += 1;
+    scopeVersionRef.current += 1;
     const nextPathVisibility = Object.fromEntries(
       repositories.map((repository) => [repository.id, visible]),
     );
@@ -151,7 +252,6 @@ export function TabScopeSettings({ viewId }: TabScopeSettingsProps) {
         repository.available_branches ?? []
       ).map((branchName) => [`${repository.id}::${branchName}`, visible])),
     );
-    const busyState = Object.fromEntries(repositories.map((repository) => [repository.id, true]));
     const nextSelectedBranches = Object.fromEntries(
       repositories.map((repository) => [
         repository.id,
@@ -159,23 +259,17 @@ export function TabScopeSettings({ viewId }: TabScopeSettingsProps) {
       ]),
     );
 
-    setRepositoryVisibility(Object.fromEntries(repositories.map((repository) => [repository.id, visible])));
+    scopeSnapshotRef.current = {
+      pathVisibility: nextPathVisibility,
+      branchVisibility: nextBranchVisibility,
+    };
+    setSaveError(null);
+    setSaveStatus('saving');
+    if (saveCompleteTimerRef.current) clearTimeout(saveCompleteTimerRef.current);
+    setRepositoryVisibility(nextPathVisibility);
     setSelectedBranches(nextSelectedBranches);
-    setBusyRepositories(busyState);
-    try {
-      const scopeState = await setCanvasViewScope(
-        viewId,
-        nextPathVisibility,
-        nextBranchVisibility,
-      );
-      if (scopeState) {
-        applyScopeState(repositories, scopeState);
-      } else {
-        await hydrateScope();
-      }
-    } finally {
-      setBusyRepositories({});
-    }
+    setSavingRepositories(Object.fromEntries(repositories.map((repository) => [repository.id, true])));
+    scheduleSave();
   };
 
   return (
@@ -184,7 +278,8 @@ export function TabScopeSettings({ viewId }: TabScopeSettingsProps) {
       repositoryVisibility={repositoryVisibility}
       selectedBranches={selectedBranches}
       expandedRepositories={expandedRepositories}
-      busyRepositories={busyRepositories}
+      savingRepositories={savingRepositories}
+      saveStatus={saveStatus}
       onToggleRepository={handleRepositoryChange}
       onToggleBranch={handleBranchChange}
       onToggleExpansion={(repositoryId) => {
@@ -195,7 +290,8 @@ export function TabScopeSettings({ viewId }: TabScopeSettingsProps) {
       }}
       onSelectAll={() => { void updateAllRepositories(true); }}
       onClearAll={() => { void updateAllRepositories(false); }}
-      bulkActionsDisabled={Object.values(busyRepositories).some(Boolean)}
+      bulkActionsDisabled={false}
+      saveError={saveError}
       scrollableList
       emptyMessage="No tracked repositories are available yet."
     />
