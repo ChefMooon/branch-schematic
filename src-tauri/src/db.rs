@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
-use sqlx::{FromRow, Row, SqlitePool};
 use sqlx::migrate::{Migration as SqlxMigration, MigrationType, Migrator};
+use sqlx::{FromRow, Row, SqlitePool};
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use tauri::Manager;
@@ -218,8 +218,7 @@ pub const DB_NAME: &str = "branch-schematic-dev.db";
 #[cfg(not(debug_assertions))]
 pub const DB_NAME: &str = "branch-schematic.db";
 
-pub const DEFAULT_CANVAS_VIEW_ID: &str = "default-workspace-view";
-pub const EXPECTED_SCHEMA_VERSION: i64 = 3;
+pub const EXPECTED_SCHEMA_VERSION: i64 = 4;
 pub const DEFAULT_DETAIL_STATUS_REFRESH_INTERVAL: i64 = 5;
 pub const MIN_DETAIL_STATUS_REFRESH_INTERVAL: i64 = 2;
 pub const MAX_DETAIL_STATUS_REFRESH_INTERVAL: i64 = 5;
@@ -502,7 +501,16 @@ pub fn get_migrations() -> Vec<Migration> {
             PRAGMA user_version = 3;
             ",
             kind: MigrationKind::Up,
-        }
+        },
+        Migration {
+            version: 4,
+            description: "remove_default_canvas_view",
+            sql: "
+            DELETE FROM canvas_views WHERE id = 'default-workspace-view';
+            PRAGMA user_version = 4;
+            ",
+            kind: MigrationKind::Up,
+        },
     ]
 }
 
@@ -656,10 +664,14 @@ pub async fn validate_schema(pool: &SqlitePool) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        clamp_detail_status_refresh_interval, export_workspace_metadata, import_workspace_metadata,
-        migrate_database, validate_schema,
+        clamp_detail_status_refresh_interval, create_new_environment_view,
+        export_workspace_metadata, fetch_all_canvas_views, fetch_canvas_view_scope,
+        fetch_workspace_nodes, get_migrations, import_workspace_metadata, migrate_database,
+        set_canvas_view_path_visibility, validate_schema,
     };
+    use sqlx::migrate::{Migration as SqlxMigration, MigrationType, Migrator};
     use sqlx::sqlite::SqlitePool;
+    use std::borrow::Cow;
 
     #[test]
     fn clamps_detail_status_refresh_interval_to_contract_bounds() {
@@ -673,6 +685,13 @@ mod tests {
         let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
         migrate_database(&pool).await.unwrap();
         validate_schema(&pool).await.unwrap();
+
+        let canvas_view_count: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM canvas_views WHERE archived_at IS NULL")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(canvas_view_count, 0);
 
         let interval: i64 =
             sqlx::query_scalar("SELECT detail_status_refresh_interval FROM settings WHERE id = 1")
@@ -699,6 +718,89 @@ mod tests {
         .unwrap()
         .unwrap_or((0, "unverified".to_string(), 1, 0));
         assert_eq!(health_defaults, (0, "unverified".to_string(), 1, 0));
+    }
+
+    #[tokio::test]
+    async fn new_views_start_empty_and_require_explicit_repository_visibility() {
+        let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
+        migrate_database(&pool).await.unwrap();
+        sqlx::query(
+            "INSERT INTO tracked_paths (id, display_name, absolute_path)
+             VALUES ('repo-1', 'Repository', 'C:/repos/repository')",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        create_new_environment_view(&pool, "view-1", "Workspace", 1.0, 0.0, 0.0)
+            .await
+            .unwrap();
+
+        let visible_path_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM canvas_view_visible_paths WHERE view_id = 'view-1'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(visible_path_count, 0);
+
+        let scope = fetch_canvas_view_scope(&pool, "view-1").await.unwrap();
+        assert!(scope.visible_path_ids.is_empty());
+        assert_eq!(scope.hidden_path_ids, vec!["repo-1"]);
+        assert!(fetch_workspace_nodes(&pool, "view-1")
+            .await
+            .unwrap()
+            .is_empty());
+
+        set_canvas_view_path_visibility(&pool, "view-1", "repo-1", true)
+            .await
+            .unwrap();
+
+        let scope = fetch_canvas_view_scope(&pool, "view-1").await.unwrap();
+        assert_eq!(scope.visible_path_ids, vec!["repo-1"]);
+        assert!(scope.hidden_path_ids.is_empty());
+        assert_eq!(
+            fetch_workspace_nodes(&pool, "view-1").await.unwrap().len(),
+            1
+        );
+    }
+
+    #[tokio::test]
+    async fn migration_four_removes_legacy_default_view_without_recreating_it() {
+        let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
+        let migrations = get_migrations()
+            .into_iter()
+            .take(3)
+            .map(|migration| {
+                SqlxMigration::new(
+                    migration.version,
+                    migration.description.into(),
+                    MigrationType::ReversibleUp,
+                    migration.sql.into(),
+                    false,
+                )
+            })
+            .collect();
+        Migrator {
+            migrations: Cow::Owned(migrations),
+            ..Migrator::DEFAULT
+        }
+        .run(&pool)
+        .await
+        .unwrap();
+
+        let legacy_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM canvas_views WHERE id = 'default-workspace-view'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(legacy_count, 1);
+
+        migrate_database(&pool).await.unwrap();
+
+        let views = fetch_all_canvas_views(&pool).await.unwrap();
+        assert!(views.is_empty());
     }
 
     #[tokio::test]
@@ -827,7 +929,6 @@ pub async fn ensure_canvas_view_exists(
 }
 
 pub async fn fetch_all_canvas_views(pool: &SqlitePool) -> Result<Vec<CanvasViewRow>, sqlx::Error> {
-    ensure_canvas_view_exists(pool, DEFAULT_CANVAS_VIEW_ID, "Default Workspace").await?;
     let rows = sqlx::query_as::<_, CanvasViewRow>(
         "SELECT id, view_name, zoom_level, pan_x, pan_y, is_favorite, display_order, card_state_json, baseline_zoom, baseline_pan_x, baseline_pan_y, created_at, archived_at FROM canvas_views WHERE archived_at IS NULL ORDER BY is_favorite DESC, display_order ASC, created_at ASC"
     )
@@ -866,12 +967,6 @@ pub async fn restore_canvas_view(pool: &SqlitePool, view_id: &str) -> Result<(),
 }
 
 pub async fn purge_canvas_view(pool: &SqlitePool, view_id: &str) -> Result<(), sqlx::Error> {
-    if view_id == DEFAULT_CANVAS_VIEW_ID {
-        return Err(sqlx::Error::Protocol(
-            "The default canvas view cannot be purged".to_string(),
-        ));
-    }
-
     let result = sqlx::query(
         "DELETE FROM canvas_views WHERE id = ? AND archived_at IS NOT NULL;",
     )
@@ -1059,7 +1154,7 @@ pub async fn fetch_canvas_view_scope(
     let path_rows = sqlx::query_as::<_, (String, i64)>(
         "SELECT 
             tracked_paths.id AS repo_path_id, 
-            COALESCE(visible_paths.is_visible, 1) AS is_visible 
+            COALESCE(visible_paths.is_visible, 0) AS is_visible
          FROM tracked_paths 
          LEFT JOIN canvas_view_visible_paths AS visible_paths 
            ON visible_paths.view_id = ? AND visible_paths.repo_path_id = tracked_paths.id 
@@ -1189,7 +1284,7 @@ pub async fn fetch_workspace_nodes(
                 tracked_paths.is_active = 1
                 AND tracked_paths.archived_at IS NULL
                 AND (
-                    COALESCE(visible_paths.is_visible, 1) = 1
+                    COALESCE(visible_paths.is_visible, 0) = 1
                 )
                 AND COALESCE(visible_branches.is_visible, 1) = 1
                 AND (
@@ -2520,12 +2615,6 @@ pub async fn archive_tracked_path(pool: &SqlitePool, path_id: &str) -> Result<()
 }
 
 pub async fn archive_canvas_view(pool: &SqlitePool, view_id: &str) -> Result<(), sqlx::Error> {
-    if view_id == DEFAULT_CANVAS_VIEW_ID {
-        return Err(sqlx::Error::Protocol(
-            "The default canvas view cannot be archived".to_string(),
-        ));
-    }
-
     let active_view_count: i64 =
         sqlx::query_scalar("SELECT COUNT(*) FROM canvas_views WHERE archived_at IS NULL;")
             .fetch_one(pool)
@@ -2853,17 +2942,6 @@ pub async fn create_new_environment_view(
         .bind(next_display_order)
         .execute(&mut *tx)
         .await?;
-
-    sqlx::query(
-        "INSERT INTO canvas_view_visible_paths (view_id, repo_path_id, is_visible)
-         SELECT ?, tracked_paths.id, 1
-         FROM tracked_paths
-         WHERE tracked_paths.is_active = 1
-           AND tracked_paths.archived_at IS NULL;",
-    )
-    .bind(id)
-    .execute(&mut *tx)
-    .await?;
 
     tx.commit().await?;
 

@@ -1,6 +1,6 @@
 # Database Schema Specification
 
-*Auto-generated on 2026-08-07 from `db.rs` migrations.*
+*Auto-generated on 2026-08-11 from `db.rs` migrations.*
 
 > 🔄 **To Regenerate This File:** If you have modified your SQLite migrations or tables, run:
 > ```bash
