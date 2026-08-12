@@ -4,6 +4,7 @@ import { useState, useEffect, type CSSProperties } from 'react';
 import { Button } from '../components/button/Button';
 import { applyTheme, DEFAULT_THEME, loadThemePreference, saveThemePreference, type ThemePreference } from '../theme';
 import { openAppDatabase } from '../lib/db';
+import { useOnboarding } from '../features/onboarding/hooks/useOnboarding';
 
 export const Route = createFileRoute('/settings')({
   component: RouteComponent,
@@ -26,6 +27,7 @@ function RouteComponent() {
   const [startMinimized, setStartMinimized] = useState(DEFAULT_SETTINGS.startMinimized);
   const [theme, setTheme] = useState<ThemePreference>(DEFAULT_SETTINGS.theme);
   const [detailStatusRefreshInterval, setDetailStatusRefreshInterval] = useState(DEFAULT_SETTINGS.detailStatusRefreshInterval);
+  const { openReplay } = useOnboarding();
 
   // 1. LOAD SETTINGS FROM DATABASE ON MOUNT
   useEffect(() => {
@@ -255,6 +257,19 @@ function RouteComponent() {
               <span>Dark</span>
             </label>
           </div>
+        </div>
+      </section>
+
+      <section className="settings-card" aria-labelledby="onboarding-settings-heading">
+        <div className="settings-card-header">
+          <h3 id="onboarding-settings-heading" className="group-heading">Getting started</h3>
+        </div>
+        <div className="settings-item">
+          <div className="settings-text">
+            <span className="settings-label">Onboarding guide</span>
+            <span className="settings-description">Review the local-first workflow, profiles, and repository setup.</span>
+          </div>
+          <Button type="button" variant="basic" onClick={openReplay}>Replay onboarding</Button>
         </div>
       </section>
 

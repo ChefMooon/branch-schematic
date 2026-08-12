@@ -218,7 +218,8 @@ pub const DB_NAME: &str = "branch-schematic-dev.db";
 #[cfg(not(debug_assertions))]
 pub const DB_NAME: &str = "branch-schematic.db";
 
-pub const EXPECTED_SCHEMA_VERSION: i64 = 4;
+pub const EXPECTED_SCHEMA_VERSION: i64 = 5;
+pub const ONBOARDING_VERSION: i64 = 1;
 pub const DEFAULT_DETAIL_STATUS_REFRESH_INTERVAL: i64 = 5;
 pub const MIN_DETAIL_STATUS_REFRESH_INTERVAL: i64 = 2;
 pub const MAX_DETAIL_STATUS_REFRESH_INTERVAL: i64 = 5;
@@ -511,7 +512,55 @@ pub fn get_migrations() -> Vec<Migration> {
             ",
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 5,
+            description: "add_onboarding_state",
+            sql: "
+            ALTER TABLE settings ADD COLUMN onboarding_version INTEGER NOT NULL DEFAULT 0;
+            ALTER TABLE settings ADD COLUMN onboarding_status TEXT NOT NULL DEFAULT 'not_started'
+                CHECK (onboarding_status IN ('not_started', 'skipped', 'completed'));
+            PRAGMA user_version = 5;
+            ",
+            kind: MigrationKind::Up,
+        },
     ]
+}
+
+#[derive(Debug, Serialize, Clone, FromRow)]
+#[serde(rename_all = "camelCase")]
+pub struct OnboardingState {
+    pub onboarding_version: i64,
+    pub onboarding_status: String,
+}
+
+pub async fn fetch_onboarding_state(pool: &SqlitePool) -> Result<OnboardingState, sqlx::Error> {
+    sqlx::query_as::<_, OnboardingState>(
+        "SELECT onboarding_version, onboarding_status FROM settings WHERE id = 1",
+    )
+    .fetch_one(pool)
+    .await
+}
+
+pub async fn update_onboarding_state(
+    pool: &SqlitePool,
+    status: &str,
+) -> Result<OnboardingState, String> {
+    if !matches!(status, "skipped" | "completed") {
+        return Err(format!("Unsupported onboarding status: {status}"));
+    }
+
+    sqlx::query(
+        "UPDATE settings SET onboarding_version = ?, onboarding_status = ? WHERE id = 1",
+    )
+    .bind(ONBOARDING_VERSION)
+    .bind(status)
+    .execute(pool)
+    .await
+    .map_err(|error| format!("Failed to save onboarding state: {error}"))?;
+
+    fetch_onboarding_state(pool)
+        .await
+        .map_err(|error| format!("Failed to read onboarding state: {error}"))
 }
 
 pub async fn migrate_database(pool: &SqlitePool) -> Result<(), String> {
@@ -592,7 +641,13 @@ pub async fn validate_schema(pool: &SqlitePool) -> Result<(), String> {
     let required_columns = [
         (
             "settings",
-            ["id", "detail_status_refresh_interval"].as_slice(),
+            [
+                "id",
+                "detail_status_refresh_interval",
+                "onboarding_version",
+                "onboarding_status",
+            ]
+            .as_slice(),
         ),
         (
             "tracked_paths",

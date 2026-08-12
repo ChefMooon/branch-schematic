@@ -6,6 +6,8 @@ import { applyTheme, loadThemePreference, type ThemePreference } from "../theme"
 import { AppLayout } from "../components/layout/AppLayout";
 import { DatabaseRecoveryGate } from "../components/database-recovery/DatabaseRecoveryGate";
 import { NotificationProvider } from "../components/notifications/NotificationProvider";
+import { OnboardingProvider } from "../features/onboarding/hooks/useOnboarding";
+import { OnboardingPresentation } from "../features/onboarding/components/OnboardingPresentation";
 
 const RootLayout = () => {
   const [theme, setTheme] = useState<ThemePreference>('system');
@@ -37,11 +39,14 @@ const RootLayout = () => {
   return (
     <DatabaseRecoveryGate>
       <NotificationProvider>
-        <AppLayout>
-          {/* Sub-pages such as /branch-map and /database mount exactly here! */}
-          <Outlet />
-          {import.meta.env.DEV && <TanStackRouterDevtools position="bottom-right" />}
-        </AppLayout>
+        <OnboardingProvider>
+          <AppLayout>
+            {/* Sub-pages such as /branch-map and /database mount exactly here! */}
+            <Outlet />
+            {import.meta.env.DEV && <TanStackRouterDevtools position="bottom-right" />}
+          </AppLayout>
+          <OnboardingPresentation />
+        </OnboardingProvider>
       </NotificationProvider>
     </DatabaseRecoveryGate>
   );

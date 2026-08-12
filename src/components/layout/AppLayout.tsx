@@ -23,6 +23,8 @@ import { Button } from '../button/Button';
 import type { RepositoryModalAction } from '../../features/repository/types';
 import { ImportStatusOverlay } from '../../features/repository/components/ImportStatusOverlay';
 import type { UserProfile } from '../../features/auth-profile/types';
+import { ONBOARDING_REQUEST_EVENT, type OnboardingRequestDetail } from '../../features/onboarding/types';
+import { useOnboarding } from '../../features/onboarding/hooks/useOnboarding';
 
 interface AppLayoutProps {
   children: React.ReactNode;
@@ -75,6 +77,8 @@ export function AppLayout({ children }: AppLayoutProps) {
   const [profileDropdownAnchor, setProfileDropdownAnchor] = useState<HTMLButtonElement | null>(null);
   const [isProfileManagementModalOpen, setIsProfileManagementModalOpen] = useState(false);
   const [managedProfile, setManagedProfile] = useState<UserProfile | null>(null);
+  const [delegatedOnboardingModal, setDelegatedOnboardingModal] = useState<'add-local' | 'profile' | null>(null);
+  const onboarding = useOnboarding();
 
   const handleProfileManagementSelection = (profileId: string | null) => {
     const nextProfile = profileId ? profiles.find((profile) => profile.id === profileId) ?? null : null;
@@ -126,6 +130,28 @@ export function AppLayout({ children }: AppLayoutProps) {
     updateProfile,
     deleteProfile,
   } = useProfileContext();
+
+  useEffect(() => {
+    const handleOnboardingRequest = (event: Event) => {
+      const detail = (event as CustomEvent<OnboardingRequestDetail>).detail;
+      onboarding.pause();
+      setIsRepositoryDropdownOpen(false);
+      setIsNotificationDropdownOpen(false);
+      setIsProfileDropdownOpen(false);
+
+      if (detail.action === 'open-profile-management') {
+        setDelegatedOnboardingModal('profile');
+        handleOpenProfileManagement(activeProfile?.id ?? null);
+        return;
+      }
+
+      setDelegatedOnboardingModal('add-local');
+      setActiveRepositoryModal('add-local');
+    };
+
+    window.addEventListener(ONBOARDING_REQUEST_EVENT, handleOnboardingRequest);
+    return () => window.removeEventListener(ONBOARDING_REQUEST_EVENT, handleOnboardingRequest);
+  }, [activeProfile?.id, onboarding]);
 
   const canCloneRemote =
     Boolean(activeProfile) &&
@@ -472,7 +498,12 @@ export function AppLayout({ children }: AppLayoutProps) {
         {activeRepositoryModal === 'add-local' && (
           <LazyAddLocalRepositoryModal
             isOpen
-            onClose={() => setActiveRepositoryModal(null)}
+            onClose={() => {
+              const shouldResumeOnboarding = delegatedOnboardingModal === 'add-local';
+              setActiveRepositoryModal(null);
+              setDelegatedOnboardingModal(null);
+              if (shouldResumeOnboarding) onboarding.resume();
+            }}
           />
         )}
 
@@ -537,8 +568,11 @@ export function AppLayout({ children }: AppLayoutProps) {
           <LazyProfileManagementModal
             isOpen
             onClose={() => {
+              const shouldResumeOnboarding = delegatedOnboardingModal === 'profile';
               setIsProfileManagementModalOpen(false);
               setManagedProfile(null);
+              setDelegatedOnboardingModal(null);
+              if (shouldResumeOnboarding) onboarding.resume();
             }}
             profile={managedProfile}
             profiles={profiles}

@@ -1,6 +1,6 @@
 # Database Schema Specification
 
-*Auto-generated on 2026-08-11 from `db.rs` migrations.*
+*Auto-generated on 2026-08-12 from `db.rs` migrations.*
 
 > 🔄 **To Regenerate This File:** If you have modified your SQLite migrations or tables, run:
 > ```bash
@@ -19,6 +19,8 @@ erDiagram
         INTEGER start_minimized
         TEXT theme
         INTEGER detail_status_refresh_interval
+        INTEGER onboarding_version
+        TEXT onboarding_status
     }
 
     tracked_paths {

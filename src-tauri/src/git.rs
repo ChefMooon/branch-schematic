@@ -277,6 +277,56 @@ fn ensure_remote_access(profile: &auth::RemoteAuthProfile) -> Result<String, Str
     Ok(token)
 }
 
+fn ensure_native_remote_access(
+    profile: Option<&auth::RemoteAuthProfile>,
+) -> Result<Option<String>, String> {
+    let Some(profile) = profile else {
+        return Err("Native remote operations require a configured authentication profile. Select a Local system or Full OAuth profile, then try again.".to_string());
+    };
+
+    match profile.auth_level.as_str() {
+        "local_system" => Ok(None),
+        "full_oauth" => profile
+            .token_value
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)
+            .ok_or_else(|| {
+                "Native remote operations require the Full OAuth profile to have an OAuth token. Reconnect the profile, then try again.".to_string()
+            })
+            .map(Some),
+        _ => Err(
+            "Basic profiles support local Git only. Select a Local system or Full OAuth profile for remote operations."
+                .to_string(),
+        ),
+    }
+}
+
+fn describe_git_network_error(raw_error: &str) -> String {
+    let lowered = raw_error.to_lowercase();
+    if lowered.contains("authentication")
+        || lowered.contains("credential")
+        || lowered.contains("could not read username")
+        || lowered.contains("no authentication methods available")
+    {
+        return "Git could not authenticate with the configured remote. Check your OS-managed Git credentials or SSH agent, then try again.".to_string();
+    }
+
+    if lowered.contains("could not resolve host")
+        || lowered.contains("failed to connect")
+        || lowered.contains("network is unreachable")
+        || lowered.contains("timed out")
+    {
+        return format!(
+            "Git could not reach the configured remote. Check your network connection and try again. Detail: {}",
+            raw_error
+        );
+    }
+
+    raw_error.to_string()
+}
+
 fn normalize_pagination(page: Option<u32>, per_page: Option<u32>) -> (u32, u32) {
     let normalized_page = page.unwrap_or(1).max(1);
     let normalized_per_page = per_page.unwrap_or(30).clamp(1, 100);
@@ -922,30 +972,30 @@ pub async fn clone_remote_repository(
         ));
     }
 
-    let token = profile
-        .as_ref()
-        .and_then(|entry| entry.token_value.as_deref())
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(str::to_string);
+    let token = ensure_native_remote_access(profile.as_ref())?;
 
     {
+        let authenticator = auth_git2::GitAuthenticator::new();
+        let config = git2::Config::open_default()
+            .map_err(|error| format!("Unable to read Git config: {}", error))?;
         let mut callbacks = RemoteCallbacks::new();
-        callbacks.credentials(move |_url, username_from_url, allowed_types| {
-            if let Some(access_token) = token.as_ref() {
+        if let Some(access_token) = token {
+            callbacks.credentials(move |_url, username_from_url, allowed_types| {
                 if allowed_types.contains(CredentialType::USER_PASS_PLAINTEXT) {
-                    return Cred::userpass_plaintext("x-access-token", access_token);
+                    return Cred::userpass_plaintext("x-access-token", &access_token);
                 }
-            }
 
-            if allowed_types.contains(CredentialType::SSH_KEY) {
-                if let Some(username) = username_from_url {
-                    return Cred::ssh_key_from_agent(username);
+                if allowed_types.contains(CredentialType::SSH_KEY) {
+                    if let Some(username) = username_from_url {
+                        return Cred::ssh_key_from_agent(username);
+                    }
                 }
-            }
 
-            Cred::default()
-        });
+                Cred::default()
+            });
+        } else {
+            callbacks.credentials(authenticator.credentials(&config));
+        }
 
         let mut fetch_options = FetchOptions::new();
         fetch_options.remote_callbacks(callbacks);
@@ -964,7 +1014,9 @@ pub async fn clone_remote_repository(
 
         builder
             .clone(&clone_url, &target_path)
-            .map_err(|error| format!("Failed to clone remote repository: {}", error))?;
+            .map_err(|error| {
+                describe_git_network_error(&format!("Failed to clone remote repository: {}", error))
+            })?;
     }
 
     let target_path_string = target_path
@@ -3022,7 +3074,11 @@ pub async fn refresh_repository_git_status(
 /// credentials), then hands them to `action` for the duration of a single network
 /// call. Credentials/config can't outlive this function, so callers must perform
 /// their git2 network call inside the closure rather than returning the callbacks.
-fn with_auth_callbacks<F, T>(repo: &Repository, action: F) -> Result<T, String>
+fn with_auth_callbacks<F, T>(
+    repo: &Repository,
+    profile: Option<&auth::RemoteAuthProfile>,
+    action: F,
+) -> Result<T, String>
 where
     F: FnOnce(RemoteCallbacks) -> Result<T, git2::Error>,
 {
@@ -3031,8 +3087,22 @@ where
         .map_err(|e| format!("Failed to read Git config: {}", e))?;
     let authenticator = auth_git2::GitAuthenticator::new();
     let mut callbacks = RemoteCallbacks::new();
-    callbacks.credentials(authenticator.credentials(&config));
-    action(callbacks).map_err(|e| format!("Git network operation failed: {}", e))
+    if let Some(token) = ensure_native_remote_access(profile)? {
+        callbacks.credentials(move |_url, username_from_url, allowed_types| {
+            if allowed_types.contains(CredentialType::USER_PASS_PLAINTEXT) {
+                return Cred::userpass_plaintext("x-access-token", &token);
+            }
+            if allowed_types.contains(CredentialType::SSH_KEY) {
+                if let Some(username) = username_from_url {
+                    return Cred::ssh_key_from_agent(username);
+                }
+            }
+            Cred::default()
+        });
+    } else {
+        callbacks.credentials(authenticator.credentials(&config));
+    }
+    action(callbacks).map_err(|e| describe_git_network_error(&format!("Git network operation failed: {}", e)))
 }
 
 async fn resolve_profile_for_repo(
@@ -3043,11 +3113,14 @@ async fn resolve_profile_for_repo(
 }
 
 /// Fetches all configured refspecs from the repository's `origin` remote.
-fn fetch_from_origin(repo: &Repository) -> Result<(), String> {
+fn fetch_from_origin(
+    repo: &Repository,
+    profile: Option<&auth::RemoteAuthProfile>,
+) -> Result<(), String> {
     repo.find_remote("origin")
         .map_err(|_| "This repository has no 'origin' remote configured.".to_string())?;
 
-    with_auth_callbacks(repo, |callbacks| {
+    with_auth_callbacks(repo, profile, |callbacks| {
         let mut remote = repo.find_remote("origin")?;
         let mut fetch_options = FetchOptions::new();
         fetch_options.remote_callbacks(callbacks);
@@ -3059,7 +3132,11 @@ fn fetch_from_origin(repo: &Repository) -> Result<(), String> {
 
 /// Pushes `refspec` to `origin`, surfacing any remote-side rejection reason
 /// (e.g. non-fast-forward) as a readable error rather than a silent transport success.
-fn push_branch_to_origin(repo: &Repository, refspec: &str) -> Result<(), String> {
+fn push_branch_to_origin(
+    repo: &Repository,
+    profile: Option<&auth::RemoteAuthProfile>,
+    refspec: &str,
+) -> Result<(), String> {
     let config = repo
         .config()
         .map_err(|e| format!("Failed to read Git config: {}", e))?;
@@ -3068,7 +3145,21 @@ fn push_branch_to_origin(repo: &Repository, refspec: &str) -> Result<(), String>
     let rejection_for_callback = rejection.clone();
 
     let mut callbacks = RemoteCallbacks::new();
-    callbacks.credentials(authenticator.credentials(&config));
+    if let Some(token) = ensure_native_remote_access(profile)? {
+        callbacks.credentials(move |_url, username_from_url, allowed_types| {
+            if allowed_types.contains(CredentialType::USER_PASS_PLAINTEXT) {
+                return Cred::userpass_plaintext("x-access-token", &token);
+            }
+            if allowed_types.contains(CredentialType::SSH_KEY) {
+                if let Some(username) = username_from_url {
+                    return Cred::ssh_key_from_agent(username);
+                }
+            }
+            Cred::default()
+        });
+    } else {
+        callbacks.credentials(authenticator.credentials(&config));
+    }
     callbacks.push_update_reference(move |refname, status| {
         if let Some(message) = status {
             let mut guard = rejection_for_callback.lock().unwrap();
@@ -3086,7 +3177,7 @@ fn push_branch_to_origin(repo: &Repository, refspec: &str) -> Result<(), String>
 
     remote
         .push(&[refspec], Some(&mut push_options))
-        .map_err(|e| format!("Push transport failed: {}", e))?;
+        .map_err(|e| describe_git_network_error(&format!("Push transport failed: {}", e)))?;
 
     if let Some(message) = rejection.lock().unwrap().take() {
         return Err(message);
@@ -3110,8 +3201,8 @@ pub async fn git_fetch_operation(
     let repo = Repository::open(&absolute_path)
         .map_err(|e| format!("Failed to open Git repository: {}", e))?;
 
-    let _ = resolve_profile_for_repo(state.inner().pool(), &path_id).await;
-    let fetch_result = fetch_from_origin(&repo);
+    let profile = resolve_profile_for_repo(state.inner().pool(), &path_id).await?;
+    let fetch_result = fetch_from_origin(&repo, profile.as_ref());
 
     let _ = refresh_and_cache_git_status(state.inner().pool(), &path_id, &absolute_path).await;
 
@@ -3133,8 +3224,8 @@ pub async fn git_pull_operation(
     let repo = Repository::open(&absolute_path)
         .map_err(|e| format!("Failed to open Git repository: {}", e))?;
 
-    let _ = resolve_profile_for_repo(state.inner().pool(), &path_id).await;
-    fetch_from_origin(&repo)?;
+    let profile = resolve_profile_for_repo(state.inner().pool(), &path_id).await?;
+    fetch_from_origin(&repo, profile.as_ref())?;
 
     let pull_result = (|| -> Result<String, String> {
         let head_ref = repo
@@ -3221,7 +3312,7 @@ pub async fn git_push_operation(
     let repo = Repository::open(&absolute_path)
         .map_err(|e| format!("Failed to open Git repository: {}", e))?;
 
-    let _ = resolve_profile_for_repo(state.inner().pool(), &path_id).await;
+    let profile = resolve_profile_for_repo(state.inner().pool(), &path_id).await?;
     let push_result = (|| -> Result<String, String> {
         let head_ref = repo
             .head()
@@ -3243,7 +3334,7 @@ pub async fn git_push_operation(
         })?;
 
         let refspec = format!("refs/heads/{branch_name}:refs/heads/{branch_name}");
-        push_branch_to_origin(&repo, &refspec)?;
+        push_branch_to_origin(&repo, profile.as_ref(), &refspec)?;
 
         Ok(format!("Pushed '{}' to origin.", branch_name))
     })();
@@ -3260,6 +3351,29 @@ mod tests {
     use sqlx::SqlitePool;
     use std::fs::{self, File};
     use std::io::Write;
+
+    fn test_profile(auth_level: &str, token_value: Option<&str>) -> auth::RemoteAuthProfile {
+        auth::RemoteAuthProfile {
+            id: "test-profile".to_string(),
+            display_name: "Test profile".to_string(),
+            auth_level: auth_level.to_string(),
+            username: None,
+            email: None,
+            avatar_url: None,
+            api_base_url: Some("https://api.github.com".to_string()),
+            repository_scope: None,
+            folder_scope: None,
+            commit_name: None,
+            commit_email: None,
+            token_value: token_value.map(str::to_string),
+            token_expires_at: None,
+            last_token_check_at: None,
+            is_active: 1,
+            is_favorite: 0,
+            created_at: None,
+            updated_at: None,
+        }
+    }
 
     // Helper function to dynamically create a temporary git repository for testing
     fn create_test_repo(repo_name: &str) -> (std::path::PathBuf, Repository) {
@@ -3313,6 +3427,38 @@ mod tests {
             describe_remote_repository_listing_error("The selected profile does not have an OAuth token."),
             "We couldn't load repositories because the selected profile is not fully authorized. Reconnect the profile and try again."
         );
+    }
+
+    #[test]
+    fn native_capabilities_match_onboarding_auth_levels() {
+        assert!(ensure_native_remote_access(Some(&test_profile("basic", None))).is_err());
+        assert_eq!(
+            ensure_native_remote_access(Some(&test_profile("local_system", None))).unwrap(),
+            None
+        );
+        assert_eq!(
+            ensure_native_remote_access(Some(&test_profile("full_oauth", Some("token"))))
+                .unwrap(),
+            Some("token".to_string())
+        );
+    }
+
+    #[test]
+    fn provider_api_remains_full_oauth_only() {
+        assert!(ensure_remote_access(&test_profile("basic", Some("token"))).is_err());
+        assert!(ensure_remote_access(&test_profile("local_system", None)).is_err());
+        assert_eq!(
+            ensure_remote_access(&test_profile("full_oauth", Some("token"))).unwrap(),
+            "token"
+        );
+    }
+
+    #[test]
+    fn native_errors_distinguish_credentials_and_network_failures() {
+        assert!(describe_git_network_error("authentication required")
+            .contains("OS-managed Git credentials"));
+        assert!(describe_git_network_error("failed to connect to remote")
+            .contains("network connection"));
     }
 
     #[test]

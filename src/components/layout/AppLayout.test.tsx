@@ -1,11 +1,13 @@
-import { render, screen } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppLayout } from './AppLayout';
 
-const { createNewViewMock, navigateMock } = vi.hoisted(() => ({
+const { createNewViewMock, navigateMock, onboardingPauseMock, onboardingResumeMock } = vi.hoisted(() => ({
   createNewViewMock: vi.fn(),
   navigateMock: vi.fn(),
+  onboardingPauseMock: vi.fn(),
+  onboardingResumeMock: vi.fn(),
 }));
 
 const mockStore = {
@@ -70,6 +72,12 @@ vi.mock('../notifications/NotificationProvider', () => ({
 vi.mock('../../features/auth-profile/hooks/useProfileContext', () => ({
   useProfileContext: () => mockProfileContext,
 }));
+vi.mock('../../features/onboarding/hooks/useOnboarding', () => ({
+  useOnboarding: () => ({
+    pause: onboardingPauseMock,
+    resume: onboardingResumeMock,
+  }),
+}));
 
 vi.mock('../titlebar/WindowControls', () => ({ WindowControls: () => null }));
 vi.mock('./AppSidebar', () => ({ AppSidebar: () => null }));
@@ -86,7 +94,11 @@ vi.mock('../../features/repository/components/RepositoryDropdown', () => ({
     </div>
   ) : null),
 }));
-vi.mock('../../features/repository/components/AddLocalRepositoryModal', () => ({ AddLocalRepositoryModal: () => null }));
+vi.mock('../../features/repository/components/AddLocalRepositoryModal', () => ({
+  AddLocalRepositoryModal: ({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) => (
+    isOpen ? <button type="button" onClick={onClose}>Close add local modal</button> : null
+  ),
+}));
 vi.mock('../../features/repository/components/BulkImportLocalRepositryModal', () => ({ BulkImportLocalRepositoryModal: () => null }));
 vi.mock('../../features/repository/components/CreateRepositoryModal', () => ({ CreateRepositoryModal: () => null }));
 vi.mock('../../features/canvas-views/components/CreateViewModal', () => ({
@@ -128,7 +140,11 @@ vi.mock('../../features/auth-profile/components/ProfileIndicator', () => ({
 vi.mock('../../features/auth-profile/components/ProfileDropdown', () => ({
   ProfileDropdown: ({ isOpen }: { isOpen: boolean }) => (isOpen ? <div data-testid="profile-dropdown">Profile menu</div> : null),
 }));
-vi.mock('../../features/auth-profile/components/ProfileManagementModal', () => ({ ProfileManagementModal: () => null }));
+vi.mock('../../features/auth-profile/components/ProfileManagementModal', () => ({
+  ProfileManagementModal: ({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) => (
+    isOpen ? <button type="button" onClick={onClose}>Close profile management modal</button> : null
+  ),
+}));
 vi.mock('../../features/repository-update-diagnostics/components/RepositoryUpdateDiagnosticsModal', () => ({
   RepositoryUpdateDiagnosticsModal: () => null,
 }));
@@ -140,12 +156,51 @@ vi.mock('../notifications/NotificationDropdown', () => ({
 describe('AppLayout', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockProfileContext.activeProfile = null;
     mockStore.hydrateFromBackend.mockResolvedValue(undefined);
     mockStore.subscribeToWorkspaceUpdates.mockResolvedValue(vi.fn());
     mockStore.hydrateQuickFilterMetadata.mockResolvedValue(undefined);
     mockStore.cleanupDanglingTags.mockResolvedValue(0);
     createNewViewMock.mockResolvedValue(undefined);
     navigateMock.mockResolvedValue(undefined);
+  });
+
+  it('delegates onboarding add-local requests to the existing modal owner and resumes on close', async () => {
+    render(
+      <AppLayout>
+        <div>content</div>
+      </AppLayout>,
+    );
+
+    act(() => {
+      window.dispatchEvent(new CustomEvent('onboarding-request', { detail: { action: 'open-add-local-repository' } }));
+    });
+
+    expect(onboardingPauseMock).toHaveBeenCalledOnce();
+    expect(await screen.findByRole('button', { name: 'Close add local modal' })).toBeInTheDocument();
+
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Close add local modal' }));
+    expect(onboardingResumeMock).toHaveBeenCalledOnce();
+  });
+
+  it('opens profile management for the active profile without selecting another profile', async () => {
+    mockProfileContext.activeProfile = { id: 'active-profile' } as never;
+    render(
+      <AppLayout>
+        <div>content</div>
+      </AppLayout>,
+    );
+
+    act(() => {
+      window.dispatchEvent(new CustomEvent('onboarding-request', { detail: { action: 'open-profile-management' } }));
+    });
+
+    expect(onboardingPauseMock).toHaveBeenCalledOnce();
+    expect(await screen.findByRole('button', { name: 'Close profile management modal' })).toBeInTheDocument();
+    expect(mockProfileContext.selectProfile).not.toHaveBeenCalled();
+
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Close profile management modal' }));
+    expect(onboardingResumeMock).toHaveBeenCalledOnce();
   });
 
   it('places the repository diagnostics action beside the notification action', () => {

@@ -229,6 +229,23 @@ fn sync_runtime_settings_command(app: tauri::AppHandle) -> Result<(), String> {
     sync_runtime_preferences(&app)
 }
 
+#[tauri::command]
+async fn get_onboarding_state(
+    state: tauri::State<'_, DbState>,
+) -> Result<db::OnboardingState, String> {
+    db::fetch_onboarding_state(state.pool())
+        .await
+        .map_err(|error| format!("Failed to read onboarding state: {error}"))
+}
+
+#[tauri::command]
+async fn set_onboarding_state(
+    state: tauri::State<'_, DbState>,
+    status: String,
+) -> Result<db::OnboardingState, String> {
+    db::update_onboarding_state(state.pool(), &status).await
+}
+
 // Shared Tauri State container for our background SQLx Pool
 pub struct DbState(pub SqlitePool);
 
@@ -1244,6 +1261,8 @@ pub fn run() {
             exit_for_database_recovery,
             get_detail_status_refresh_interval,
             set_detail_status_refresh_interval,
+            get_onboarding_state,
+            set_onboarding_state,
             sync_runtime_settings_command,
             verify_repo_paths,
             validate_repository_path,

@@ -5,6 +5,8 @@ import { useWorkspaceStore } from "../stores/workspace-store";
 import { useNotifications } from "../components/notifications/NotificationProvider";
 import { TrackedPath, CachedBranch, DiscoveredBranch } from "../types/git";
 import { openAppDatabase } from "../lib/db";
+import { Button } from "../components/button/Button";
+import { useOnboarding } from "../features/onboarding/hooks/useOnboarding";
 
 export const Route = createFileRoute('/database')({
   component: DatabasePage,
@@ -29,6 +31,7 @@ function DatabasePage() {
   const [error, setError] = useState<string>("");
   const { removeRepo, hydrateFromBackend } = useWorkspaceStore();
   const { addToast } = useNotifications();
+  const { openTest } = useOnboarding();
 
   async function refreshCacheData() {
     try {
@@ -176,6 +179,16 @@ function DatabasePage() {
   return (
     <main className="container" style={{ padding: "2rem", maxWidth: "1200px", margin: "0 auto", color: "#fff" }}>
       <h1>Workspace Daemon Cache Testing Control Panel</h1>
+
+      {import.meta.env.DEV && (
+        <section style={{ marginBottom: "2rem", border: "1px solid #a16207", padding: "1.5rem", borderRadius: "6px", backgroundColor: "#292016" }}>
+          <h3>DEV-only onboarding test</h3>
+          <p style={{ fontSize: "0.85rem", color: "#fcd34d" }}>
+            Open the onboarding guide in non-persisting test mode. This does not change onboarding, profile, or repository data.
+          </p>
+          <Button type="button" variant="basic" onClick={openTest}>Open onboarding test</Button>
+        </section>
+      )}
       
       {message && <div style={{ padding: "1rem", backgroundColor: "#1e4620", color: "#a3cfbb", marginBottom: "1rem", borderRadius: "4px", border: "1px solid #a3cfbb" }}>{message}</div>}
       {error && <div style={{ padding: "1rem", backgroundColor: "#4c1d1d", color: "#f5c2c2", marginBottom: "1rem", borderRadius: "4px", border: "1px solid #f5c2c2" }}>{error}</div>}

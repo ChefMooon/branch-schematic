@@ -34,14 +34,14 @@ function parseMigrations() {
     const tableRegex = /CREATE\s+TABLE\s+IF\s+NOT\s+EXISTS\s+(\w+)\s*\(([\s\S]*?)\);/gi;
     let tableMatch;
     
-    let mermaidTables = '';
+    const tableColumns = new Map();
     let mermaidRelationships = new Set();
 
     while ((tableMatch = tableRegex.exec(combinedSql)) !== null) {
         const tableName = tableMatch[1];
         const tableBody = tableMatch[2];
 
-        mermaidTables += `    ${tableName} {\n`;
+        const columns = [];
 
         // Split body into lines to separate columns from constraints
         const lines = tableBody.split('\n').map(line => line.trim()).filter(Boolean);
@@ -78,11 +78,28 @@ function parseMigrations() {
                 if (line.toUpperCase().includes('UNIQUE')) modifier += ' UK';
 
                 // Mermaid syntax format requirement: TYPE name [modifier]
-                mermaidTables += `        ${colType} ${colName}${modifier}\n`;
+                columns.push(`        ${colType} ${colName}${modifier}`);
             }
         });
 
-        mermaidTables += `    }\n\n`;
+        tableColumns.set(tableName, columns);
+    }
+
+    const alterColumnRegex = /ALTER\s+TABLE\s+(\w+)\s+ADD\s+COLUMN\s+(\w+)\s+([\w]+)([^;]*);/gi;
+    while ((tableMatch = alterColumnRegex.exec(combinedSql)) !== null) {
+        const [, tableName, colName, rawType, modifiers] = tableMatch;
+        const columns = tableColumns.get(tableName);
+        if (!columns) continue;
+
+        let modifier = '';
+        if (modifiers.toUpperCase().includes('PRIMARY KEY')) modifier += ' PK';
+        if (modifiers.toUpperCase().includes('UNIQUE')) modifier += ' UK';
+        columns.push(`        ${rawType.toUpperCase()} ${colName}${modifier}`);
+    }
+
+    let mermaidTables = '';
+    for (const [tableName, columns] of tableColumns) {
+        mermaidTables += `    ${tableName} {\n${columns.join('\n')}\n    }\n\n`;
     }
 
     // 3. Construct Markdown Content with auto-injected refresh instruction
