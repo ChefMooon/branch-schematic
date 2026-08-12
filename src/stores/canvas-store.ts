@@ -627,6 +627,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
       await get().hydrateViewsList();
     } catch (error) {
       console.error('Failed renaming environment view:', error);
+      throw error;
     }
   },
 

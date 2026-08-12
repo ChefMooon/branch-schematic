@@ -1,5 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  CaretRight,
+  CaretDown,
+  CopySimple,
+  PencilSimple,
+  Star,
+  Trash,
+} from '@phosphor-icons/react';
 import { ConfirmationModal } from '../../../components/Modal/ConfirmationModal';
+import { TextInputModal } from '../../../components/Modal/TextInputModal';
+import { useNotifications } from '../../../components/notifications/NotificationProvider';
 import type { CanvasViewRecord } from '../../../stores/canvas-store';
 import { useCanvasStore } from '../../../stores/canvas-store';
 import { Button } from '../../../components/button/Button';
@@ -30,20 +40,18 @@ export function ViewActionsDropdown({
 }: ViewActionsDropdownProps) {
   const [internalOpen, setInternalOpen] = useState(false);
   const [isRenameOpen, setIsRenameOpen] = useState(false);
-  const [renameValue, setRenameValue] = useState('');
   const [menuPosition, setMenuPosition] = useState<{ top: number; left: number } | null>(null);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [isRestoreConfirmOpen, setIsRestoreConfirmOpen] = useState(false);
+  const [openSubmenu, setOpenSubmenu] = useState<'order' | 'state-options' | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const isOpen = isOpenProp ?? internalOpen;
+  const { addToast } = useNotifications();
 
   const setIsOpen = (nextOpen: boolean) => {
     onOpenChange?.(nextOpen);
     if (isOpenProp === undefined) {
       setInternalOpen(nextOpen);
-    }
-    if (!nextOpen) {
-      setIsRenameOpen(false);
     }
   };
 
@@ -112,24 +120,18 @@ export function ViewActionsDropdown({
     };
   }, [isOpen]);
 
-  useClickOutside(menuRef, () => setIsOpen(false), isOpen);
+  useClickOutside(menuRef, () => setIsOpen(false), isOpen && !isRenameOpen);
 
   useEffect(() => {
     const handleEscape = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return;
-      if (!isOpen) return;
+      if (!isOpen || isRenameOpen) return;
       setIsOpen(false);
     };
 
     document.addEventListener('keydown', handleEscape);
     return () => document.removeEventListener('keydown', handleEscape);
-  }, [isOpen]);
-
-  useEffect(() => {
-    if (activeView && isRenameOpen) {
-      setRenameValue(activeView.name);
-    }
-  }, [activeView, isRenameOpen]);
+  }, [isOpen, isRenameOpen]);
 
   const cardStatePayload = useMemo(() => {
     return JSON.stringify({
@@ -176,12 +178,20 @@ export function ViewActionsDropdown({
     setIsOpen(false);
   };
 
-  const handleRename = async () => {
+  const handleRename = async (name: string) => {
     if (!activeView) return;
-    const trimmedName = renameValue.trim();
-    if (!trimmedName) return;
 
-    await renameView(activeView.id, trimmedName);
+    try {
+      await renameView(activeView.id, name);
+    } catch (error) {
+      addToast({
+        variant: 'error',
+        title: 'Rename failed',
+        message: error instanceof Error ? error.message : 'The view could not be renamed.',
+      });
+      return;
+    }
+
     setIsRenameOpen(false);
     setIsOpen(false);
   };
@@ -244,6 +254,63 @@ export function ViewActionsDropdown({
     if (undone) setIsOpen(false);
   };
 
+  const quickActions: Array<{
+    key: string;
+    label: string;
+    title: string;
+    icon: typeof Star;
+    disabled: boolean;
+    onClick: () => void;
+    danger?: boolean;
+  }> = [
+    {
+      key: 'favorite',
+      label: activeView && (activeView.is_favorite ?? 0) === 1 ? 'Unfavorite view' : 'Favorite view',
+      title: activeView && (activeView.is_favorite ?? 0) === 1 ? 'Unfavorite view' : 'Favorite view',
+      icon: Star,
+      disabled: !activeView,
+      onClick: handleFavoriteToggle,
+    },
+    {
+      key: 'duplicate',
+      label: 'Duplicate view',
+      title: 'Duplicate view',
+      icon: CopySimple,
+      disabled: !activeView,
+      onClick: handleDuplicate,
+    },
+    {
+      key: 'rename',
+      label: 'Rename view',
+      title: 'Rename view',
+      icon: PencilSimple,
+      disabled: !activeView,
+      onClick: () => {
+        setIsRenameOpen(true);
+      },
+    },
+    {
+      key: 'delete',
+      label: 'Delete view',
+      title: 'Archive view',
+      icon: Trash,
+      disabled: !activeView || !canDelete,
+      onClick: handleDelete,
+      danger: true,
+    },
+  ];
+
+  const submenuButtonStyle = (isDanger = false) => ({
+    ...menuButtonStyle(),
+    justifyContent: 'space-between',
+    color: isDanger ? 'var(--app-danger)' : undefined,
+    ...(isDanger ? { backgroundColor: 'transparent' } : {}),
+  });
+
+  const toggleSubmenu = (section: 'order' | 'state-options') => {
+    setOpenSubmenu((current) => (current === section ? null : section));
+  };
+
   return (
     <div ref={menuRef} style={{ position: 'relative' }}>
       <Button
@@ -287,6 +354,51 @@ export function ViewActionsDropdown({
             zIndex: 18,
           }}
         >
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '6px',
+              padding: '2px 2px 8px',
+              borderBottom: `1px solid ${isDark ? '#27272a' : '#e2e8f0'}`,
+              marginBottom: '8px',
+            }}
+          >
+            {quickActions.map(({ key, label, title, icon: Icon, disabled, onClick, danger }) => {
+              const isFavoriteAction = key === 'favorite';
+              const favoriteWeight = activeView && (activeView.is_favorite ?? 0) === 1 ? 'fill' : 'bold';
+
+              return (
+                <Button
+                  key={key}
+                  type="button"
+                  variant={danger ? 'menu-item-danger' : 'menu-item'}
+                  aria-label={label}
+                  title={title}
+                  onClick={onClick}
+                  disabled={disabled}
+                  style={{
+                    ...menuButtonStyle(),
+                    width: '32px',
+                    minWidth: '32px',
+                    height: '30px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    padding: '0',
+                    marginBottom: 0,
+                    flex: '1 1 0',
+                    maxWidth: '32px',
+                    color: danger ? 'var(--app-danger)' : undefined,
+                  }}
+                >
+                  <Icon size={15} weight={isFavoriteAction ? favoriteWeight : 'bold'} />
+                </Button>
+              );
+            })}
+          </div>
+
           <Button
             type="button"
             variant="menu-item"
@@ -299,143 +411,121 @@ export function ViewActionsDropdown({
             New View
           </Button>
 
-          <Button
-            type="button"
-            variant="menu-item"
-            onClick={handleDuplicate}
-            style={menuButtonStyle()}
-            disabled={!activeView}
+          <div
+            style={{
+              margin: '8px 0 4px',
+              paddingTop: '4px',
+              borderTop: `1px solid ${isDark ? '#27272a' : '#e2e8f0'}`,
+            }}
           >
-            Duplicate
-          </Button>
-
-          <Button
-            type="button"
-            variant="menu-item"
-            onClick={handleFavoriteToggle}
-            style={menuButtonStyle()}
-            disabled={!activeView}
-          >
-            {activeView && (activeView.is_favorite ?? 0) === 1 ? 'Unfavorite' : 'Favorite'}
-          </Button>
-
-          <Button
-            type="button"
-            variant="menu-item"
-            onClick={handleMoveUp}
-            style={menuButtonStyle()}
-            disabled={!activeView || !canMoveUp}
-          >
-            Move Up
-          </Button>
-
-          <Button
-            type="button"
-            variant="menu-item"
-            onClick={handleMoveDown}
-            style={menuButtonStyle()}
-            disabled={!activeView || !canMoveDown}
-          >
-            Move Down
-          </Button>
-
-          {!isRenameOpen ? (
             <Button
               type="button"
               variant="menu-item"
-              onClick={() => setIsRenameOpen(true)}
-              style={menuButtonStyle()}
-              disabled={!activeView}
+              aria-expanded={openSubmenu === 'order'}
+              onClick={() => toggleSubmenu('order')}
+              style={submenuButtonStyle()}
             >
-              Rename
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>Order</span>
+              <span aria-hidden="true" style={{ display: 'inline-flex', alignItems: 'center' }}>
+                {openSubmenu === 'order' ? <CaretDown size={12} weight="bold" /> : <CaretRight size={12} weight="bold" />}
+              </span>
             </Button>
-          ) : (
-            <div style={{ margin: '6px 0', display: 'grid', gap: '6px' }}>
-              <input
-                value={renameValue}
-                onChange={(event) => setRenameValue(event.target.value)}
-                placeholder="View name"
-                style={{
-                  width: '100%',
-                  minWidth: '180px',
-                  maxWidth: '220px',
-                  boxSizing: 'border-box',
-                  borderRadius: '6px',
-                  border: `1px solid ${isDark ? '#3f3f46' : '#cbd5e1'}`,
-                  background: isDark ? '#0a0a0a' : '#f8fafc',
-                  color: isDark ? '#f4f4f5' : '#0f172a',
-                  padding: '6px 8px',
-                  fontSize: '12px',
-                }}
-              />
-              <div style={{ display: 'flex', gap: '6px' }}>
+
+            {openSubmenu === 'order' && (
+              <div style={{ display: 'grid', gap: '2px', paddingLeft: '8px', marginTop: '2px' }}>
                 <Button
                   type="button"
                   variant="menu-item"
-                  onClick={() => setIsRenameOpen(false)}
-                  style={{ ...menuButtonStyle(), flex: 1 }}
+                  onClick={handleMoveUp}
+                  style={menuButtonStyle()}
+                  disabled={!activeView || !canMoveUp}
                 >
-                  Cancel
+                  Move Up
                 </Button>
-                <Button type="button" variant="menu-item" onClick={handleRename} style={{ ...menuButtonStyle(), flex: 1 }}>
-                  Save
+
+                <Button
+                  type="button"
+                  variant="menu-item"
+                  onClick={handleMoveDown}
+                  style={menuButtonStyle()}
+                  disabled={!activeView || !canMoveDown}
+                >
+                  Move Down
                 </Button>
               </div>
-            </div>
-          )}
+            )}
+          </div>
 
-          <Button
-            type="button"
-            variant="menu-item-danger"
-            onClick={handleDelete}
-            style={menuButtonStyle()}
-            disabled={!activeView || !canDelete}
-            title={canDelete ? 'Delete active view' : 'At least one view must remain'}
+          <div
+            style={{
+              margin: '8px 0 4px',
+              paddingTop: '4px',
+              borderTop: `1px solid ${isDark ? '#27272a' : '#e2e8f0'}`,
+            }}
           >
-            Delete
-          </Button>
-
-          <Button
-            type="button"
-            variant="menu-item"
-            onClick={handleSaveBaseline}
-            style={menuButtonStyle()}
-            disabled={!activeView}
-          >
-            Save View as Base View
-          </Button>
-
-          <Button
-            type="button"
-            variant="menu-item"
-            onClick={handleSaveCardState}
-            style={menuButtonStyle()}
-            disabled={!activeView}
-          >
-            Save Card State
-          </Button>
-
-          <Button
-            type="button"
-            variant="menu-item"
-            onClick={() => setIsRestoreConfirmOpen(true)}
-            style={menuButtonStyle()}
-            disabled={!activeView || !hasSavedCardLocations}
-            title={hasSavedCardLocations ? 'Restore saved repository and branch card locations' : 'Save Card State first'}
-          >
-            Restore Saved Card Locations
-          </Button>
-
-          {canUndoSavedCardLocationRestore && (
             <Button
               type="button"
               variant="menu-item"
-              onClick={handleUndoRestore}
-              style={menuButtonStyle()}
+              aria-expanded={openSubmenu === 'state-options'}
+              onClick={() => toggleSubmenu('state-options')}
+              style={submenuButtonStyle()}
             >
-              Undo Restore
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>State Options</span>
+              <span aria-hidden="true" style={{ display: 'inline-flex', alignItems: 'center' }}>
+                {openSubmenu === 'state-options' ? (
+                  <CaretDown size={12} weight="bold" />
+                ) : (
+                  <CaretRight size={12} weight="bold" />
+                )}
+              </span>
             </Button>
-          )}
+
+            {openSubmenu === 'state-options' && (
+              <div style={{ display: 'grid', gap: '2px', paddingLeft: '8px', marginTop: '2px' }}>
+                <Button
+                  type="button"
+                  variant="menu-item"
+                  onClick={handleSaveBaseline}
+                  style={menuButtonStyle()}
+                  disabled={!activeView}
+                >
+                  Save View as Base View
+                </Button>
+
+                <Button
+                  type="button"
+                  variant="menu-item"
+                  onClick={handleSaveCardState}
+                  style={menuButtonStyle()}
+                  disabled={!activeView}
+                >
+                  Save Card State
+                </Button>
+
+                <Button
+                  type="button"
+                  variant="menu-item"
+                  onClick={() => setIsRestoreConfirmOpen(true)}
+                  style={menuButtonStyle()}
+                  disabled={!activeView || !hasSavedCardLocations}
+                  title={hasSavedCardLocations ? 'Restore saved repository and branch card locations' : 'Save Card State first'}
+                >
+                  Restore Saved Card Locations
+                </Button>
+
+                {canUndoSavedCardLocationRestore && (
+                  <Button
+                    type="button"
+                    variant="menu-item"
+                    onClick={handleUndoRestore}
+                    style={menuButtonStyle()}
+                  >
+                    Undo Restore
+                  </Button>
+                )}
+              </div>
+            )}
+          </div>
 
           <div
             style={{
@@ -456,6 +546,7 @@ export function ViewActionsDropdown({
           >
             Open View Manager
           </Button>
+
         </div>
       )}
 
@@ -490,6 +581,19 @@ export function ViewActionsDropdown({
         variant="danger"
         onConfirm={handleRestoreConfirm}
         onCancel={() => setIsRestoreConfirmOpen(false)}
+      />
+
+      <TextInputModal
+        isOpen={isRenameOpen && Boolean(activeView)}
+        title="Rename view"
+        description="Choose a new name for the current view."
+        inputLabel="View name"
+        inputValue={activeView?.name ?? ''}
+        placeholder="View name"
+        confirmLabel="Rename"
+        cancelLabel="Cancel"
+        onConfirm={handleRename}
+        onCancel={() => setIsRenameOpen(false)}
       />
     </div>
   );
