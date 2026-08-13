@@ -1,10 +1,13 @@
 import { invoke } from '@tauri-apps/api/core';
+import { open, save } from '@tauri-apps/plugin-dialog';
 import { createFileRoute } from '@tanstack/react-router';
 import { useState, useEffect, type CSSProperties } from 'react';
 import { Button } from '../components/button/Button';
 import { applyTheme, DEFAULT_THEME, loadThemePreference, saveThemePreference, type ThemePreference } from '../theme';
 import { openAppDatabase } from '../lib/db';
 import { useOnboarding } from '../features/onboarding/hooks/useOnboarding';
+import { useNotifications } from '../components/notifications/NotificationProvider';
+import { ApplicationImportRecoveryModal, type ImportRecoveryRepository } from '../features/repository/components/ApplicationImportRecoveryModal';
 
 export const Route = createFileRoute('/settings')({
   component: RouteComponent,
@@ -28,6 +31,13 @@ function RouteComponent() {
   const [theme, setTheme] = useState<ThemePreference>(DEFAULT_SETTINGS.theme);
   const [detailStatusRefreshInterval, setDetailStatusRefreshInterval] = useState(DEFAULT_SETTINGS.detailStatusRefreshInterval);
   const { openReplay } = useOnboarding();
+  const { addToast } = useNotifications();
+  const [isTransferBusy, setIsTransferBusy] = useState(false);
+  const [importRecovery, setImportRecovery] = useState<{
+    repositories: ImportRecoveryRepository[];
+    conflicts: string[];
+    skippedLayoutRecords: number;
+  } | null>(null);
 
   // 1. LOAD SETTINGS FROM DATABASE ON MOUNT
   useEffect(() => {
@@ -138,6 +148,81 @@ function RouteComponent() {
     void invoke('set_detail_status_refresh_interval', { value: nextValue }).catch((err) => {
       console.error('Failed to save detail status refresh interval:', err);
     });
+  }
+
+  async function handleExport() {
+    setIsTransferBusy(true);
+    try {
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const path = await save({
+        defaultPath: `branch-schematic-backup-${timestamp}.json`,
+        filters: [{ name: 'Branch Schematic application export', extensions: ['json'] }],
+      });
+      if (!path) return;
+      await invoke('export_application_command', { path });
+      addToast({ variant: 'success', title: 'Application export created', message: 'Your workspace and canvas layout were exported.' });
+    } catch (error) {
+      addToast({ variant: 'error', title: 'Export failed', message: error instanceof Error ? error.message : String(error) });
+    } finally {
+      setIsTransferBusy(false);
+    }
+  }
+
+  async function handleImport() {
+    setIsTransferBusy(true);
+    try {
+      const selected = await open({
+        multiple: false,
+        filters: [{ name: 'Branch Schematic export', extensions: ['json'] }],
+      });
+      const path = typeof selected === 'string' ? selected : null;
+      if (!path) return;
+      const summary = await invoke<{
+        importedRepositories: number;
+        newRepositories: number;
+        existingRepositories: number;
+        restoredArchivedRepositories: number;
+        importedViews: number;
+        newViews: number;
+        existingViews: number;
+        skippedViews: number;
+        unavailableRepositories: string[];
+        unavailableRepositoryDetails: ImportRecoveryRepository[];
+        skippedLayoutRecords: number;
+        conflicts: string[];
+      }>('import_application_command', { path });
+      const unavailableCount = summary.unavailableRepositoryDetails.length || summary.unavailableRepositories.length;
+      const unavailableMessage = unavailableCount > 0
+        ? ` ${unavailableCount} repository path${unavailableCount === 1 ? '' : 's'} need relinking.`
+        : '';
+      const hasImportIssues = unavailableCount > 0 || summary.conflicts.length > 0 || summary.skippedLayoutRecords > 0;
+      const repositoryBreakdown = `${summary.newRepositories} new, ${summary.existingRepositories} existing${summary.restoredArchivedRepositories > 0 ? `, ${summary.restoredArchivedRepositories} restored from Archive` : ''}`;
+      const viewBreakdown = `${summary.newViews} new, ${summary.existingViews} existing${summary.skippedViews > 0 ? `, ${summary.skippedViews} archived skipped` : ''}`;
+      const skippedLayoutMessage = summary.skippedLayoutRecords > 0
+        ? ` ${summary.skippedLayoutRecords} layout record${summary.skippedLayoutRecords === 1 ? '' : 's'} skipped.`
+        : '';
+      addToast({
+        variant: hasImportIssues ? 'warning' : 'success',
+        title: 'Application imported',
+        message: `${summary.importedRepositories} repositories processed (${repositoryBreakdown}); ${summary.importedViews} views processed (${viewBreakdown}).${unavailableMessage}${skippedLayoutMessage}${summary.conflicts.length > 0 ? ` ${summary.conflicts.length} import diagnostic${summary.conflicts.length === 1 ? '' : 's'} need review.` : ''}`,
+      });
+      if (hasImportIssues) {
+        setImportRecovery({
+          repositories: summary.unavailableRepositoryDetails,
+          conflicts: summary.conflicts,
+          skippedLayoutRecords: summary.skippedLayoutRecords,
+        });
+      }
+      const importedTheme = await loadThemePreference();
+      setTheme(importedTheme);
+      applyTheme(importedTheme);
+      const importedInterval = await invoke<number>('get_detail_status_refresh_interval');
+      setDetailStatusRefreshInterval(Math.min(5, Math.max(2, Number(importedInterval) || 5)));
+    } catch (error) {
+      addToast({ variant: 'error', title: 'Import failed', message: error instanceof Error ? error.message : String(error) });
+    } finally {
+      setIsTransferBusy(false);
+    }
   }
 
   const detailStatusRefreshProgress = ((detailStatusRefreshInterval - 2) / 3) * 100;
@@ -273,11 +358,41 @@ function RouteComponent() {
         </div>
       </section>
 
+      <section className="settings-card" aria-labelledby="backup-transfer-heading">
+        <div className="settings-card-header">
+          <h3 id="backup-transfer-heading" className="group-heading">Backup &amp; Transfer</h3>
+        </div>
+        <div className="settings-item settings-transfer-item">
+          <div className="settings-text">
+            <span className="settings-label">Portable application export</span>
+            <span className="settings-description">
+              Save repository metadata, canvas layouts, theme, and refresh preferences as a JSON file. Git caches, tokens, and machine-specific settings are never exported.
+            </span>
+            <span className="settings-description settings-transfer-warning">
+              Export files include local repository paths and remote URLs. Keep them private.
+            </span>
+          </div>
+          <div className="settings-transfer-actions">
+            <Button type="button" variant="basic" onClick={() => void handleImport()} disabled={isTransferBusy}>Import</Button>
+            <Button type="button" variant="submit" onClick={() => void handleExport()} disabled={isTransferBusy}>Export</Button>
+          </div>
+        </div>
+      </section>
+
       <div className="settings-footer">
         <Button type="button" variant="danger" onClick={handleReset}>
           Reset to Defaults
         </Button>
       </div>
+      {importRecovery ? (
+        <ApplicationImportRecoveryModal
+          isOpen
+          repositories={importRecovery.repositories}
+          conflicts={importRecovery.conflicts}
+          skippedLayoutRecords={importRecovery.skippedLayoutRecords}
+          onClose={() => setImportRecovery(null)}
+        />
+      ) : null}
     </div>
   );
 }

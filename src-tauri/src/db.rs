@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use sqlx::migrate::{Migration as SqlxMigration, MigrationType, Migrator};
-use sqlx::{FromRow, Row, SqlitePool};
+use sqlx::{FromRow, Row, SqliteConnection, SqlitePool};
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use tauri::Manager;
@@ -171,6 +171,105 @@ pub struct WorkspaceMetadataTag {
 pub struct WorkspaceMetadataAssignment {
     pub repository_id: String,
     pub tag_id: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ApplicationExport {
+    pub format: String,
+    pub version: i64,
+    pub exported_at: String,
+    pub workspace: WorkspaceMetadataExport,
+    pub preferences: PortablePreferences,
+    pub views: Vec<ApplicationExportView>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct PortablePreferences {
+    pub theme: String,
+    pub detail_status_refresh_interval: i64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ApplicationExportView {
+    pub id: String,
+    pub view_name: String,
+    pub zoom_level: f64,
+    pub pan_x: f64,
+    pub pan_y: f64,
+    pub is_favorite: i64,
+    pub display_order: i64,
+    pub card_state_json: Option<String>,
+    pub baseline_zoom: Option<f64>,
+    pub baseline_pan_x: Option<f64>,
+    pub baseline_pan_y: Option<f64>,
+    pub created_at: String,
+    pub archived_at: Option<String>,
+    pub repository_cards: Vec<ApplicationExportRepositoryCard>,
+    pub visible_paths: Vec<ApplicationExportPathVisibility>,
+    pub manual_edges: Vec<ApplicationExportEdge>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ApplicationExportRepositoryCard {
+    pub repository_path: String,
+    pub pos_x: f64,
+    pub pos_y: f64,
+    pub view_mode: String,
+    pub commit_density: i64,
+    pub theme_color_hex: String,
+    pub explode_branches: i64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ApplicationExportPathVisibility {
+    pub repository_path: String,
+    pub is_visible: i64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ApplicationExportEdge {
+    pub id: String,
+    pub source_repository_path: String,
+    pub target_repository_path: String,
+    pub edge_style: String,
+}
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct UnavailableRepositoryDetails {
+    pub id: String,
+    pub display_name: String,
+    pub absolute_path: String,
+}
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportSummary {
+    pub imported_repositories: usize,
+    pub new_repositories: usize,
+    pub existing_repositories: usize,
+    pub restored_archived_repositories: usize,
+    pub imported_views: usize,
+    pub new_views: usize,
+    pub existing_views: usize,
+    pub skipped_views: usize,
+    pub unavailable_repositories: Vec<String>,
+    pub unavailable_repository_details: Vec<UnavailableRepositoryDetails>,
+    pub skipped_layout_records: usize,
+    pub conflicts: Vec<String>,
+}
+
+#[derive(Default)]
+struct ImportRepositoryCounts {
+    new_repositories: usize,
+    existing_repositories: usize,
+    restored_archived_repositories: usize,
 }
 
 #[derive(Debug, Serialize, Clone)]
@@ -549,14 +648,12 @@ pub async fn update_onboarding_state(
         return Err(format!("Unsupported onboarding status: {status}"));
     }
 
-    sqlx::query(
-        "UPDATE settings SET onboarding_version = ?, onboarding_status = ? WHERE id = 1",
-    )
-    .bind(ONBOARDING_VERSION)
-    .bind(status)
-    .execute(pool)
-    .await
-    .map_err(|error| format!("Failed to save onboarding state: {error}"))?;
+    sqlx::query("UPDATE settings SET onboarding_version = ?, onboarding_status = ? WHERE id = 1")
+        .bind(ONBOARDING_VERSION)
+        .bind(status)
+        .execute(pool)
+        .await
+        .map_err(|error| format!("Failed to save onboarding state: {error}"))?;
 
     fetch_onboarding_state(pool)
         .await
@@ -719,10 +816,11 @@ pub async fn validate_schema(pool: &SqlitePool) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        clamp_detail_status_refresh_interval, create_new_environment_view,
+        clamp_detail_status_refresh_interval, create_new_environment_view, export_application,
         export_workspace_metadata, fetch_all_canvas_views, fetch_canvas_view_scope,
-        fetch_workspace_nodes, get_migrations, import_workspace_metadata, migrate_database,
-        set_canvas_view_path_visibility, validate_schema,
+        fetch_workspace_nodes, get_migrations, import_application, import_workspace_metadata,
+        migrate_database, repair_hidden_tracked_paths, set_canvas_view_path_visibility,
+        validate_schema,
     };
     use sqlx::migrate::{Migration as SqlxMigration, MigrationType, Migrator};
     use sqlx::sqlite::SqlitePool;
@@ -862,14 +960,16 @@ mod tests {
     async fn workspace_metadata_round_trips_groups_tags_and_assignments() {
         let source = SqlitePool::connect("sqlite::memory:").await.unwrap();
         migrate_database(&source).await.unwrap();
-        sqlx::query("INSERT INTO custom_groups (id, group_name, color_hex, created_at) VALUES (?, ?, ?, ?)")
-            .bind("group-1")
-            .bind("Clients")
-            .bind("#123456")
-            .bind("2026-01-01T00:00:00Z")
-            .execute(&source)
-            .await
-            .unwrap();
+        sqlx::query(
+            "INSERT INTO custom_groups (id, group_name, color_hex, created_at) VALUES (?, ?, ?, ?)",
+        )
+        .bind("group-1")
+        .bind("Clients")
+        .bind("#123456")
+        .bind("2026-01-01T00:00:00Z")
+        .execute(&source)
+        .await
+        .unwrap();
         sqlx::query("INSERT INTO tracked_paths (id, display_name, absolute_path, group_id) VALUES (?, ?, ?, ?)")
             .bind("repo-1")
             .bind("Repository")
@@ -895,12 +995,15 @@ mod tests {
         let export = export_workspace_metadata(&source).await.unwrap();
         let destination = SqlitePool::connect("sqlite::memory:").await.unwrap();
         migrate_database(&destination).await.unwrap();
-        import_workspace_metadata(&destination, &export).await.unwrap();
-
-        let group_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM custom_groups WHERE group_name = 'Clients'")
-            .fetch_one(&destination)
+        import_workspace_metadata(&destination, &export)
             .await
             .unwrap();
+
+        let group_count: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM custom_groups WHERE group_name = 'Clients'")
+                .fetch_one(&destination)
+                .await
+                .unwrap();
         let assignment_count: i64 = sqlx::query_scalar(
             "SELECT COUNT(*) FROM tracked_path_tags
              JOIN tracked_paths ON tracked_paths.id = tracked_path_tags.repo_path_id
@@ -912,6 +1015,159 @@ mod tests {
         .unwrap();
         assert_eq!(group_count, 1);
         assert_eq!(assignment_count, 1);
+    }
+
+    #[tokio::test]
+    async fn application_export_excludes_archived_and_hidden_repositories() {
+        let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
+        migrate_database(&pool).await.unwrap();
+        sqlx::query(
+            "INSERT INTO tracked_paths (id, display_name, absolute_path, is_active, archived_at)
+             VALUES (?, ?, ?, ?, ?), (?, ?, ?, ?, ?), (?, ?, ?, ?, ?)",
+        )
+        .bind("active")
+        .bind("Active")
+        .bind("C:/active")
+        .bind(1)
+        .bind(None::<String>)
+        .bind("archived")
+        .bind("Archived")
+        .bind("C:/archived")
+        .bind(0)
+        .bind(Some("2026-08-13T00:00:00Z"))
+        .bind("hidden")
+        .bind("Hidden")
+        .bind("C:/hidden")
+        .bind(0)
+        .bind(None::<String>)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let export = export_application(&pool).await.unwrap();
+        assert_eq!(export.workspace.repositories.len(), 1);
+        assert_eq!(export.workspace.repositories[0].id, "active");
+    }
+
+    #[tokio::test]
+    async fn hidden_repository_repair_is_idempotent_and_archives_rows() {
+        let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
+        migrate_database(&pool).await.unwrap();
+        sqlx::query(
+            "INSERT INTO tracked_paths (id, display_name, absolute_path, is_active)
+             VALUES ('hidden', 'Hidden', 'C:/hidden', 0)",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        assert_eq!(repair_hidden_tracked_paths(&pool).await.unwrap(), 1);
+        assert_eq!(repair_hidden_tracked_paths(&pool).await.unwrap(), 0);
+        let archived_at: Option<String> =
+            sqlx::query_scalar("SELECT archived_at FROM tracked_paths WHERE id = 'hidden'")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert!(archived_at.is_some());
+    }
+
+    #[tokio::test]
+    async fn application_import_round_trips_visibility_and_manual_edges() {
+        let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
+        migrate_database(&pool).await.unwrap();
+        let repository_a = std::env::temp_dir().join("branch-schematic-roundtrip-a");
+        let repository_b = std::env::temp_dir().join("branch-schematic-roundtrip-b");
+        std::fs::create_dir_all(&repository_a).unwrap();
+        std::fs::create_dir_all(&repository_b).unwrap();
+        let path_a = repository_a.to_string_lossy().to_string();
+        let path_b = repository_b.to_string_lossy().to_string();
+
+        for (id, name, path) in [
+            ("repo-a", "Repository A", &path_a),
+            ("repo-b", "Repository B", &path_b),
+        ] {
+            sqlx::query(
+                "INSERT INTO tracked_paths (id, display_name, absolute_path, is_active)
+                 VALUES (?, ?, ?, 1)",
+            )
+            .bind(id)
+            .bind(name)
+            .bind(path)
+            .execute(&pool)
+            .await
+            .unwrap();
+        }
+        sqlx::query(
+            "INSERT INTO canvas_views (id, view_name, zoom_level, pan_x, pan_y, is_favorite, display_order)
+             VALUES ('roundtrip-view', 'Roundtrip', 1.0, 0.0, 0.0, 1, 0)",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO canvas_view_cards (view_id, repo_path_id, pos_x, pos_y, view_mode, commit_density, theme_color_hex, explode_branches)
+             VALUES ('roundtrip-view', 'repo-a', 10.0, 20.0, 'default', 3, '#123456', 0)",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO canvas_view_visible_paths (view_id, repo_path_id, is_visible)
+             VALUES ('roundtrip-view', 'repo-a', 1), ('roundtrip-view', 'repo-b', 0)",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO canvas_manual_edges (id, view_id, source_repo_id, target_repo_id, edge_style)
+             VALUES ('edge-roundtrip', 'roundtrip-view', 'repo-a', 'repo-b', 'STRAIGHT')",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let export = export_application(&pool).await.unwrap();
+        sqlx::query("DELETE FROM canvas_view_visible_paths WHERE view_id = 'roundtrip-view'")
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("DELETE FROM canvas_manual_edges WHERE view_id = 'roundtrip-view'")
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let summary = import_application(&pool, &export).await.unwrap();
+        assert_eq!(summary.imported_repositories, 2);
+        assert_eq!(summary.imported_views, 1);
+        assert_eq!(summary.skipped_layout_records, 0);
+
+        let visibility: Vec<(String, i64)> = sqlx::query_as(
+            "SELECT repo_path_id, is_visible FROM canvas_view_visible_paths
+             WHERE view_id = 'roundtrip-view' ORDER BY repo_path_id",
+        )
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            visibility,
+            vec![("repo-a".to_string(), 1), ("repo-b".to_string(), 0)]
+        );
+
+        let edge: (String, String, String) = sqlx::query_as(
+            "SELECT source_repo_id, target_repo_id, edge_style FROM canvas_manual_edges
+             WHERE id = 'edge-roundtrip'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            edge,
+            (
+                "repo-a".to_string(),
+                "repo-b".to_string(),
+                "STRAIGHT".to_string()
+            )
+        );
     }
 }
 
@@ -1022,12 +1278,10 @@ pub async fn restore_canvas_view(pool: &SqlitePool, view_id: &str) -> Result<(),
 }
 
 pub async fn purge_canvas_view(pool: &SqlitePool, view_id: &str) -> Result<(), sqlx::Error> {
-    let result = sqlx::query(
-        "DELETE FROM canvas_views WHERE id = ? AND archived_at IS NOT NULL;",
-    )
-    .bind(view_id)
-    .execute(pool)
-    .await?;
+    let result = sqlx::query("DELETE FROM canvas_views WHERE id = ? AND archived_at IS NOT NULL;")
+        .bind(view_id)
+        .execute(pool)
+        .await?;
 
     if result.rows_affected() == 0 {
         return Err(sqlx::Error::RowNotFound);
@@ -1805,7 +2059,7 @@ pub async fn deactivate_duplicate_tracked_path(
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
         "UPDATE tracked_paths
-         SET is_active = 0
+         SET is_active = 0, archived_at = COALESCE(archived_at, CURRENT_TIMESTAMP)
          WHERE absolute_path = ? AND id != ?;",
     )
     .bind(absolute_path)
@@ -1815,22 +2069,32 @@ pub async fn deactivate_duplicate_tracked_path(
     Ok(())
 }
 
+pub async fn repair_hidden_tracked_paths(pool: &SqlitePool) -> Result<u64, sqlx::Error> {
+    let mut transaction = pool.begin().await?;
+    let result = sqlx::query(
+        "UPDATE tracked_paths
+         SET archived_at = COALESCE(archived_at, CURRENT_TIMESTAMP)
+         WHERE is_active = 0 AND archived_at IS NULL;",
+    )
+    .execute(&mut *transaction)
+    .await?;
+    transaction.commit().await?;
+    Ok(result.rows_affected())
+}
+
 pub async fn untrack_repository_path(pool: &SqlitePool, path_id: &str) -> Result<(), sqlx::Error> {
     sqlx::query(
         "UPDATE tracked_paths
          SET is_active = 0, archived_at = CURRENT_TIMESTAMP
          WHERE id = ?;",
     )
-        .bind(path_id)
-        .execute(pool)
-        .await?;
+    .bind(path_id)
+    .execute(pool)
+    .await?;
     Ok(())
 }
 
-pub async fn restore_tracked_path(
-    pool: &SqlitePool,
-    path_id: &str,
-) -> Result<String, sqlx::Error> {
+pub async fn restore_tracked_path(pool: &SqlitePool, path_id: &str) -> Result<String, sqlx::Error> {
     let absolute_path = sqlx::query_scalar::<_, String>(
         "SELECT absolute_path FROM tracked_paths WHERE id = ? AND archived_at IS NOT NULL;",
     )
@@ -1852,12 +2116,10 @@ pub async fn restore_tracked_path(
 }
 
 pub async fn purge_tracked_path(pool: &SqlitePool, path_id: &str) -> Result<(), sqlx::Error> {
-    let result = sqlx::query(
-        "DELETE FROM tracked_paths WHERE id = ? AND archived_at IS NOT NULL;",
-    )
-    .bind(path_id)
-    .execute(pool)
-    .await?;
+    let result = sqlx::query("DELETE FROM tracked_paths WHERE id = ? AND archived_at IS NOT NULL;")
+        .bind(path_id)
+        .execute(pool)
+        .await?;
 
     if result.rows_affected() == 0 {
         return Err(sqlx::Error::RowNotFound);
@@ -2453,17 +2715,495 @@ pub async fn export_workspace_metadata(
     })
 }
 
+pub async fn export_application(pool: &SqlitePool) -> Result<ApplicationExport, sqlx::Error> {
+    let workspace = export_active_workspace_metadata(pool).await?;
+    let (theme, detail_status_refresh_interval) = sqlx::query_as::<_, (String, i64)>(
+        "SELECT COALESCE(theme, 'system'), detail_status_refresh_interval FROM settings WHERE id = 1",
+    )
+    .fetch_one(pool)
+    .await?;
+
+    let view_rows = sqlx::query_as::<_, CanvasViewRow>(
+        "SELECT id, view_name, zoom_level, pan_x, pan_y, is_favorite, display_order,
+                card_state_json, baseline_zoom, baseline_pan_x, baseline_pan_y, created_at, archived_at
+         FROM canvas_views WHERE archived_at IS NULL ORDER BY display_order ASC, created_at ASC",
+    )
+    .fetch_all(pool)
+    .await?;
+    let mut views = Vec::with_capacity(view_rows.len());
+
+    for view in view_rows {
+        let cards = sqlx::query_as::<_, (String, f64, f64, String, i64, String, i64)>(
+            "SELECT tracked_paths.absolute_path, canvas_view_cards.pos_x, canvas_view_cards.pos_y,
+                    canvas_view_cards.view_mode, canvas_view_cards.commit_density,
+                    canvas_view_cards.theme_color_hex, canvas_view_cards.explode_branches
+             FROM canvas_view_cards
+             JOIN tracked_paths ON tracked_paths.id = canvas_view_cards.repo_path_id
+                         WHERE canvas_view_cards.view_id = ?
+                             AND tracked_paths.is_active = 1
+                             AND tracked_paths.archived_at IS NULL
+             ORDER BY tracked_paths.absolute_path COLLATE NOCASE ASC",
+        )
+        .bind(&view.id)
+        .fetch_all(pool)
+        .await?
+        .into_iter()
+        .map(
+            |(
+                repository_path,
+                pos_x,
+                pos_y,
+                view_mode,
+                commit_density,
+                theme_color_hex,
+                explode_branches,
+            )| {
+                ApplicationExportRepositoryCard {
+                    repository_path,
+                    pos_x,
+                    pos_y,
+                    view_mode,
+                    commit_density,
+                    theme_color_hex,
+                    explode_branches,
+                }
+            },
+        )
+        .collect();
+
+        let visible_paths = sqlx::query_as::<_, (String, i64)>(
+            "SELECT tracked_paths.absolute_path, canvas_view_visible_paths.is_visible
+             FROM canvas_view_visible_paths
+             JOIN tracked_paths ON tracked_paths.id = canvas_view_visible_paths.repo_path_id
+                         WHERE canvas_view_visible_paths.view_id = ?
+                             AND tracked_paths.is_active = 1
+                             AND tracked_paths.archived_at IS NULL
+             ORDER BY tracked_paths.absolute_path COLLATE NOCASE ASC",
+        )
+        .bind(&view.id)
+        .fetch_all(pool)
+        .await?
+        .into_iter()
+        .map(
+            |(repository_path, is_visible)| ApplicationExportPathVisibility {
+                repository_path,
+                is_visible,
+            },
+        )
+        .collect();
+
+        let manual_edges = sqlx::query_as::<_, (String, String, String, String)>(
+            "SELECT canvas_manual_edges.id, source.absolute_path, target.absolute_path, canvas_manual_edges.edge_style
+             FROM canvas_manual_edges
+             JOIN tracked_paths AS source ON source.id = canvas_manual_edges.source_repo_id
+             JOIN tracked_paths AS target ON target.id = canvas_manual_edges.target_repo_id
+                         WHERE canvas_manual_edges.view_id = ?
+                             AND source.is_active = 1 AND source.archived_at IS NULL
+                             AND target.is_active = 1 AND target.archived_at IS NULL
+             ORDER BY canvas_manual_edges.id ASC",
+        )
+        .bind(&view.id)
+        .fetch_all(pool)
+        .await?
+        .into_iter()
+        .map(|(id, source_repository_path, target_repository_path, edge_style)| ApplicationExportEdge {
+            id,
+            source_repository_path,
+            target_repository_path,
+            edge_style,
+        })
+        .collect();
+
+        views.push(ApplicationExportView {
+            id: view.id,
+            view_name: view.view_name,
+            zoom_level: view.zoom_level,
+            pan_x: view.pan_x,
+            pan_y: view.pan_y,
+            is_favorite: view.is_favorite,
+            display_order: view.display_order,
+            card_state_json: view.card_state_json,
+            baseline_zoom: view.baseline_zoom,
+            baseline_pan_x: view.baseline_pan_x,
+            baseline_pan_y: view.baseline_pan_y,
+            created_at: view.created_at,
+            archived_at: view.archived_at,
+            repository_cards: cards,
+            visible_paths,
+            manual_edges,
+        });
+    }
+
+    Ok(ApplicationExport {
+        format: "branch-schematic-application".to_string(),
+        version: 1,
+        exported_at: chrono::Utc::now().to_rfc3339(),
+        workspace,
+        preferences: PortablePreferences {
+            theme,
+            detail_status_refresh_interval,
+        },
+        views,
+    })
+}
+
+async fn export_active_workspace_metadata(
+    pool: &SqlitePool,
+) -> Result<WorkspaceMetadataExport, sqlx::Error> {
+    let repositories = sqlx::query_as::<_, WorkspaceMetadataRepository>(
+        "SELECT id, display_name, alias_name, absolute_path, remote_url, repo_origin_type,
+                group_id, is_favorite, theme_color_hex, icon_name, is_pinned, is_active, archived_at
+         FROM tracked_paths
+         WHERE is_active = 1 AND archived_at IS NULL
+         ORDER BY absolute_path COLLATE NOCASE ASC",
+    )
+    .fetch_all(pool)
+    .await?;
+    let groups = sqlx::query_as::<_, WorkspaceMetadataGroup>(
+        "SELECT id, group_name, color_hex, created_at
+         FROM custom_groups ORDER BY group_name COLLATE NOCASE ASC",
+    )
+    .fetch_all(pool)
+    .await?;
+    let tags = sqlx::query_as::<_, WorkspaceMetadataTag>(
+        "SELECT id, tag_name, color_hex
+         FROM global_tags ORDER BY tag_name COLLATE NOCASE ASC",
+    )
+    .fetch_all(pool)
+    .await?;
+    let assignments = sqlx::query_as::<_, WorkspaceMetadataAssignment>(
+        "SELECT tracked_path_tags.repo_path_id AS repository_id, tracked_path_tags.tag_id
+         FROM tracked_path_tags
+         JOIN tracked_paths ON tracked_paths.id = tracked_path_tags.repo_path_id
+         WHERE tracked_paths.is_active = 1 AND tracked_paths.archived_at IS NULL
+         ORDER BY tracked_path_tags.repo_path_id, tracked_path_tags.tag_id",
+    )
+    .fetch_all(pool)
+    .await?;
+
+    Ok(WorkspaceMetadataExport {
+        format: "branch-schematic-workspace-metadata".to_string(),
+        version: 1,
+        exported_at: chrono::Utc::now().to_rfc3339(),
+        repositories,
+        groups,
+        tags,
+        assignments,
+    })
+}
+
+pub async fn import_application(
+    pool: &SqlitePool,
+    export: &ApplicationExport,
+) -> Result<ImportSummary, sqlx::Error> {
+    if export.format != "branch-schematic-application" || export.version != 1 {
+        return Err(sqlx::Error::Protocol(
+            "Unsupported application export format".to_string(),
+        ));
+    }
+
+    let mut transaction = pool.begin().await?;
+    let mut conflicts = Vec::new();
+    let (repository_ids, repository_counts) =
+        import_workspace_metadata_in_transaction(&mut *transaction, &export.workspace).await?;
+    for repository in &export.workspace.repositories {
+        if let Some(actual_id) = repository_ids.get(&repository.id) {
+            if actual_id != &repository.id {
+                conflicts.push(format!(
+                    "Repository '{}' was imported with a different local identity because its path already existed.",
+                    repository.display_name
+                ));
+            }
+        }
+    }
+    let mut unavailable_repositories = Vec::new();
+    let mut unavailable_repository_details = Vec::new();
+
+    for repository in &export.workspace.repositories {
+        let id = repository_ids.get(&repository.id).cloned();
+
+        if !std::path::Path::new(&repository.absolute_path).is_dir() {
+            unavailable_repositories.push(repository.absolute_path.clone());
+            if let Some(id) = id {
+                unavailable_repository_details.push(UnavailableRepositoryDetails {
+                    id: id.clone(),
+                    display_name: repository.display_name.clone(),
+                    absolute_path: repository.absolute_path.clone(),
+                });
+            }
+            sqlx::query(
+                "UPDATE tracked_paths SET is_active = 0, health_state = 'unavailable', is_cache_stale = 1
+                 , archived_at = COALESCE(archived_at, CURRENT_TIMESTAMP)
+                 WHERE absolute_path = ? COLLATE NOCASE",
+            )
+            .bind(&repository.absolute_path)
+            .execute(&mut *transaction)
+            .await?;
+        }
+    }
+
+    let mut imported_views = 0;
+    let mut new_views = 0;
+    let mut existing_views = 0;
+    let mut skipped_views = 0;
+    let mut skipped_layout_records = 0;
+    for view in &export.views {
+        if view.archived_at.is_some() {
+            conflicts.push(format!(
+                "Skipped archived view '{}' during application import.",
+                view.view_name
+            ));
+            skipped_views += 1;
+            continue;
+        }
+
+        let existing_view_id = sqlx::query_scalar::<_, String>(
+            "SELECT id FROM canvas_views WHERE id = ? LIMIT 1",
+        )
+        .bind(&view.id)
+        .fetch_optional(&mut *transaction)
+        .await?;
+        let destination_id = existing_view_id
+            .clone()
+            .unwrap_or_else(|| Uuid::new_v4().to_string());
+        if existing_view_id.is_some() {
+            existing_views += 1;
+        } else {
+            new_views += 1;
+        }
+
+        sqlx::query(
+            "INSERT INTO canvas_views (id, view_name, zoom_level, pan_x, pan_y, is_favorite, display_order,
+             card_state_json, baseline_zoom, baseline_pan_x, baseline_pan_y, created_at, archived_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             ON CONFLICT(id) DO UPDATE SET view_name = excluded.view_name, zoom_level = excluded.zoom_level,
+             pan_x = excluded.pan_x, pan_y = excluded.pan_y, is_favorite = excluded.is_favorite,
+             display_order = excluded.display_order, card_state_json = excluded.card_state_json,
+             baseline_zoom = excluded.baseline_zoom, baseline_pan_x = excluded.baseline_pan_x,
+             baseline_pan_y = excluded.baseline_pan_y, archived_at = excluded.archived_at",
+        )
+        .bind(&destination_id)
+        .bind(&view.view_name)
+        .bind(view.zoom_level)
+        .bind(view.pan_x)
+        .bind(view.pan_y)
+        .bind(view.is_favorite)
+        .bind(view.display_order)
+        .bind(&view.card_state_json)
+        .bind(view.baseline_zoom)
+        .bind(view.baseline_pan_x)
+        .bind(view.baseline_pan_y)
+        .bind(&view.created_at)
+        .bind(&view.archived_at)
+        .execute(&mut *transaction)
+        .await?;
+
+        sqlx::query("DELETE FROM canvas_view_cards WHERE view_id = ?")
+            .bind(&destination_id)
+            .execute(&mut *transaction)
+            .await?;
+        for card in &view.repository_cards {
+            let Some(repository_id) = export
+                .workspace
+                .repositories
+                .iter()
+                .find(|repository| {
+                    repository
+                        .absolute_path
+                        .eq_ignore_ascii_case(&card.repository_path)
+                })
+                .and_then(|repository| repository_ids.get(&repository.id))
+            else {
+                skipped_layout_records += 1;
+                conflicts.push(format!(
+                    "View '{}' skipped a repository card because '{}' was not available after import.",
+                    view.view_name, card.repository_path
+                ));
+                continue;
+            };
+            sqlx::query(
+                "INSERT INTO canvas_view_cards (view_id, repo_path_id, pos_x, pos_y, view_mode, commit_density, theme_color_hex, explode_branches)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            )
+            .bind(&destination_id)
+            .bind(repository_id)
+            .bind(card.pos_x)
+            .bind(card.pos_y)
+            .bind(&card.view_mode)
+            .bind(card.commit_density)
+            .bind(&card.theme_color_hex)
+            .bind(card.explode_branches)
+            .execute(&mut *transaction)
+            .await?;
+        }
+
+        sqlx::query("DELETE FROM canvas_view_visible_paths WHERE view_id = ?")
+            .bind(&destination_id)
+            .execute(&mut *transaction)
+            .await?;
+        for visibility in &view.visible_paths {
+            let Some(repository_id) = export
+                .workspace
+                .repositories
+                .iter()
+                .find(|repository| {
+                    repository
+                        .absolute_path
+                        .eq_ignore_ascii_case(&visibility.repository_path)
+                })
+                .and_then(|repository| repository_ids.get(&repository.id))
+            else {
+                skipped_layout_records += 1;
+                conflicts.push(format!(
+                    "View '{}' skipped visibility for '{}' because the repository was not available after import.",
+                    view.view_name, visibility.repository_path
+                ));
+                continue;
+            };
+            sqlx::query(
+                "INSERT INTO canvas_view_visible_paths (view_id, repo_path_id, is_visible)
+                 VALUES (?, ?, ?)
+                 ON CONFLICT(view_id, repo_path_id) DO UPDATE SET is_visible = excluded.is_visible",
+            )
+            .bind(&destination_id)
+            .bind(repository_id)
+            .bind(visibility.is_visible)
+            .execute(&mut *transaction)
+            .await?;
+        }
+
+        sqlx::query("DELETE FROM canvas_manual_edges WHERE view_id = ?")
+            .bind(&destination_id)
+            .execute(&mut *transaction)
+            .await?;
+        for edge in &view.manual_edges {
+            let Some(source_id) = export
+                .workspace
+                .repositories
+                .iter()
+                .find(|repository| {
+                    repository
+                        .absolute_path
+                        .eq_ignore_ascii_case(&edge.source_repository_path)
+                })
+                .and_then(|repository| repository_ids.get(&repository.id))
+            else {
+                skipped_layout_records += 1;
+                conflicts.push(format!(
+                    "View '{}' skipped a manual edge with an unavailable source repository.",
+                    view.view_name
+                ));
+                continue;
+            };
+            let Some(target_id) = export
+                .workspace
+                .repositories
+                .iter()
+                .find(|repository| {
+                    repository
+                        .absolute_path
+                        .eq_ignore_ascii_case(&edge.target_repository_path)
+                })
+                .and_then(|repository| repository_ids.get(&repository.id))
+            else {
+                skipped_layout_records += 1;
+                conflicts.push(format!(
+                    "View '{}' skipped a manual edge with an unavailable target repository.",
+                    view.view_name
+                ));
+                continue;
+            };
+            let edge_id = sqlx::query_scalar::<_, String>(
+                "SELECT id FROM canvas_manual_edges WHERE id = ? LIMIT 1",
+            )
+            .bind(&edge.id)
+            .fetch_optional(&mut *transaction)
+            .await?
+            .filter(|existing_view_id| existing_view_id == &destination_id)
+            .map(|_| edge.id.clone())
+            .unwrap_or_else(|| {
+                if edge.id.is_empty() {
+                    Uuid::new_v4().to_string()
+                } else {
+                    edge.id.clone()
+                }
+            });
+            let edge_id = if sqlx::query_scalar::<_, String>(
+                "SELECT id FROM canvas_manual_edges WHERE id = ? LIMIT 1",
+            )
+            .bind(&edge_id)
+            .fetch_optional(&mut *transaction)
+            .await?
+            .is_some()
+            {
+                let remapped_id = Uuid::new_v4().to_string();
+                conflicts.push(format!(
+                    "Manual edge '{}' was assigned a new local identity during import.",
+                    edge.id
+                ));
+                remapped_id
+            } else {
+                edge_id
+            };
+            sqlx::query(
+                "INSERT INTO canvas_manual_edges (id, view_id, source_repo_id, target_repo_id, edge_style)
+                 VALUES (?, ?, ?, ?, ?)",
+            )
+            .bind(edge_id)
+            .bind(&destination_id)
+            .bind(source_id)
+            .bind(target_id)
+            .bind(&edge.edge_style)
+            .execute(&mut *transaction)
+            .await?;
+        }
+        imported_views += 1;
+    }
+
+    sqlx::query("UPDATE settings SET theme = ?, detail_status_refresh_interval = ? WHERE id = 1")
+        .bind(&export.preferences.theme)
+        .bind(clamp_detail_status_refresh_interval(
+            export.preferences.detail_status_refresh_interval,
+        ))
+        .execute(&mut *transaction)
+        .await?;
+    transaction.commit().await?;
+
+    Ok(ImportSummary {
+        imported_repositories: export.workspace.repositories.len(),
+        new_repositories: repository_counts.new_repositories,
+        existing_repositories: repository_counts.existing_repositories,
+        restored_archived_repositories: repository_counts.restored_archived_repositories,
+        imported_views,
+        new_views,
+        existing_views,
+        skipped_views,
+        unavailable_repositories,
+        unavailable_repository_details,
+        skipped_layout_records,
+        conflicts,
+    })
+}
+
 pub async fn import_workspace_metadata(
     pool: &SqlitePool,
     export: &WorkspaceMetadataExport,
 ) -> Result<(), sqlx::Error> {
+    let mut tx = pool.begin().await?;
+    import_workspace_metadata_in_transaction(&mut *tx, export).await?;
+    tx.commit().await
+}
+
+async fn import_workspace_metadata_in_transaction(
+    tx: &mut SqliteConnection,
+    export: &WorkspaceMetadataExport,
+) -> Result<(HashMap<String, String>, ImportRepositoryCounts), sqlx::Error> {
     if export.format != "branch-schematic-workspace-metadata" || export.version != 1 {
         return Err(sqlx::Error::Protocol(
             "Unsupported workspace metadata export format".to_string(),
         ));
     }
 
-    let mut tx = pool.begin().await?;
     let mut group_ids = HashMap::new();
     for group in &export.groups {
         let existing = sqlx::query_scalar::<_, String>(
@@ -2503,16 +3243,23 @@ pub async fn import_workspace_metadata(
     }
 
     let mut repository_ids = HashMap::new();
+    let mut repository_counts = ImportRepositoryCounts::default();
     for repository in &export.repositories {
-        let existing = sqlx::query_as::<_, (String, Option<String>)>(
-            "SELECT id, group_id FROM tracked_paths WHERE absolute_path = ? COLLATE NOCASE LIMIT 1",
+        let existing = sqlx::query_as::<_, (String, Option<String>, Option<String>, i64)>(
+            "SELECT id, group_id, archived_at, is_active FROM tracked_paths WHERE absolute_path = ? COLLATE NOCASE LIMIT 1",
         )
         .bind(&repository.absolute_path)
         .fetch_optional(&mut *tx)
         .await?;
-        let (id, existing_group_id) = if let Some(existing) = existing {
-            existing
+        let (id, existing_group_id) = if let Some((existing_id, existing_group_id, archived_at, _)) = existing {
+            if archived_at.is_some() && repository.is_active == 1 && repository.archived_at.is_none() {
+                repository_counts.restored_archived_repositories += 1;
+            } else {
+                repository_counts.existing_repositories += 1;
+            }
+            (existing_id, existing_group_id)
         } else {
+            repository_counts.new_repositories += 1;
             let id_in_use = sqlx::query_scalar::<_, String>(
                 "SELECT id FROM tracked_paths WHERE id = ? LIMIT 1",
             )
@@ -2578,13 +3325,12 @@ pub async fn import_workspace_metadata(
         let id = if existing.is_some() {
             existing.unwrap()
         } else {
-            let id_in_use = sqlx::query_scalar::<_, String>(
-                "SELECT id FROM global_tags WHERE id = ? LIMIT 1",
-            )
-            .bind(&tag.id)
-            .fetch_optional(&mut *tx)
-            .await?
-            .is_some();
+            let id_in_use =
+                sqlx::query_scalar::<_, String>("SELECT id FROM global_tags WHERE id = ? LIMIT 1")
+                    .bind(&tag.id)
+                    .fetch_optional(&mut *tx)
+                    .await?
+                    .is_some();
             if id_in_use {
                 Uuid::new_v4().to_string()
             } else {
@@ -2625,7 +3371,7 @@ pub async fn import_workspace_metadata(
         }
     }
 
-    tx.commit().await
+    Ok((repository_ids, repository_counts))
 }
 
 pub async fn fetch_canvas_manual_edges(
@@ -2704,9 +3450,9 @@ pub async fn archive_canvas_view(pool: &SqlitePool, view_id: &str) -> Result<(),
          SET archived_at = CURRENT_TIMESTAMP
          WHERE id = ? AND archived_at IS NULL;",
     )
-        .bind(view_id)
-        .execute(pool)
-        .await?;
+    .bind(view_id)
+    .execute(pool)
+    .await?;
 
     if result.rows_affected() == 0 {
         return Err(sqlx::Error::RowNotFound);

@@ -1,6 +1,7 @@
-import type { ReactNode } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 import { Button } from '../../../components/button/Button';
 import { XIcon } from '@phosphor-icons/react';
+import { useBackdropDismiss } from '../../../hooks/useBackdropDismiss';
 
 interface RepositoryModalShellProps {
   isOpen: boolean;
@@ -21,6 +22,24 @@ export function RepositoryModalShell({
   footer,
   size = 'default',
 }: RepositoryModalShellProps) {
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const { handleMouseDown, handleMouseUp, handleMouseLeave, handleTouchStart, handleTouchEnd } = useBackdropDismiss(dialogRef, onClose, isOpen);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+      document.body.style.overflow = '';
+    };
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   return (
@@ -36,9 +55,32 @@ export function RepositoryModalShell({
         background: 'rgba(15, 23, 42, 0.54)',
         overflowY: 'auto',
       }}
-      onClick={onClose}
+      role="presentation"
+      onMouseDown={(event) => {
+        event.stopPropagation();
+        handleMouseDown(event);
+      }}
+      onMouseUp={(event) => {
+        event.stopPropagation();
+        handleMouseUp(event);
+      }}
+      onMouseLeave={(event) => {
+        event.stopPropagation();
+        handleMouseLeave();
+      }}
+      onTouchStart={(event) => {
+        event.stopPropagation();
+        handleTouchStart(event);
+      }}
+      onTouchEnd={(event) => {
+        event.stopPropagation();
+        handleTouchEnd(event);
+      }}
     >
       <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
         style={{
           width: size === 'wide' ? 'min(860px, 96vw)' : 'min(460px, 92vw)',
           maxHeight: 'min(90vh, 820px)',

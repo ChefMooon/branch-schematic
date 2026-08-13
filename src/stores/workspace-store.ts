@@ -124,6 +124,7 @@ interface WorkspaceState {
   tagDirectory: TagFilterSummary[];
   hydrateFromBackend: () => Promise<void>;
   hydrateArchivedRepositories: () => Promise<void>;
+  repairHiddenRepositories: () => Promise<number>;
   subscribeToWorkspaceUpdates: () => Promise<() => void>;
   hydrateQuickFilterMetadata: () => Promise<void>;
   hydrateManagementDirectory: () => Promise<void>;
@@ -140,6 +141,7 @@ interface WorkspaceState {
   updateRepositoryTheme: (id: string, colorHex: string | null, iconName: string | null) => Promise<void>;
   applyThemeToRepositories: (ids: string[], colorHex: string | null, iconName: string | null) => Promise<BulkThemeUpdateResult>;
   refreshRepositoryGitStatus: (repoId: string, absolutePath: string) => Promise<void>;
+  relinkRepositoryPath: (repoId: string, absolutePath: string) => Promise<void>;
   setRepositoriesStatus: (repoIds: string[], status: TrackedPath['status']) => void;
   markRepositoriesMissing: (missingPaths: string[]) => void;
   markRepositoryResolved: (repoId: string, nextAbsolutePath?: string) => void;
@@ -330,6 +332,12 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     }
   },
 
+  repairHiddenRepositories: async () => {
+    const repairedCount = await invoke<number>('repair_hidden_tracked_paths');
+    await get().hydrateArchivedRepositories();
+    return repairedCount;
+  },
+
   hydrateQuickFilterMetadata: async () => {
     try {
       const metadata = await invoke<QuickFilterMetadata>('get_quick_filter_metadata');
@@ -508,6 +516,13 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       console.error('Failed to refresh repository git status:', error);
       throw error;
     }
+  },
+
+  relinkRepositoryPath: async (repoId, absolutePath) => {
+    await invoke('relink_repository_path', { pathId: repoId, absolutePath });
+    await get().refreshRepositoryGitStatus(repoId, absolutePath);
+    get().markRepositoryResolved(repoId, absolutePath);
+    await get().hydrateFromBackend();
   },
 
   setRepositoriesStatus: (repoIds, status) => {

@@ -1,7 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { ArrowCounterClockwise, PencilSimple, Plus, Trash, Wrench, XIcon } from '@phosphor-icons/react';
-import { open, save } from '@tauri-apps/plugin-dialog';
-import { invoke } from '@tauri-apps/api/core';
 import { ConfirmationModal } from '../../../components/Modal/ConfirmationModal';
 import { useNotifications } from '../../../components/notifications/NotificationProvider';
 import { useBackdropDismiss } from '../../../hooks/useBackdropDismiss';
@@ -25,7 +23,7 @@ type SettingsManagementModalProps = {
   onCleanupDanglingTags: () => Promise<number>;
   onRestoreRepository?: (repoId: string) => Promise<void>;
   onPurgeRepository?: (repoId: string) => Promise<void>;
-  onMetadataImported?: () => Promise<void>;
+  onRepairHiddenRepositories?: () => Promise<number>;
 };
 
 type Tab = 'tags' | 'groups' | 'archived-repositories';
@@ -55,7 +53,7 @@ export function SettingsManagementModal({
   onCleanupDanglingTags,
   onRestoreRepository = async () => {},
   onPurgeRepository = async () => {},
-  onMetadataImported = async () => {},
+  onRepairHiddenRepositories = async () => 0,
 }: SettingsManagementModalProps) {
   const { addToast } = useNotifications();
   const dialogRef = useRef<HTMLDivElement | null>(null);
@@ -72,7 +70,7 @@ export function SettingsManagementModal({
   const [isCleanupConfirmOpen, setIsCleanupConfirmOpen] = useState(false);
   const [repositoryToPurge, setRepositoryToPurge] = useState<ArchivedTrackedRepository | null>(null);
   const [busyRepositoryId, setBusyRepositoryId] = useState<string | null>(null);
-  const [isMetadataBusy, setIsMetadataBusy] = useState(false);
+  const [isRepairingHiddenRepositories, setIsRepairingHiddenRepositories] = useState(false);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -87,6 +85,7 @@ export function SettingsManagementModal({
     setIsCleanupConfirmOpen(false);
     setRepositoryToPurge(null);
     setBusyRepositoryId(null);
+    setIsRepairingHiddenRepositories(false);
   }, [isOpen, initialTab]);
 
   useEffect(() => {
@@ -126,42 +125,6 @@ export function SettingsManagementModal({
   }, [groupToDelete, isCleanupConfirmOpen, isOpen, onClose, repositoryToPurge, tagToDelete]);
 
   const danglingLabel = useMemo(() => danglingTagNames.join(', '), [danglingTagNames]);
-
-  const handleExportMetadata = async () => {
-    setIsMetadataBusy(true);
-    try {
-      const path = await save({
-        defaultPath: 'branch-schematic-workspace.json',
-        filters: [{ name: 'Workspace metadata', extensions: ['json'] }],
-      });
-      if (!path) return;
-      await invoke('export_workspace_metadata_command', { path });
-      addToast({ variant: 'success', title: 'Workspace exported', message: 'Groups and tags were saved successfully.' });
-    } catch (error) {
-      addToast({ variant: 'error', title: 'Export failed', message: error instanceof Error ? error.message : String(error) });
-    } finally {
-      setIsMetadataBusy(false);
-    }
-  };
-
-  const handleImportMetadata = async () => {
-    setIsMetadataBusy(true);
-    try {
-      const selected = await open({
-        multiple: false,
-        filters: [{ name: 'Workspace metadata', extensions: ['json'] }],
-      });
-      const path = typeof selected === 'string' ? selected : null;
-      if (!path) return;
-      await invoke('import_workspace_metadata_command', { path });
-      await onMetadataImported();
-      addToast({ variant: 'success', title: 'Workspace imported', message: 'Groups and tags were restored.' });
-    } catch (error) {
-      addToast({ variant: 'error', title: 'Import failed', message: error instanceof Error ? error.message : String(error) });
-    } finally {
-      setIsMetadataBusy(false);
-    }
-  };
 
   const handleCreateTag = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -382,6 +345,28 @@ export function SettingsManagementModal({
     }
   };
 
+  const handleRepairHiddenRepositories = async () => {
+    setIsRepairingHiddenRepositories(true);
+    try {
+      const repairedCount = await onRepairHiddenRepositories();
+      addToast({
+        variant: 'success',
+        title: 'Repository records repaired',
+        message: repairedCount > 0
+          ? `${repairedCount} hidden repository record${repairedCount === 1 ? '' : 's'} moved to Archive.`
+          : 'No hidden repository records needed repair.',
+      });
+    } catch (error) {
+      addToast({
+        variant: 'error',
+        title: 'Repair failed',
+        message: error instanceof Error ? error.message : 'Hidden repository records could not be repaired.',
+      });
+    } finally {
+      setIsRepairingHiddenRepositories(false);
+    }
+  };
+
   const confirmCleanup = async () => {
     setIsCleanupConfirmOpen(false);
 
@@ -425,10 +410,6 @@ export function SettingsManagementModal({
       >
         <div className="app-modal-header">
           <h3 id="data-management-modal-title">Data Management</h3>
-          <div className="management-metadata-actions">
-            <Button type="button" variant="basic" onClick={handleExportMetadata} disabled={isMetadataBusy}>Export</Button>
-            <Button type="button" variant="basic" onClick={handleImportMetadata} disabled={isMetadataBusy}>Import</Button>
-          </div>
           <Button type="button" variant="close" className="app-modal-close" onClick={onClose} aria-label="Close management modal">
             <XIcon size={14} weight="bold" />
           </Button>
@@ -644,6 +625,21 @@ export function SettingsManagementModal({
               <p className="management-helper-text">
                 Archived repositories are hidden from the workspace but remain on disk. Restore one to monitor it again, or purge its cached catalog data permanently.
               </p>
+              <div className="management-cleanup">
+                <div>
+                  <strong>Repair hidden repository records</strong>
+                  <p>Move inactive records that are not in Archive into the Archive list.</p>
+                </div>
+                <Button
+                  type="button"
+                  variant="basic"
+                  disabled={isRepairingHiddenRepositories}
+                  onClick={() => void handleRepairHiddenRepositories()}
+                >
+                  <Wrench size={14} weight="bold" />
+                  {isRepairingHiddenRepositories ? 'Repairing…' : 'Repair records'}
+                </Button>
+              </div>
               {archivedRepos.length === 0 ? (
                 <div className="management-empty-state">No archived repositories.</div>
               ) : (

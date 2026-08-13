@@ -600,6 +600,13 @@ async fn get_archived_tracked_paths(
 }
 
 #[tauri::command]
+async fn repair_hidden_tracked_paths(state: tauri::State<'_, DbState>) -> Result<u64, String> {
+    db::repair_hidden_tracked_paths(state.inner().pool())
+        .await
+        .map_err(|error| format!("Failed to repair hidden repositories: {error}"))
+}
+
+#[tauri::command]
 async fn get_canvas_views(
     state: tauri::State<'_, DbState>,
 ) -> Result<Vec<db::CanvasViewRow>, String> {
@@ -859,6 +866,70 @@ async fn import_workspace_metadata_command(
         .notify_workspace_updated(updated_ids, "workspace_metadata_import")
         .await;
     Ok(())
+}
+
+#[tauri::command]
+async fn export_application_command(
+    state: tauri::State<'_, DbState>,
+    path: String,
+) -> Result<(), String> {
+    let export = db::export_application(state.inner().pool())
+        .await
+        .map_err(|error| format!("Failed to export application data: {error}"))?;
+    let json = serde_json::to_string_pretty(&export)
+        .map_err(|error| format!("Failed to serialize application export: {error}"))?;
+    std::fs::write(&path, format!("{json}\n"))
+        .map_err(|error| format!("Failed to write application export: {error}"))
+}
+
+#[tauri::command]
+async fn import_application_command(
+    state: tauri::State<'_, DbState>,
+    manager: tauri::State<'_, manager::WatcherManager>,
+    path: String,
+) -> Result<db::ImportSummary, String> {
+    let contents = std::fs::read_to_string(&path)
+        .map_err(|error| format!("Failed to read application export: {error}"))?;
+
+    let summary = match serde_json::from_str::<db::ApplicationExport>(&contents) {
+        Ok(export) => db::import_application(state.inner().pool(), &export)
+            .await
+            .map_err(|error| format!("Failed to import application data: {error}"))?,
+        Err(_) => {
+            let legacy = serde_json::from_str::<db::WorkspaceMetadataExport>(&contents)
+                .map_err(|error| format!("Invalid application export: {error}"))?;
+            db::import_workspace_metadata(state.inner().pool(), &legacy)
+                .await
+                .map_err(|error| format!("Failed to import workspace metadata: {error}"))?;
+            db::ImportSummary {
+                imported_repositories: legacy.repositories.len(),
+                new_repositories: 0,
+                existing_repositories: 0,
+                restored_archived_repositories: 0,
+                imported_views: 0,
+                new_views: 0,
+                existing_views: 0,
+                skipped_views: 0,
+                unavailable_repositories: Vec::new(),
+                unavailable_repository_details: Vec::new(),
+                skipped_layout_records: 0,
+                conflicts: Vec::new(),
+            }
+        }
+    };
+
+    let active_paths = db::fetch_active_tracked_paths(state.inner().pool())
+        .await
+        .map_err(|error| format!("Failed to refresh repository monitoring: {error}"))?;
+    let updated_ids = active_paths
+        .iter()
+        .map(|path| path.id.clone())
+        .collect::<Vec<_>>();
+    manager.reconcile_active_paths(active_paths).await;
+    manager
+        .notify_workspace_updated(updated_ids, "application_import")
+        .await;
+    Ok(summary)
 }
 
 #[tauri::command]
@@ -1268,6 +1339,7 @@ pub fn run() {
             validate_repository_path,
             get_active_tracked_paths,
             get_archived_tracked_paths,
+            repair_hidden_tracked_paths,
             get_canvas_views,
             create_canvas_view,
             clone_view,
@@ -1287,6 +1359,8 @@ pub fn run() {
             set_canvas_view_scope,
             get_canvas_view_scope,
             get_workspace_nodes,
+            export_application_command,
+            import_application_command,
             export_workspace_metadata_command,
             import_workspace_metadata_command,
             update_card_position,
