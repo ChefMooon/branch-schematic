@@ -4,28 +4,26 @@
 
 .repository-view-overlay {
   position: fixed;
-  inset: 0;
-  z-index: 9999;
+  top: var(--app-titlebar-height);
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: var(--app-layer-repository-detail);
   display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
-  background: var(--repository-view-overlay-bg);
-  backdrop-filter: blur(4px);
+  background: var(--app-surface);
 }
 
 .repository-view-modal {
-  width: min(1400px, calc(100vw - 48px));
-  height: min(92vh, 980px);
-  min-height: min(80vh, 780px);
-  max-height: min(92vh, 980px);
+  width: 100%;
+  height: 100%;
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  border: 1px solid var(--app-border);
-  border-radius: 16px;
+  border: 0;
+  border-radius: 0;
   background: var(--app-surface);
   color: var(--app-text);
-  box-shadow: 0 24px 60px color-mix(in srgb, var(--app-text) 18%, transparent);
+  box-shadow: none;
   overflow: hidden;
 }
 

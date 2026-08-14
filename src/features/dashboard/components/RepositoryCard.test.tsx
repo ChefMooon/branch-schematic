@@ -9,6 +9,7 @@ const refreshRepositoryGitStatus = vi.fn();
 const markRepositoryResolved = vi.fn();
 const setRepositoriesStatus = vi.fn();
 const setRepositoryPinned = vi.fn();
+let pathname = '/';
 
 const mockStore = {
   setRepositoryFavorite: vi.fn(),
@@ -40,6 +41,10 @@ vi.mock('@tauri-apps/api/core', () => ({
 
 vi.mock('@tauri-apps/plugin-dialog', () => ({
   open: vi.fn().mockResolvedValue('C:/repos/located-repo'),
+}));
+
+vi.mock('@tanstack/react-router', () => ({
+  useLocation: () => ({ pathname }),
 }));
 
 vi.mock('../../../stores/workspace-store', () => ({
@@ -86,6 +91,7 @@ vi.mock('../../repository-detail/components/RepositoryDetail', () => ({
 describe('RepositoryCard', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    pathname = '/';
     refreshRepositoryGitStatus.mockReset();
     markRepositoryResolved.mockReset();
     setRepositoriesStatus.mockReset();
@@ -306,6 +312,43 @@ describe('RepositoryCard', () => {
     expect(icon).not.toBeNull();
 
     fireEvent.doubleClick(icon!);
+
+    expect(screen.queryByTestId('repository-view')).not.toBeInTheDocument();
+  });
+
+  it('closes the details view when navigation changes', () => {
+    const repo = {
+      id: 'repo-navigation',
+      display_name: 'Navigation Repo',
+      absolute_path: 'C:/repos/navigation-repo',
+      status: 'ready',
+      is_favorite: 0,
+      tags: [],
+      available_branches: ['main'],
+      current_branch: 'main',
+      default_branch_name: 'main',
+      uncommitted_changes_count: 0,
+      has_upstream: false,
+      ahead_count: 0,
+      behind_count: 0,
+      ahead_of_default_count: 0,
+      behind_default_count: 0,
+      alias_name: '',
+      theme_color_hex: null,
+      icon_name: null,
+      group_id: null,
+      favorite: 0,
+      group_name: null,
+      origin_type: 'LOCAL_ONLY',
+    } as unknown as TrackedPath;
+
+    const { container, rerender } = render(<RepositoryCard repo={repo} onRefresh={() => {}} />);
+    fireEvent.doubleClick(container.querySelector('.repo-card')!);
+
+    expect(screen.getByTestId('repository-view')).toBeInTheDocument();
+
+    pathname = '/branch-map';
+    rerender(<RepositoryCard repo={repo} onRefresh={() => {}} />);
 
     expect(screen.queryByTestId('repository-view')).not.toBeInTheDocument();
   });

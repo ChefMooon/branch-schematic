@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useLocation } from '@tanstack/react-router';
 import { Handle, Position, NodeProps, Node, useViewport } from '@xyflow/react';
 import { InfoIcon, XIcon } from '@phosphor-icons/react';
 import { useCanvasStore } from '../../../stores/canvas-store';
@@ -50,6 +51,7 @@ function useAppThemeMode() {
 }
 
 export function BranchCard({ data }: NodeProps<BranchCardNode>) {
+  const location = useLocation();
   const themeMode = useAppThemeMode();
   const isDark = themeMode === 'dark';
   const { zoom } = useViewport();
@@ -60,6 +62,10 @@ export function BranchCard({ data }: NodeProps<BranchCardNode>) {
   const [isRepositoryDetailOpen, setIsRepositoryDetailOpen] = useState(false);
   const cardContainerRef = useRef<HTMLDivElement | null>(null);
   const menuContainerRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    setIsRepositoryDetailOpen(false);
+  }, [location.pathname]);
 
   useEffect(() => {
     if (!menuOpen) return;

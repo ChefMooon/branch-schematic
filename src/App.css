@@ -21,6 +21,10 @@
   --app-danger: #ef4444;
   --app-overlay: rgba(2, 8, 23, 0.7);
   --app-shadow: rgba(0, 0, 0, 0.2);
+  --app-titlebar-height: 48px;
+  --app-layer-repository-detail: 35;
+  --app-layer-sidebar: 50;
+  --app-layer-titlebar: 60;
 
   font-synthesis: none;
   text-rendering: optimizeLegibility;

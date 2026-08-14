@@ -320,7 +320,12 @@ export function AppLayout({ children }: AppLayoutProps) {
     : children;
 
   return (
-    <div style={{ ...styles.root, '--header-h': `${HEADER_H}px` } as React.CSSProperties}>
+    <div
+      style={{
+        ...styles.root,
+        '--header-h': 'var(--app-titlebar-height)',
+      } as React.CSSProperties}
+    >
 
       {/* ── SIDEBAR OVERLAY PANEL ── */}
       <AppSidebar
@@ -620,7 +625,7 @@ const styles: Record<string, AppStyle> = {
     gap: '12px',
     padding: '0 16px',
     userSelect: 'none',
-    zIndex: 30,
+    zIndex: 'var(--app-layer-titlebar)',
   },
 
   menuBtn: {

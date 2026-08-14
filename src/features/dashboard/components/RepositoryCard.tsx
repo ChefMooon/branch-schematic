@@ -1,4 +1,5 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useLocation } from '@tanstack/react-router';
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import {
@@ -41,6 +42,7 @@ interface RepositoryCardProps {
 }
 
 export function RepositoryCard({ repo, onRefresh, onOpenManagement, onOpenManagementModal, resolvedOriginType, isSelected = false, onToggleSelection }: RepositoryCardProps) {
+  const location = useLocation();
   const computedOriginType = useResolveRepoOrigin(repo);
   const originType = resolvedOriginType ?? computedOriginType;
   const originBadgeState = useRepoOriginBadgeState(repo, originType);
@@ -70,6 +72,10 @@ export function RepositoryCard({ repo, onRefresh, onOpenManagement, onOpenManage
   const [isRepositoryDetailOpen, setIsRepositoryDetailOpen] = useState(false);
   const [aliasInput, setAliasInput] = useState("");
   const [loadingAction, setLoadingAction] = useState<"fetch" | "pull" | "push" | "checkout" | "alias" | "refresh" | null>(null);
+
+  useEffect(() => {
+    setIsRepositoryDetailOpen(false);
+  }, [location.pathname]);
 
   // PREPOPULATE ON START EDITING
   const handleStartEditing = () => {
