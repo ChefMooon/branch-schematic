@@ -48,6 +48,7 @@ describe('RepositoryDetailBody', () => {
         commit_message: 'Initial commit',
         committed_at: '2024-01-01T10:00:00Z',
         signature_status: 'verified',
+        push_state: 'unpushed',
       },
     ];
 
@@ -66,6 +67,7 @@ describe('RepositoryDetailBody', () => {
 
     expect(screen.getByRole('heading', { name: /commit history/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /initial commit/i })).toBeInTheDocument();
+    expect(screen.getByLabelText('Not pushed to upstream')).toBeInTheDocument();
     expect(screen.getByText('Author')).toBeInTheDocument();
     expect(screen.getAllByText('abc123').length).toBeGreaterThan(0);
 

@@ -262,6 +262,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         ahead_count: repo.ahead_count || 0,
         behind_count: repo.behind_count || 0,
         has_upstream: Boolean(repo.has_upstream),
+        unpushed_commit_count: repo.unpushed_commit_count ?? null,
         default_branch_name: repo.default_branch_name ?? null,
         ahead_of_default_count: repo.ahead_of_default_count || 0,
         behind_default_count: repo.behind_default_count || 0,
@@ -506,6 +507,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
                 ahead_count: snapshot.ahead_count,
                 behind_count: snapshot.behind_count,
                 has_upstream: snapshot.has_upstream,
+                unpushed_commit_count: snapshot.unpushed_commit_count,
                 ahead_of_default_count: snapshot.ahead_of_default_count,
                 behind_default_count: snapshot.behind_default_count,
               }

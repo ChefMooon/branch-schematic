@@ -1,5 +1,6 @@
 import { ArrowDown, ArrowUp, Clock, GitBranch, Hash, UserCircle } from '@phosphor-icons/react';
 import { Button } from '../../../components/button/Button';
+import { PushStatusIndicator } from '../../../components/push-status-indicator/PushStatusIndicator';
 import type { CommitRecord } from './RepositoryDetail';
 
 interface RepositoryDetailCommitsTabProps {
@@ -66,9 +67,14 @@ export function RepositoryDetailCommitsTab({
                           </span>
                         </div>
                       </div>
-                      <div className="repository-view-commit-hash">
-                        <Hash size={12} weight="bold" />
-                        <span>{commit.commit_hash.slice(0, 8)}</span>
+                      <div className="repository-view-commit-hash-stack">
+                        {commit.push_state === 'unpushed' && (
+                          <PushStatusIndicator className="repository-view-commit-push-status" />
+                        )}
+                        <div className="repository-view-commit-hash">
+                          <Hash size={12} weight="bold" />
+                          <span>{commit.commit_hash.slice(0, 8)}</span>
+                        </div>
                       </div>
                     </button>
                   </li>

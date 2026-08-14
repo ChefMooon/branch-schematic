@@ -26,6 +26,7 @@ import { RepoBranchDropdown } from "./RepositoryCard/RepoBranchDropdown";
 import { useNotifications } from "../../../components/notifications/NotificationProvider";
 import { ConfirmationModal } from "../../../components/Modal/ConfirmationModal";
 import { Button } from "../../../components/button/Button";
+import { PushStatusIndicator } from '../../../components/push-status-indicator/PushStatusIndicator';
 import { useResolveRepoOrigin } from "../hooks/useResolveRepoOrigin";
 import { useRepoOriginBadgeState } from "../hooks/useResolveRepoOrigin";
 import type { RepoOriginType } from "../hooks/useResolveRepoOrigin";
@@ -616,6 +617,9 @@ export function RepositoryCard({ repo, onRefresh, onOpenManagement, onOpenManage
                 </div>
               )}
             </div>
+            {repo.unpushed_commit_count != null && repo.unpushed_commit_count > 0 && (
+              <PushStatusIndicator className="repo-push-status-indicator" />
+            )}
             {isAnyLoading && (
               <div className="sync-loading-indicator" title="A repository action is in progress">
                 <CircleNotch size={16} className="animate-spin-svg" />

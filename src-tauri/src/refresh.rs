@@ -1,4 +1,4 @@
-use crate::git::{scan_local_repository, DiscoveredBranch};
+use crate::git::{compute_unpushed_commit_count, scan_local_repository, DiscoveredBranch};
 use crate::health::{self, HealthState};
 use crate::layout::{
     classify_repository_path_state, resolve_repository_layout, RepositoryPathState,
@@ -136,6 +136,15 @@ pub async fn refresh_repository_full(
     };
     let repository =
         Repository::open(path).map_err(|_| "Repository verification failed".to_string())?;
+    let unpushed_commit_count = branches
+        .iter()
+        .find(|branch| branch.is_head)
+        .and_then(|branch| {
+            repository
+                .find_branch(&branch.name, git2::BranchType::Local)
+                .ok()
+                .and_then(|head_branch| compute_unpushed_commit_count(&repository, &head_branch))
+        });
     let snapshots = branches
         .iter()
         .map(|branch| BranchSnapshot {
@@ -144,7 +153,9 @@ pub async fn refresh_repository_full(
         })
         .collect::<Vec<_>>();
     if let Err(error) = writer
-        .run(|| async { reconcile_branch_snapshot(pool, path_id, absolute_path, &snapshots).await })
+        .run(|| async {
+            reconcile_branch_snapshot(pool, path_id, unpushed_commit_count, &snapshots).await
+        })
         .await
     {
         let transition = health::verification_failed(
@@ -167,7 +178,7 @@ pub async fn refresh_repository_full(
 async fn reconcile_branch_snapshot(
     pool: &SqlitePool,
     path_id: &str,
-    absolute_path: &str,
+    unpushed_commit_count: Option<i64>,
     snapshots: &[BranchSnapshot],
 ) -> Result<(), sqlx::Error> {
     let mut transaction = pool.begin().await?;
@@ -189,18 +200,25 @@ async fn reconcile_branch_snapshot(
     for snapshot in snapshots {
         let branch = &snapshot.branch;
         let branch_id = format!("{}-{}", path_id, branch.name);
-        sqlx::query(
-            "INSERT INTO cached_git_branches (id, path_id, branch_name, is_head, last_commit_hash, updated_at)
-             VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-             ON CONFLICT(path_id, branch_name) DO UPDATE SET
-               is_head = excluded.is_head,
-               last_commit_hash = excluded.last_commit_hash,
-               updated_at = CURRENT_TIMESTAMP",
-        )
+                sqlx::query(
+                        "INSERT INTO cached_git_branches (
+                                id, path_id, branch_name, is_head, unpushed_commit_count, last_commit_hash, updated_at
+                         )
+                         VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                         ON CONFLICT(path_id, branch_name) DO UPDATE SET
+                             is_head = excluded.is_head,
+                             last_commit_hash = excluded.last_commit_hash,
+                             unpushed_commit_count = CASE
+                                     WHEN excluded.is_head = 1 THEN excluded.unpushed_commit_count
+                                     ELSE cached_git_branches.unpushed_commit_count
+                             END,
+                             updated_at = CURRENT_TIMESTAMP",
+                )
         .bind(&branch_id)
         .bind(path_id)
         .bind(&branch.name)
         .bind(if branch.is_head { 1_i64 } else { 0_i64 })
+        .bind(if branch.is_head { unpushed_commit_count } else { None })
         .bind(&branch.latest_commit.hash)
         .execute(&mut *transaction)
         .await?;
@@ -283,7 +301,6 @@ async fn reconcile_branch_snapshot(
             .execute(&mut *transaction)
             .await?;
     }
-    let _ = absolute_path;
     transaction.commit().await
 }
 
@@ -363,7 +380,7 @@ mod tests {
             .await
             .unwrap();
         sqlx::query("CREATE TABLE tracked_paths (id TEXT PRIMARY KEY, absolute_path TEXT NOT NULL, health_state TEXT NOT NULL DEFAULT 'unverified', is_cache_stale INTEGER NOT NULL DEFAULT 1, last_verified_at TEXT, last_successful_verification_at TEXT, verification_failure_count INTEGER NOT NULL DEFAULT 0, last_verification_error TEXT)").execute(&pool).await.unwrap();
-        sqlx::query("CREATE TABLE cached_git_branches (id TEXT PRIMARY KEY, path_id TEXT NOT NULL, branch_name TEXT NOT NULL, is_head INTEGER NOT NULL DEFAULT 0, last_commit_hash TEXT NOT NULL, updated_at TEXT, UNIQUE(path_id, branch_name), FOREIGN KEY(path_id) REFERENCES tracked_paths(id) ON DELETE CASCADE)").execute(&pool).await.unwrap();
+        sqlx::query("CREATE TABLE cached_git_branches (id TEXT PRIMARY KEY, path_id TEXT NOT NULL, branch_name TEXT NOT NULL, is_head INTEGER NOT NULL DEFAULT 0, unpushed_commit_count INTEGER DEFAULT NULL, last_commit_hash TEXT NOT NULL, updated_at TEXT, UNIQUE(path_id, branch_name), FOREIGN KEY(path_id) REFERENCES tracked_paths(id) ON DELETE CASCADE)").execute(&pool).await.unwrap();
         sqlx::query("CREATE TABLE cached_git_commits (commit_hash TEXT PRIMARY KEY, branch_id TEXT NOT NULL, author_name TEXT NOT NULL, commit_message TEXT NOT NULL, committed_at TEXT NOT NULL, FOREIGN KEY(branch_id) REFERENCES cached_git_branches(id) ON DELETE CASCADE)").execute(&pool).await.unwrap();
         sqlx::query("CREATE TABLE cached_git_commit_branches (commit_hash TEXT NOT NULL, branch_id TEXT NOT NULL, PRIMARY KEY(commit_hash, branch_id), FOREIGN KEY(commit_hash) REFERENCES cached_git_commits(commit_hash) ON DELETE CASCADE, FOREIGN KEY(branch_id) REFERENCES cached_git_branches(id) ON DELETE CASCADE)").execute(&pool).await.unwrap();
         pool
@@ -432,26 +449,32 @@ mod tests {
                 commits: collect_recent_history(&repository, &commit.to_string()),
             },
         ];
-        reconcile_branch_snapshot(
-            &pool,
-            "repo-1",
-            directory.path().to_str().unwrap(),
-            &snapshots,
-        )
+        reconcile_branch_snapshot(&pool, "repo-1", Some(2), &snapshots)
         .await
         .unwrap();
+        let cached_count: Option<i64> = sqlx::query_scalar(
+            "SELECT unpushed_commit_count FROM cached_git_branches
+             WHERE path_id = 'repo-1' AND is_head = 1",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(cached_count, Some(2));
         let remaining = vec![BranchSnapshot {
             branch: main,
             commits: collect_recent_history(&repository, &commit.to_string()),
         }];
-        reconcile_branch_snapshot(
-            &pool,
-            "repo-1",
-            directory.path().to_str().unwrap(),
-            &remaining,
-        )
+        reconcile_branch_snapshot(&pool, "repo-1", Some(0), &remaining)
         .await
         .unwrap();
+        let cached_count: Option<i64> = sqlx::query_scalar(
+            "SELECT unpushed_commit_count FROM cached_git_branches
+             WHERE path_id = 'repo-1' AND is_head = 1",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(cached_count, Some(0));
 
         let branch_count: i64 =
             sqlx::query_scalar("SELECT COUNT(*) FROM cached_git_branches WHERE path_id = 'repo-1'")

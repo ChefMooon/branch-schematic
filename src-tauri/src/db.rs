@@ -287,6 +287,13 @@ pub struct CachedCommitRow {
     pub commit_message: String,
     pub committed_at: String,
     pub signature_status: Option<String>,
+    pub push_state: Option<String>,
+}
+
+#[derive(Debug, Clone, FromRow)]
+pub struct CachedBranchContext {
+    pub branch_name: String,
+    pub absolute_path: String,
 }
 
 #[derive(Debug, Serialize, Clone, FromRow)]
@@ -317,7 +324,7 @@ pub const DB_NAME: &str = "branch-schematic-dev.db";
 #[cfg(not(debug_assertions))]
 pub const DB_NAME: &str = "branch-schematic.db";
 
-pub const EXPECTED_SCHEMA_VERSION: i64 = 5;
+pub const EXPECTED_SCHEMA_VERSION: i64 = 6;
 pub const ONBOARDING_VERSION: i64 = 1;
 pub const DEFAULT_DETAIL_STATUS_REFRESH_INTERVAL: i64 = 5;
 pub const MIN_DETAIL_STATUS_REFRESH_INTERVAL: i64 = 2;
@@ -619,6 +626,15 @@ pub fn get_migrations() -> Vec<Migration> {
             ALTER TABLE settings ADD COLUMN onboarding_status TEXT NOT NULL DEFAULT 'not_started'
                 CHECK (onboarding_status IN ('not_started', 'skipped', 'completed'));
             PRAGMA user_version = 5;
+            ",
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 6,
+            description: "add_unpushed_commit_count",
+            sql: "
+            ALTER TABLE cached_git_branches ADD COLUMN unpushed_commit_count INTEGER DEFAULT NULL;
+            PRAGMA user_version = 6;
             ",
             kind: MigrationKind::Up,
         },
@@ -1740,13 +1756,13 @@ pub async fn fetch_branch_commits(
     limit: i64,
 ) -> Result<Vec<CachedCommitRow>, sqlx::Error> {
     let query_str = if limit <= 0 {
-        "SELECT c.commit_hash, c.author_name, c.commit_message, strftime('%Y-%m-%dT%H:%M:%SZ', c.committed_at) as committed_at, c.signature_status
+        "SELECT c.commit_hash, c.author_name, c.commit_message, strftime('%Y-%m-%dT%H:%M:%SZ', c.committed_at) as committed_at, c.signature_status, NULL as push_state
          FROM cached_git_commits c
          JOIN cached_git_commit_branches m ON m.commit_hash = c.commit_hash
          WHERE m.branch_id = ?
          ORDER BY c.committed_at DESC"
     } else {
-        "SELECT c.commit_hash, c.author_name, c.commit_message, strftime('%Y-%m-%dT%H:%M:%SZ', c.committed_at) as committed_at, c.signature_status
+        "SELECT c.commit_hash, c.author_name, c.commit_message, strftime('%Y-%m-%dT%H:%M:%SZ', c.committed_at) as committed_at, c.signature_status, NULL as push_state
          FROM cached_git_commits c
          JOIN cached_git_commit_branches m ON m.commit_hash = c.commit_hash
          WHERE m.branch_id = ?
@@ -1760,6 +1776,21 @@ pub async fn fetch_branch_commits(
 
     let rows = query.fetch_all(pool).await?;
     Ok(rows)
+}
+
+pub async fn fetch_branch_context(
+    pool: &SqlitePool,
+    branch_id: &str,
+) -> Result<Option<CachedBranchContext>, sqlx::Error> {
+    sqlx::query_as::<_, CachedBranchContext>(
+        "SELECT b.branch_name, p.absolute_path
+         FROM cached_git_branches b
+         JOIN tracked_paths p ON p.id = b.path_id
+         WHERE b.id = ?",
+    )
+    .bind(branch_id)
+    .fetch_optional(pool)
+    .await
 }
 
 pub async fn update_canvas_card_position(
@@ -2189,6 +2220,7 @@ pub async fn upsert_head_branch_git_status(
     ahead_count: i64,
     behind_count: i64,
     has_upstream: bool,
+    unpushed_commit_count: Option<i64>,
     ahead_of_default_count: i64,
     behind_default_count: i64,
 ) -> Result<(), sqlx::Error> {
@@ -2196,14 +2228,16 @@ pub async fn upsert_head_branch_git_status(
     sqlx::query(
         "INSERT INTO cached_git_branches (
             id, path_id, branch_name, is_head, ahead_count, behind_count,
-            has_upstream, ahead_of_default_count, behind_default_count, last_commit_hash, updated_at
+                has_upstream, unpushed_commit_count, ahead_of_default_count, behind_default_count,
+                last_commit_hash, updated_at
          )
-         VALUES (?1, ?2, ?3, 1, ?4, ?5, ?6, ?7, ?8, ?9, CURRENT_TIMESTAMP)
+            VALUES (?1, ?2, ?3, 1, ?4, ?5, ?6, ?7, ?8, ?9, ?10, CURRENT_TIMESTAMP)
          ON CONFLICT(path_id, branch_name) DO UPDATE SET
             is_head = 1,
             ahead_count = excluded.ahead_count,
             behind_count = excluded.behind_count,
             has_upstream = excluded.has_upstream,
+            unpushed_commit_count = excluded.unpushed_commit_count,
             ahead_of_default_count = excluded.ahead_of_default_count,
             behind_default_count = excluded.behind_default_count,
             last_commit_hash = excluded.last_commit_hash,
@@ -2215,6 +2249,7 @@ pub async fn upsert_head_branch_git_status(
     .bind(ahead_count)
     .bind(behind_count)
     .bind(if has_upstream { 1_i64 } else { 0_i64 })
+    .bind(unpushed_commit_count)
     .bind(ahead_of_default_count)
     .bind(behind_default_count)
     .bind(last_commit_hash)
@@ -2957,12 +2992,11 @@ pub async fn import_application(
             continue;
         }
 
-        let existing_view_id = sqlx::query_scalar::<_, String>(
-            "SELECT id FROM canvas_views WHERE id = ? LIMIT 1",
-        )
-        .bind(&view.id)
-        .fetch_optional(&mut *transaction)
-        .await?;
+        let existing_view_id =
+            sqlx::query_scalar::<_, String>("SELECT id FROM canvas_views WHERE id = ? LIMIT 1")
+                .bind(&view.id)
+                .fetch_optional(&mut *transaction)
+                .await?;
         let destination_id = existing_view_id
             .clone()
             .unwrap_or_else(|| Uuid::new_v4().to_string());
@@ -3251,31 +3285,35 @@ async fn import_workspace_metadata_in_transaction(
         .bind(&repository.absolute_path)
         .fetch_optional(&mut *tx)
         .await?;
-        let (id, existing_group_id) = if let Some((existing_id, existing_group_id, archived_at, _)) = existing {
-            if archived_at.is_some() && repository.is_active == 1 && repository.archived_at.is_none() {
-                repository_counts.restored_archived_repositories += 1;
-            } else {
-                repository_counts.existing_repositories += 1;
-            }
-            (existing_id, existing_group_id)
-        } else {
-            repository_counts.new_repositories += 1;
-            let id_in_use = sqlx::query_scalar::<_, String>(
-                "SELECT id FROM tracked_paths WHERE id = ? LIMIT 1",
-            )
-            .bind(&repository.id)
-            .fetch_optional(&mut *tx)
-            .await?
-            .is_some();
-            (
-                if id_in_use {
-                    Uuid::new_v4().to_string()
+        let (id, existing_group_id) =
+            if let Some((existing_id, existing_group_id, archived_at, _)) = existing {
+                if archived_at.is_some()
+                    && repository.is_active == 1
+                    && repository.archived_at.is_none()
+                {
+                    repository_counts.restored_archived_repositories += 1;
                 } else {
-                    repository.id.clone()
-                },
-                None,
-            )
-        };
+                    repository_counts.existing_repositories += 1;
+                }
+                (existing_id, existing_group_id)
+            } else {
+                repository_counts.new_repositories += 1;
+                let id_in_use = sqlx::query_scalar::<_, String>(
+                    "SELECT id FROM tracked_paths WHERE id = ? LIMIT 1",
+                )
+                .bind(&repository.id)
+                .fetch_optional(&mut *tx)
+                .await?
+                .is_some();
+                (
+                    if id_in_use {
+                        Uuid::new_v4().to_string()
+                    } else {
+                        repository.id.clone()
+                    },
+                    None,
+                )
+            };
         let group_id = match repository.group_id.as_ref() {
             Some(imported_group_id) => group_ids
                 .get(imported_group_id)

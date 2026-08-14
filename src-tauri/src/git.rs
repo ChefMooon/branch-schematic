@@ -18,6 +18,86 @@ use uuid::Uuid;
 
 static GIT_MUTATION_LOCK: Mutex<()> = Mutex::new(());
 
+pub(crate) fn enrich_commit_push_states(
+    absolute_path: &str,
+    branch_name: &str,
+    commits: &mut [db::CachedCommitRow],
+) -> Result<(), String> {
+    for commit in commits.iter_mut() {
+        commit.push_state = Some("unknown".to_string());
+    }
+
+    let repo = Repository::open(absolute_path)
+        .map_err(|error| format!("Failed to open repository for commit history: {error}"))?;
+    let branch = match repo.find_branch(branch_name, BranchType::Local) {
+        Ok(branch) => branch,
+        Err(_) => return Ok(()),
+    };
+    let upstream = match branch.upstream() {
+        Ok(upstream) => upstream,
+        Err(error) if error.code() == git2::ErrorCode::NotFound => return Ok(()),
+        Err(_) => return Ok(()),
+    };
+    let Some(upstream_oid) = upstream.get().target() else {
+        return Ok(());
+    };
+
+    for commit in commits {
+        let Ok(commit_oid) = Oid::from_str(&commit.commit_hash) else {
+            continue;
+        };
+        commit.push_state = Some(
+            classify_commit_push_state(&repo, commit_oid, upstream_oid)
+                .unwrap_or("unknown")
+                .to_string(),
+        );
+    }
+
+    Ok(())
+}
+
+fn classify_commit_push_state(
+    repo: &Repository,
+    commit_oid: Oid,
+    upstream_oid: Oid,
+) -> Option<&'static str> {
+    if commit_oid == upstream_oid {
+        return Some("pushed");
+    }
+
+    if repo.find_commit(commit_oid).is_err() {
+        return Some("unknown");
+    }
+
+    let upstream_contains_commit = repo.graph_descendant_of(upstream_oid, commit_oid).ok()?;
+    let commit_contains_upstream = repo.graph_descendant_of(commit_oid, upstream_oid).ok()?;
+
+    if upstream_contains_commit {
+        Some("pushed")
+    } else if commit_contains_upstream {
+        Some("unpushed")
+    } else {
+        Some("unknown")
+    }
+}
+
+pub(crate) fn compute_unpushed_commit_count(repo: &Repository, branch: &Branch) -> Option<i64> {
+    let local_oid = branch.get().target()?;
+    let upstream_oid = branch.upstream().ok()?.get().target()?;
+    let mut revwalk = repo.revwalk().ok()?;
+    revwalk.push(local_oid).ok()?;
+
+    let mut count = 0_i64;
+    for commit_oid in revwalk {
+        let commit_oid = commit_oid.ok()?;
+        if classify_commit_push_state(repo, commit_oid, upstream_oid)? == "unpushed" {
+            count += 1;
+        }
+    }
+
+    Some(count)
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct CommitLog {
     pub hash: String,
@@ -110,6 +190,7 @@ pub struct WorkspaceDetails {
     pub ahead_count: i64,
     pub behind_count: i64,
     pub has_upstream: bool,
+    pub unpushed_commit_count: Option<i64>,
     pub ahead_of_default_count: i64,
     pub behind_default_count: i64,
 }
@@ -127,6 +208,7 @@ pub struct RepoGitStatusSnapshot {
     pub ahead_count: i64,
     pub behind_count: i64,
     pub has_upstream: bool,
+    pub unpushed_commit_count: Option<i64>,
     pub ahead_of_default_count: i64,
     pub behind_default_count: i64,
 }
@@ -1012,11 +1094,9 @@ pub async fn clone_remote_repository(
             builder.branch(branch_name);
         }
 
-        builder
-            .clone(&clone_url, &target_path)
-            .map_err(|error| {
-                describe_git_network_error(&format!("Failed to clone remote repository: {}", error))
-            })?;
+        builder.clone(&clone_url, &target_path).map_err(|error| {
+            describe_git_network_error(&format!("Failed to clone remote repository: {}", error))
+        })?;
     }
 
     let target_path_string = target_path
@@ -1578,13 +1658,9 @@ pub async fn add_new_tracked_path(
         .flatten();
 
         if let Some(remote_url) = remote_url {
-            let (origin_type, owner_login) = resolve_repository_origin_metadata(
-                &metadata_pool,
-                Some(&remote_url),
-                None,
-                true,
-            )
-            .await;
+            let (origin_type, owner_login) =
+                resolve_repository_origin_metadata(&metadata_pool, Some(&remote_url), None, true)
+                    .await;
             let _ = db::update_tracked_path_origin_metadata(
                 &metadata_pool,
                 &metadata_id,
@@ -1770,6 +1846,7 @@ pub async fn get_tracked_workspaces(
             cached_git_branches.ahead_count AS cached_ahead_count,
             cached_git_branches.behind_count AS cached_behind_count,
             cached_git_branches.has_upstream AS cached_has_upstream,
+            cached_git_branches.unpushed_commit_count AS cached_unpushed_commit_count,
             cached_git_branches.ahead_of_default_count AS cached_ahead_of_default_count,
             cached_git_branches.behind_default_count AS cached_behind_default_count,
             COALESCE(
@@ -1822,6 +1899,7 @@ pub async fn get_tracked_workspaces(
         let ahead_count: Option<i64> = row.get("cached_ahead_count");
         let behind_count: Option<i64> = row.get("cached_behind_count");
         let has_upstream_raw: Option<i64> = row.get("cached_has_upstream");
+        let unpushed_commit_count: Option<i64> = row.get("cached_unpushed_commit_count");
         let ahead_of_default_count: Option<i64> = row.get("cached_ahead_of_default_count");
         let behind_default_count: Option<i64> = row.get("cached_behind_default_count");
 
@@ -1876,6 +1954,7 @@ pub async fn get_tracked_workspaces(
             ahead_count: ahead_count.unwrap_or(0),
             behind_count: behind_count.unwrap_or(0),
             has_upstream: has_upstream_raw.unwrap_or(0) != 0,
+            unpushed_commit_count,
             ahead_of_default_count: ahead_of_default_count.unwrap_or(0),
             behind_default_count: behind_default_count.unwrap_or(0),
         });
@@ -2254,14 +2333,19 @@ pub fn determine_branch_topology(
     let oid_a = ref_a.id();
     let oid_b = ref_b.id();
 
-    let (parent_branch, child_branch, parent_oid, child_oid) =
-        if repo.graph_descendant_of(oid_a, oid_b).map_err(|e| e.to_string())? {
-            (normalized_branch_b, normalized_branch_a, oid_b, oid_a)
-        } else if repo.graph_descendant_of(oid_b, oid_a).map_err(|e| e.to_string())? {
-            (normalized_branch_a, normalized_branch_b, oid_a, oid_b)
-        } else {
-            return Err("Branches are not in a direct ancestor relationship".to_string());
-        };
+    let (parent_branch, child_branch, parent_oid, child_oid) = if repo
+        .graph_descendant_of(oid_a, oid_b)
+        .map_err(|e| e.to_string())?
+    {
+        (normalized_branch_b, normalized_branch_a, oid_b, oid_a)
+    } else if repo
+        .graph_descendant_of(oid_b, oid_a)
+        .map_err(|e| e.to_string())?
+    {
+        (normalized_branch_a, normalized_branch_b, oid_a, oid_b)
+    } else {
+        return Err("Branches are not in a direct ancestor relationship".to_string());
+    };
 
     let mut revwalk = repo.revwalk().map_err(|e| e.to_string())?;
     revwalk.push(child_oid).map_err(|e| e.to_string())?;
@@ -2402,6 +2486,9 @@ pub(crate) fn analyze_repository_git_status(
         Some(branch) => compute_upstream_sync(&repo, branch),
         None => (0, 0, false),
     };
+    let unpushed_commit_count = head_branch
+        .as_ref()
+        .and_then(|branch| compute_unpushed_commit_count(&repo, branch));
 
     let (ahead_of_default_count, behind_default_count) = match (&head_branch, &default_branch_name)
     {
@@ -2422,6 +2509,7 @@ pub(crate) fn analyze_repository_git_status(
         ahead_count,
         behind_count,
         has_upstream,
+        unpushed_commit_count,
         ahead_of_default_count,
         behind_default_count,
     })
@@ -3044,6 +3132,7 @@ pub(crate) async fn refresh_and_cache_git_status(
         snapshot.ahead_count,
         snapshot.behind_count,
         snapshot.has_upstream,
+        snapshot.unpushed_commit_count,
         snapshot.ahead_of_default_count,
         snapshot.behind_default_count,
     )
@@ -3102,7 +3191,8 @@ where
     } else {
         callbacks.credentials(authenticator.credentials(&config));
     }
-    action(callbacks).map_err(|e| describe_git_network_error(&format!("Git network operation failed: {}", e)))
+    action(callbacks)
+        .map_err(|e| describe_git_network_error(&format!("Git network operation failed: {}", e)))
 }
 
 async fn resolve_profile_for_repo(
@@ -3437,8 +3527,7 @@ mod tests {
             None
         );
         assert_eq!(
-            ensure_native_remote_access(Some(&test_profile("full_oauth", Some("token"))))
-                .unwrap(),
+            ensure_native_remote_access(Some(&test_profile("full_oauth", Some("token")))).unwrap(),
             Some("token".to_string())
         );
     }
@@ -3819,11 +3908,8 @@ mod tests {
         repo.branch("feature-a", &base_commit, false).unwrap();
         repo.branch("feature-b", &base_commit, false).unwrap();
 
-        let result = determine_branch_topology(
-            repo_path.to_str().unwrap(),
-            "feature-a",
-            "feature-b",
-        );
+        let result =
+            determine_branch_topology(repo_path.to_str().unwrap(), "feature-a", "feature-b");
         assert!(result.unwrap_err().contains("direct ancestor relationship"));
 
         fs::remove_dir_all(repo_path).unwrap();

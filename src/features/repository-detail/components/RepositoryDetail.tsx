@@ -19,6 +19,7 @@ export type CommitRecord = {
   commit_message: string;
   committed_at: string;
   signature_status: string | null;
+  push_state?: 'pushed' | 'unpushed' | 'unknown' | null;
 };
 
 export function RepositoryDetail({ isOpen, repo, onClose }: RepositoryDetailProps) {

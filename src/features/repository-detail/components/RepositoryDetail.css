@@ -322,10 +322,28 @@
   gap: 4px;
 }
 
-.repository-view-commit-hash {
+.repository-view-commit-hash-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 6px;
+  align-self: stretch;
+  min-width: 76px;
+  padding-left: 8px;
+  box-sizing: border-box;
+  position: relative;
   flex-shrink: 0;
+}
+
+.repository-view-commit-hash {
+  margin-top: auto;
   font-size: 11px;
   color: var(--app-muted);
+}
+
+.repository-view-commit-hash-stack .repository-view-commit-hash {
+  position: static;
 }
 
 .repository-view-detail-header {

@@ -352,4 +352,70 @@ describe('RepositoryCard', () => {
 
     expect(screen.queryByTestId('repository-view')).not.toBeInTheDocument();
   });
+
+  it('shows the push-needed indicator when the branch is ahead of its upstream', () => {
+    const repo = {
+      id: 'repo-ahead',
+      display_name: 'Ahead Repo',
+      absolute_path: 'C:/repos/ahead-repo',
+      status: 'ready',
+      is_favorite: 0,
+      tags: [],
+      available_branches: ['main'],
+      current_branch: 'main',
+      default_branch_name: 'main',
+      uncommitted_changes_count: 0,
+      has_upstream: true,
+      ahead_count: 1,
+      unpushed_commit_count: 1,
+      behind_count: 0,
+      ahead_of_default_count: 0,
+      behind_default_count: 0,
+      alias_name: '',
+      theme_color_hex: null,
+      icon_name: null,
+      group_id: null,
+      favorite: 0,
+      group_name: null,
+      origin_type: 'CONTRIBUTOR',
+    } as unknown as TrackedPath;
+
+    render(<RepositoryCard repo={repo} resolvedOriginType="CONTRIBUTOR" onRefresh={() => {}} />);
+
+    expect(screen.getByLabelText('Not pushed to upstream')).toBeInTheDocument();
+  });
+
+  it('hides the push-needed indicator when there are no local commits to push', () => {
+    const repo = {
+      id: 'repo-synced',
+      display_name: 'Synced Repo',
+      absolute_path: 'C:/repos/synced-repo',
+      status: 'ready',
+      has_upstream: true,
+      ahead_count: 0,
+      unpushed_commit_count: 0,
+      origin_type: 'CONTRIBUTOR',
+    } as unknown as TrackedPath;
+
+    render(<RepositoryCard repo={repo} resolvedOriginType="CONTRIBUTOR" onRefresh={() => {}} />);
+
+    expect(screen.queryByLabelText('Not pushed to upstream')).not.toBeInTheDocument();
+  });
+
+  it('hides the push-needed indicator when the branch has no upstream', () => {
+    const repo = {
+      id: 'repo-no-upstream',
+      display_name: 'No Upstream Repo',
+      absolute_path: 'C:/repos/no-upstream-repo',
+      status: 'ready',
+      has_upstream: false,
+      ahead_count: 1,
+      unpushed_commit_count: null,
+      origin_type: 'CONTRIBUTOR',
+    } as unknown as TrackedPath;
+
+    render(<RepositoryCard repo={repo} resolvedOriginType="CONTRIBUTOR" onRefresh={() => {}} />);
+
+    expect(screen.queryByLabelText('Not pushed to upstream')).not.toBeInTheDocument();
+  });
 });

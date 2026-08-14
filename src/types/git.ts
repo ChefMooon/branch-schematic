@@ -65,6 +65,8 @@ export interface TrackedPath {
   behind_count?: number;
   /** Whether the currently checked-out branch has an upstream remote-tracking branch configured */
   has_upstream?: boolean;
+  /** Number of commits classified as unpushed relative to the configured upstream; null when unknown */
+  unpushed_commit_count?: number | null;
   /** The repository's default/head branch name (e.g. "main"), resolved from origin/HEAD or a main/master heuristic */
   default_branch_name?: string | null;
   /** Number of commits the current branch has that the default branch doesn't */
@@ -140,6 +142,7 @@ export interface RepoGitStatusSnapshot {
   ahead_count: number;
   behind_count: number;
   has_upstream: boolean;
+  unpushed_commit_count: number | null;
   ahead_of_default_count: number;
   behind_default_count: number;
 }

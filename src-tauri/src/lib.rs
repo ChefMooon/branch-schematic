@@ -1075,9 +1075,15 @@ async fn get_branch_commits(
     branch_id: String,
     limit: i64,
 ) -> Result<Vec<db::CachedCommitRow>, String> {
-    db::fetch_branch_commits(state.inner().pool(), &branch_id, limit)
+    let context = db::fetch_branch_context(state.inner().pool(), &branch_id)
         .await
-        .map_err(|error| error.to_string())
+        .map_err(|error| format!("Failed to resolve branch context: {error}"))?
+        .ok_or_else(|| format!("Branch not found: {branch_id}"))?;
+    let mut commits = db::fetch_branch_commits(state.inner().pool(), &branch_id, limit)
+        .await
+        .map_err(|error| error.to_string())?;
+    git::enrich_commit_push_states(&context.absolute_path, &context.branch_name, &mut commits)?;
+    Ok(commits)
 }
 
 #[tauri::command]

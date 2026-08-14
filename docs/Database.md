@@ -106,6 +106,7 @@ erDiagram
         INTEGER ahead_count
         INTEGER behind_count
         INTEGER has_upstream
+        INTEGER unpushed_commit_count NULL
         INTEGER ahead_of_default_count
         INTEGER behind_default_count
         TEXT last_commit_hash

@@ -932,6 +932,10 @@
   color: var(--app-muted);
 }
 
+.repo-push-status-indicator {
+  margin-left: auto;
+}
+
 .status-pills-group {
   display: flex;
   align-items: center;
