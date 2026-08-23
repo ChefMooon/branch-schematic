@@ -1,77 +1,91 @@
 # Codebase Context Snapshot
 
-=========================================
-📅 **Snapshot Updated:** Aug 7, 2026, 5:04 PM
-📦 **Key Dependencies:**
-  - `react`: ^19.1.0
-  - `react-dom`: ^19.1.0
-  - `@tauri-apps/api`: ^2
-  - `@tauri-apps/plugin-sql`: ^2.4.0
-=========================================
+## Key Dependencies
 
+- `@tauri-apps/api`: ^2
+- `@tauri-apps/cli`: ^2
+- `react`: ^19.1.0
+- `react-dom`: ^19.1.0
+- `vite`: ^7.0.4
+- `vitest`: ^2.1.4
 
-> 🔄 **To Regenerate This File:** If files or folders have changed, run:
-> ```bash
-> npm run docs:code
-> ```
+## Project Structure
 
-## 📂 Project Structure
 ```text
 branch-schematic/
 ├── .env
+├── .github/
+│   ├── copilot-instructions.md
+│   └── workflows/
+│       └── deploy-docs.yml
 ├── .gitignore
-├── .tmp
+├── .tanstack/
+│   └── tmp/
+├── .tmp/
 │   └── stage-9-benchmark-2000.json
-├── img
+├── .vscode/
+│   ├── extensions.json
+│   └── tasks.json
+├── arch-snap.json
+├── img/
 │   └── dashboard.png
 ├── index.html
 ├── package-lock.json
 ├── package.json
+├── public/
+│   └── logo.svg
 ├── README.md
-├── src
+├── scripts/
+│   ├── analyze-bundle.js
+│   ├── benchmark-repository-update.js
+│   └── evaluate-rollout.js
+├── src/
 │   ├── App.css
-│   ├── assets
+│   ├── assets/
 │   │   └── react.svg
-│   ├── components
-│   │   ├── app-logo
+│   ├── components/
+│   │   ├── app-logo/
 │   │   │   └── AppLogo.tsx
-│   │   ├── button
+│   │   ├── button/
 │   │   │   ├── Button.css
 │   │   │   └── Button.tsx
-│   │   ├── collapsible-panel
+│   │   ├── collapsible-panel/
 │   │   │   └── CollapsiblePanel.tsx
-│   │   ├── color-picker
+│   │   ├── color-picker/
 │   │   │   └── ColorPicker.tsx
-│   │   ├── database-recovery
+│   │   ├── database-recovery/
 │   │   │   ├── DatabaseRecoveryGate.css
 │   │   │   └── DatabaseRecoveryGate.tsx
-│   │   ├── layout
+│   │   ├── layout/
 │   │   │   ├── AppLayout.test.tsx
 │   │   │   ├── AppLayout.tsx
 │   │   │   ├── AppSidebar.tsx
 │   │   │   ├── titlebar.css
 │   │   │   └── WindowControls.tsx
-│   │   ├── Modal
+│   │   ├── Modal/
 │   │   │   ├── ConfirmationModal.test.tsx
 │   │   │   ├── ConfirmationModal.tsx
 │   │   │   └── TextInputModal.tsx
-│   │   ├── notifications
+│   │   ├── notifications/
 │   │   │   ├── NotificationDropdown.tsx
 │   │   │   ├── NotificationProvider.tsx
 │   │   │   ├── toast.tsx
 │   │   │   ├── toastLifecycle.test.ts
 │   │   │   └── toastLifecycle.ts
-│   │   ├── search-bar
+│   │   ├── push-status-indicator/
+│   │   │   ├── PushStatusIndicator.css
+│   │   │   └── PushStatusIndicator.tsx
+│   │   ├── search-bar/
 │   │   │   ├── SearchBar.css
 │   │   │   ├── SearchBar.test.tsx
 │   │   │   └── SearchBar.tsx
-│   │   └── tabs
+│   │   └── tabs/
 │   │       ├── Tabs.css
 │   │       ├── Tabs.test.tsx
 │   │       └── Tabs.tsx
-│   ├── features
-│   │   ├── auth-profile
-│   │   │   ├── components
+│   ├── features/
+│   │   ├── auth-profile/
+│   │   │   ├── components/
 │   │   │   │   ├── OAuthConnectButton.tsx
 │   │   │   │   ├── ProfileDropdown.test.tsx
 │   │   │   │   ├── ProfileDropdown.tsx
@@ -80,19 +94,19 @@ branch-schematic/
 │   │   │   │   ├── ProfileListItem.tsx
 │   │   │   │   ├── ProfileManagementModal.test.tsx
 │   │   │   │   └── ProfileManagementModal.tsx
-│   │   │   ├── hooks
+│   │   │   ├── hooks/
 │   │   │   │   ├── useOAuthFlow.ts
 │   │   │   │   └── useProfileContext.ts
-│   │   │   ├── stores
+│   │   │   ├── stores/
 │   │   │   │   ├── profileStore.test.ts
 │   │   │   │   └── profileStore.ts
-│   │   │   ├── types
+│   │   │   ├── types/
 │   │   │   │   └── index.ts
-│   │   │   └── utils
+│   │   │   └── utils/
 │   │   │       └── profileAvatar.ts
-│   │   ├── branch-map
+│   │   ├── branch-map/
 │   │   │   ├── BranchMap.tsx
-│   │   │   ├── components
+│   │   │   ├── components/
 │   │   │   │   ├── BranchCard.tsx
 │   │   │   │   ├── CommitTimeline.tsx
 │   │   │   │   ├── MapToolbar.test.tsx
@@ -105,25 +119,25 @@ branch-schematic/
 │   │   │   │   └── ViewSelectorTabs.tsx
 │   │   │   ├── viewportSync.test.ts
 │   │   │   └── viewportSync.ts
-│   │   ├── canvas-views
-│   │   │   └── components
+│   │   ├── canvas-views/
+│   │   │   └── components/
 │   │   │       ├── canvasViews.css
 │   │   │       ├── CreateViewModal.tsx
 │   │   │       ├── RepositoryScopeSelector.test.tsx
 │   │   │       ├── RepositoryScopeSelector.tsx
 │   │   │       ├── scopeSelection.test.ts
 │   │   │       ├── scopeSelection.ts
-│   │   │       ├── Tabs
+│   │   │       ├── Tabs/
 │   │   │       │   ├── TabMetadataSettings.tsx
 │   │   │       │   └── TabScopeSettings.tsx
 │   │   │       ├── ViewDetailsConfigurator.tsx
 │   │   │       ├── ViewManagerModal.tsx
 │   │   │       ├── ViewManagerSidebar.test.tsx
 │   │   │       └── ViewManagerSidebar.tsx
-│   │   ├── dashboard
-│   │   │   ├── components
+│   │   ├── dashboard/
+│   │   │   ├── components/
 │   │   │   │   ├── BulkActionToolbar.tsx
-│   │   │   │   ├── common
+│   │   │   │   ├── common/
 │   │   │   │   │   ├── FilterDropdown.module.css
 │   │   │   │   │   ├── FilterDropdown.test.tsx
 │   │   │   │   │   ├── FilterDropdown.tsx
@@ -131,7 +145,7 @@ branch-schematic/
 │   │   │   │   ├── Dashboard.css
 │   │   │   │   ├── DashboardMain.test.tsx
 │   │   │   │   ├── DashboardMain.tsx
-│   │   │   │   ├── RepositoryCard
+│   │   │   │   ├── RepositoryCard/
 │   │   │   │   │   ├── AliasEditPopover.tsx
 │   │   │   │   │   ├── menuPosition.test.ts
 │   │   │   │   │   ├── menuPosition.ts
@@ -149,42 +163,60 @@ branch-schematic/
 │   │   │   │   │   └── RepoThemeModal.tsx
 │   │   │   │   ├── RepositoryCard.test.tsx
 │   │   │   │   ├── RepositoryCard.tsx
+│   │   │   │   ├── RepositoryCardSkeleton.tsx
 │   │   │   │   └── WorkspaceQuickFilters.tsx
-│   │   │   └── hooks
+│   │   │   └── hooks/
 │   │   │       ├── useResolveRepoOrigin.ts
 │   │   │       └── useVerifyRepositories.ts
-│   │   ├── github-auth
-│   │   │   ├── api
-│   │   │   ├── hooks
+│   │   ├── github-auth/
+│   │   │   ├── api/
+│   │   │   ├── hooks/
 │   │   │   │   ├── useGithubRepositories.test.tsx
 │   │   │   │   └── useGithubRepositories.ts
-│   │   │   └── types
+│   │   │   └── types/
 │   │   │       └── index.ts
-│   │   ├── icon
-│   │   │   ├── components
+│   │   ├── icon/
+│   │   │   ├── components/
 │   │   │   │   └── IconSelector.tsx
-│   │   │   └── utils
+│   │   │   └── utils/
 │   │   │       └── iconRegistry.ts
-│   │   ├── management
-│   │   │   └── components
+│   │   ├── management/
+│   │   │   └── components/
 │   │   │       ├── SettingsManagementModal.test.tsx
 │   │   │       └── SettingsManagementModal.tsx
-│   │   ├── repository
-│   │   │   ├── components
+│   │   ├── onboarding/
+│   │   │   ├── components/
+│   │   │   │   ├── OnboardingPresentation.css
+│   │   │   │   ├── OnboardingPresentation.test.tsx
+│   │   │   │   └── OnboardingPresentation.tsx
+│   │   │   ├── hooks/
+│   │   │   │   ├── useOnboarding.test.tsx
+│   │   │   │   └── useOnboarding.tsx
+│   │   │   └── types/
+│   │   │       └── index.ts
+│   │   ├── repository/
+│   │   │   ├── components/
+│   │   │   │   ├── AddLocalRepositoryModal.test.tsx
 │   │   │   │   ├── AddLocalRepositoryModal.tsx
+│   │   │   │   ├── ApplicationImportRecoveryModal.tsx
+│   │   │   │   ├── BulkImportLocalRepositoryModal.test.tsx
 │   │   │   │   ├── BulkImportLocalRepositryModal.tsx
 │   │   │   │   ├── CloneRemoteRepositoryModal.css
 │   │   │   │   ├── CloneRemoteRepositoryModal.test.tsx
 │   │   │   │   ├── CloneRemoteRepositoryModal.tsx
 │   │   │   │   ├── CreateRepositoryModal.tsx
+│   │   │   │   ├── ImportStatusOverlay.tsx
 │   │   │   │   ├── RepositoryDropdown.test.tsx
 │   │   │   │   ├── RepositoryDropdown.tsx
 │   │   │   │   └── RepositoryModalShell.tsx
-│   │   │   ├── types
+│   │   │   ├── stores/
+│   │   │   │   ├── import-store.test.ts
+│   │   │   │   └── import-store.ts
+│   │   │   ├── types/
 │   │   │   │   └── index.ts
-│   │   │   └── utils
-│   │   ├── repository-detail
-│   │   │   ├── components
+│   │   │   └── utils/
+│   │   ├── repository-detail/
+│   │   │   ├── components/
 │   │   │   │   ├── RepositoryChangeGroup.tsx
 │   │   │   │   ├── RepositoryChangesListPanel.tsx
 │   │   │   │   ├── RepositoryChangesPreviewPanel.tsx
@@ -200,30 +232,37 @@ branch-schematic/
 │   │   │   │   ├── RepositoryDetailHeader.test.tsx
 │   │   │   │   ├── RepositoryDetailHeader.tsx
 │   │   │   │   └── RepositoryDiffPreview.tsx
-│   │   │   ├── hooks
+│   │   │   ├── hooks/
 │   │   │   │   ├── useRepositoryChanges.ts
 │   │   │   │   ├── useRepositoryFileDiff.ts
 │   │   │   │   └── useResizableChangesPanels.ts
-│   │   │   └── types
+│   │   │   └── types/
 │   │   │       └── repositoryChanges.ts
-│   │   └── repository-update-diagnostics
-│   │       ├── components
+│   │   ├── repository-open/
+│   │   │   ├── components/
+│   │   │   │   └── OpenWithModal.tsx
+│   │   │   ├── hooks/
+│   │   │   │   └── useRepositoryOpenActions.ts
+│   │   │   ├── repositoryOpenApi.ts
+│   │   │   └── types.ts
+│   │   └── repository-update-diagnostics/
+│   │       ├── components/
 │   │       │   ├── RepositoryUpdateDiagnosticsModal.css
 │   │       │   ├── RepositoryUpdateDiagnosticsModal.test.tsx
 │   │       │   └── RepositoryUpdateDiagnosticsModal.tsx
-│   │       ├── hooks
+│   │       ├── hooks/
 │   │       │   └── useRepositoryUpdateDiagnostics.ts
-│   │       └── types
+│   │       └── types/
 │   │           └── repositoryUpdateDiagnostics.ts
-│   ├── hooks
+│   ├── hooks/
 │   │   ├── useBackdropDismiss.ts
 │   │   ├── useClickOutside.ts
 │   │   ├── useNotificationListener.ts
 │   │   └── useOS.ts
-│   ├── lib
+│   ├── lib/
 │   │   └── db.ts
 │   ├── main.tsx
-│   ├── routes
+│   ├── routes/
 │   │   ├── __root.tsx
 │   │   ├── about.tsx
 │   │   ├── branch-map.tsx
@@ -231,34 +270,96 @@ branch-schematic/
 │   │   ├── index.tsx
 │   │   └── settings.tsx
 │   ├── routeTree.gen.ts
-│   ├── stores
+│   ├── stores/
 │   │   ├── canvas-store.ts
 │   │   ├── workspace-store.test.ts
 │   │   ├── workspace-store.ts
 │   │   └── workspace-update-sync.test.ts
-│   ├── test
+│   ├── test/
 │   │   └── setup.ts
 │   ├── theme.ts
-│   ├── types
+│   ├── types/
 │   │   └── git.ts
 │   └── vite-env.d.ts
-├── src-tauri
+├── src-tauri/
 │   ├── .gitignore
 │   ├── 2
 │   ├── build.rs
-│   ├── capabilities
+│   ├── capabilities/
 │   │   ├── default.json
 │   │   └── desktop.json
 │   ├── Cargo.lock
 │   ├── Cargo.toml
-│   ├── examples
-│   ├── gen
-│   │   └── schemas
+│   ├── examples/
+│   ├── gen/
+│   │   └── schemas/
 │   │       ├── acl-manifests.json
 │   │       ├── capabilities.json
 │   │       ├── desktop-schema.json
 │   │       └── windows-schema.json
-│   ├── src
+│   ├── icons/
+│   │   ├── 128x128.png
+│   │   ├── 128x128@2x.png
+│   │   ├── 32x32.png
+│   │   ├── 64x64.png
+│   │   ├── android/
+│   │   │   ├── mipmap-anydpi-v26/
+│   │   │   │   └── ic_launcher.xml
+│   │   │   ├── mipmap-hdpi/
+│   │   │   │   ├── ic_launcher.png
+│   │   │   │   ├── ic_launcher_foreground.png
+│   │   │   │   └── ic_launcher_round.png
+│   │   │   ├── mipmap-mdpi/
+│   │   │   │   ├── ic_launcher.png
+│   │   │   │   ├── ic_launcher_foreground.png
+│   │   │   │   └── ic_launcher_round.png
+│   │   │   ├── mipmap-xhdpi/
+│   │   │   │   ├── ic_launcher.png
+│   │   │   │   ├── ic_launcher_foreground.png
+│   │   │   │   └── ic_launcher_round.png
+│   │   │   ├── mipmap-xxhdpi/
+│   │   │   │   ├── ic_launcher.png
+│   │   │   │   ├── ic_launcher_foreground.png
+│   │   │   │   └── ic_launcher_round.png
+│   │   │   ├── mipmap-xxxhdpi/
+│   │   │   │   ├── ic_launcher.png
+│   │   │   │   ├── ic_launcher_foreground.png
+│   │   │   │   └── ic_launcher_round.png
+│   │   │   └── values/
+│   │   │       └── ic_launcher_background.xml
+│   │   ├── icon.icns
+│   │   ├── icon.ico
+│   │   ├── icon.png
+│   │   ├── ios/
+│   │   │   ├── AppIcon-20x20@1x.png
+│   │   │   ├── AppIcon-20x20@2x-1.png
+│   │   │   ├── AppIcon-20x20@2x.png
+│   │   │   ├── AppIcon-20x20@3x.png
+│   │   │   ├── AppIcon-29x29@1x.png
+│   │   │   ├── AppIcon-29x29@2x-1.png
+│   │   │   ├── AppIcon-29x29@2x.png
+│   │   │   ├── AppIcon-29x29@3x.png
+│   │   │   ├── AppIcon-40x40@1x.png
+│   │   │   ├── AppIcon-40x40@2x-1.png
+│   │   │   ├── AppIcon-40x40@2x.png
+│   │   │   ├── AppIcon-40x40@3x.png
+│   │   │   ├── AppIcon-512@2x.png
+│   │   │   ├── AppIcon-60x60@2x.png
+│   │   │   ├── AppIcon-60x60@3x.png
+│   │   │   ├── AppIcon-76x76@1x.png
+│   │   │   ├── AppIcon-76x76@2x.png
+│   │   │   └── AppIcon-83.5x83.5@2x.png
+│   │   ├── Square107x107Logo.png
+│   │   ├── Square142x142Logo.png
+│   │   ├── Square150x150Logo.png
+│   │   ├── Square284x284Logo.png
+│   │   ├── Square30x30Logo.png
+│   │   ├── Square310x310Logo.png
+│   │   ├── Square44x44Logo.png
+│   │   ├── Square71x71Logo.png
+│   │   ├── Square89x89Logo.png
+│   │   └── StoreLogo.png
+│   ├── src/
 │   │   ├── auth.rs
 │   │   ├── db.rs
 │   │   ├── git.rs
@@ -267,7 +368,8 @@ branch-schematic/
 │   │   ├── lib.rs
 │   │   ├── main.rs
 │   │   ├── manager.rs
-│   │   └── refresh.rs
+│   │   ├── refresh.rs
+│   │   └── repository_open.rs
 │   ├── tauri.conf.json
 │   ├── tauri.linux.conf.json
 │   └── tauri.windows.conf.json
@@ -276,10 +378,10 @@ branch-schematic/
 ├── vite.config.ts
 ├── vitest-results.json
 ├── vitest.config.ts
-└── website
-    ├── .vitepress
-    │   ├── cache
-    │   │   └── deps
+└── website/
+    ├── .vitepress/
+    │   ├── cache/
+    │   │   └── deps/
     │   │       ├── _metadata.json
     │   │       ├── chunk-3ZOBRW44.js
     │   │       ├── chunk-3ZOBRW44.js.map
@@ -291,11 +393,20 @@ branch-schematic/
     │   │       ├── vue.js
     │   │       └── vue.js.map
     │   ├── config.mts
-    │   └── theme
+    │   └── theme/
     │       ├── index.ts
     │       └── style.css
+    ├── docs/
+    │   ├── branch-map.md
+    │   ├── dashboard.md
+    │   ├── index.md
+    │   └── releases.md
     ├── index.md
     ├── package-lock.json
     ├── package.json
+    ├── public/
+    │   ├── favicon.ico
+    │   └── favicon.svg
     └── vite-env.d.ts
 ```
+

@@ -59,11 +59,83 @@
             }
         },
         {
+            "label": "Generate IPC Documentation",
+            "type": "shell",
+            "command": "npm",
+            "args": [
+                "run",
+                "docs:ipc"
+            ],
+            "problemMatcher": [],
+            "presentation": {
+                "echo": true,
+                "reveal": "silent",
+                "focus": false,
+                "panel": "shared",
+                "showReuseMessage": false
+            }
+        },
+        {
+            "label": "Generate Component Tree",
+            "type": "shell",
+            "command": "npm",
+            "args": [
+                "run",
+                "docs:components"
+            ],
+            "problemMatcher": [],
+            "presentation": {
+                "echo": true,
+                "reveal": "silent",
+                "focus": false,
+                "panel": "shared",
+                "showReuseMessage": false
+            }
+        },
+        {
+            "label": "Generate State Documentation",
+            "type": "shell",
+            "command": "npm",
+            "args": [
+                "run",
+                "docs:state"
+            ],
+            "problemMatcher": [],
+            "presentation": {
+                "echo": true,
+                "reveal": "silent",
+                "focus": false,
+                "panel": "shared",
+                "showReuseMessage": false
+            }
+        },
+        {
+            "label": "Generate Test Documentation",
+            "type": "shell",
+            "command": "npm",
+            "args": [
+                "run",
+                "docs:tests"
+            ],
+            "problemMatcher": [],
+            "presentation": {
+                "echo": true,
+                "reveal": "silent",
+                "focus": false,
+                "panel": "shared",
+                "showReuseMessage": false
+            }
+        },
+        {
             "label": "Generate All Documentation",
             "dependsOrder": "sequence",
             "dependsOn": [
                 "Generate Codebase Map",
-                "Generate Database Docs"
+                "Generate Database Docs",
+                "Generate IPC Documentation",
+                "Generate State Documentation",
+                "Generate Component Tree",
+                "Generate Test Documentation"
             ],
             "problemMatcher": [],
             "presentation": {

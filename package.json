@@ -12,8 +12,14 @@
     "analyze:bundle": "npm run build && node scripts/analyze-bundle.js",
     "bench:repo-updates": "node scripts/benchmark-repository-update.js",
     "rollout:check": "node scripts/evaluate-rollout.js",
-    "docs:code": "node scripts/generate-codebase-map.js",
-    "docs:db": "node scripts/generate-database.js"
+    "docs:all": "arch-snap run",
+    "docs:index": "arch-snap run index",
+    "docs:code": "arch-snap run codebase",
+    "docs:components": "arch-snap run components",
+    "docs:db": "arch-snap run database",
+    "docs:ipc": "arch-snap run ipc",
+    "docs:state": "arch-snap run state",
+    "docs:tests": "arch-snap run tests"
   },
   "dependencies": {
     "@phosphor-icons/react": "^2.1.10",
