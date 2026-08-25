@@ -1393,6 +1393,8 @@ pub fn run() {
             git::get_repository_changes_if_changed,
             git::get_latest_commit,
             git::get_repository_file_diff,
+            git::get_commit_changed_files,
+            git::get_commit_file_diff,
             git::stage_repository_paths,
             git::unstage_repository_paths,
             git::create_commit,

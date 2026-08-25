@@ -69,6 +69,9 @@ describe('RepositoryDetailChangesTab', () => {
     });
 
     const divider = screen.getByRole('separator', { name: /resize changes panels/i });
+    expect(divider).toHaveAttribute('aria-valuenow', '28');
+    expect(divider).toHaveAttribute('aria-valuemin', '28');
+    expect(divider).toHaveAttribute('aria-valuemax', '72');
     const event = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
 
     act(() => {
@@ -223,5 +226,47 @@ describe('RepositoryDetailChangesTab', () => {
     });
     expect(screen.getByPlaceholderText('Describe the changes')).toHaveValue('');
     expect(screen.getByPlaceholderText('Optional details')).toHaveValue('');
+  });
+
+  it('restores persisted panel ratios on mount and falls back to defaults without them', async () => {
+    mockChanges();
+    const onPersistPanelRatios = vi.fn();
+    const { unmount } = render(
+      <RepositoryDetailChangesTab
+        repo={repo}
+        persistedPanelRatios={{ changes: 0.4 }}
+        onPersistPanelRatios={onPersistPanelRatios}
+      />,
+    );
+
+    expect(screen.getByRole('separator', { name: /resize changes panels/i })).toHaveAttribute('aria-valuenow', '40');
+    await waitFor(() => {
+      expect(onPersistPanelRatios).toHaveBeenCalledWith(expect.objectContaining({ changes: 0.4 }));
+    });
+
+    unmount();
+    render(<RepositoryDetailChangesTab repo={repo} />);
+    expect(screen.getByRole('separator', { name: /resize changes panels/i })).toHaveAttribute('aria-valuenow', '28');
+  });
+
+  it('commits nudged ratios to the persistence handler after keyboard resize', async () => {
+    mockChanges();
+    const onPersistPanelRatios = vi.fn();
+    render(
+      <RepositoryDetailChangesTab
+        repo={repo}
+        persistedPanelRatios={{ changes: 0.4 }}
+        onPersistPanelRatios={onPersistPanelRatios}
+      />,
+    );
+
+    fireEvent.keyDown(screen.getByRole('separator', { name: /resize changes panels/i }), { key: 'ArrowRight' });
+    expect(screen.getByRole('separator', { name: /resize changes panels/i })).toHaveAttribute('aria-valuenow', '41');
+
+    await waitFor(() => {
+      const committedCalls = onPersistPanelRatios.mock.calls;
+      const committed = committedCalls[committedCalls.length - 1]?.[0]?.changes;
+      expect(committed).toBeCloseTo(0.41, 10);
+    });
   });
 });

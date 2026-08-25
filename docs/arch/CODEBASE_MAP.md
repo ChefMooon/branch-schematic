@@ -234,8 +234,7 @@ branch-schematic/
 │   │   │   │   └── RepositoryDiffPreview.tsx
 │   │   │   ├── hooks/
 │   │   │   │   ├── useRepositoryChanges.ts
-│   │   │   │   ├── useRepositoryFileDiff.ts
-│   │   │   │   └── useResizableChangesPanels.ts
+│   │   │   │   └── useRepositoryFileDiff.ts
 │   │   │   └── types/
 │   │   │       └── repositoryChanges.ts
 │   │   ├── repository-open/

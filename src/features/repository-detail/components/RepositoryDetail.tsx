@@ -32,6 +32,12 @@ export function RepositoryDetail({ isOpen, repo, onClose }: RepositoryDetailProp
   const [isLoadingCommits, setIsLoadingCommits] = useState(false);
   const [previewBranch, setPreviewBranch] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'commits' | 'changes'>('commits');
+  const [persistedPanelRatios, setPersistedPanelRatios] = useState<Record<string, number>>({});
+
+  useEffect(() => {
+    if (isOpen) return;
+    setPersistedPanelRatios({});
+  }, [isOpen]);
 
   useEffect(() => {
     selectedCommitHashRef.current = selectedCommitHash;
@@ -39,6 +45,10 @@ export function RepositoryDetail({ isOpen, repo, onClose }: RepositoryDetailProp
 
   const handleHistoryChanged = useCallback(() => {
     setCommitsRefreshToken((token) => token + 1);
+  }, []);
+
+  const handlePersistPanelRatios = useCallback((ratios: Record<string, number>) => {
+    setPersistedPanelRatios((current) => ({ ...current, ...ratios }));
   }, []);
 
   useEffect(() => {
@@ -222,6 +232,8 @@ export function RepositoryDetail({ isOpen, repo, onClose }: RepositoryDetailProp
             onSelectCommit={setSelectedCommitHash}
             activeTab={activeTab}
             onTabChange={setActiveTab}
+            persistedPanelRatios={persistedPanelRatios}
+            onPersistPanelRatios={handlePersistPanelRatios}
           />
         </div>
       </div>

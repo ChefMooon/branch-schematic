@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
+import { ResizeDivider } from '../../../components/resize-divider/ResizeDivider';
+import { useResizablePanels, type ResizablePanelConfig } from '../../../hooks/useResizablePanels';
 import type { TrackedPath } from '../../../types/git';
 import { useRepositoryChanges } from '../hooks/useRepositoryChanges';
 import { useRepositoryFileDiff } from '../hooks/useRepositoryFileDiff';
-import { useResizableChangesPanels } from '../hooks/useResizableChangesPanels';
 import { groupChanges, type ChangeGroupKey } from '../types/repositoryChanges';
 import { RepositoryChangesListPanel } from './RepositoryChangesListPanel';
 import { RepositoryChangesPreviewPanel } from './RepositoryChangesPreviewPanel';
@@ -10,9 +11,21 @@ import { RepositoryCommitComposer } from './RepositoryCommitComposer';
 
 interface RepositoryDetailChangesTabProps {
   repo: TrackedPath | null;
+  persistedPanelRatios?: Record<string, number>;
+  onPersistPanelRatios?: (ratios: Record<string, number>) => void;
 }
 
-export function RepositoryDetailChangesTab({ repo }: RepositoryDetailChangesTabProps) {
+const CHANGES_PANEL_CONFIGS: ResizablePanelConfig[] = [
+  { id: 'changes', defaultRatio: 0.28, minRatio: 0.28, maxRatio: 0.72 },
+];
+
+const KEYBOARD_NUDGE_STEP = 0.01;
+
+export function RepositoryDetailChangesTab({
+  repo,
+  persistedPanelRatios,
+  onPersistPanelRatios,
+}: RepositoryDetailChangesTabProps) {
   const {
     snapshot,
     latestCommit,
@@ -29,7 +42,17 @@ export function RepositoryDetailChangesTab({ repo }: RepositoryDetailChangesTabP
     runAction,
     undoLatestCommit,
   } = useRepositoryChanges(repo);
-  const { containerRef, splitRatio, handleResizeStart } = useResizableChangesPanels();
+  const {
+    registerContainer,
+    ratios,
+    startResize,
+    resizeBy,
+    getEffectiveBounds,
+  } = useResizablePanels(CHANGES_PANEL_CONFIGS, {
+    initialRatios: persistedPanelRatios,
+    onRatiosCommit: onPersistPanelRatios,
+  });
+  const changesBounds = getEffectiveBounds('changes');
   const [title, setTitle] = useState('');
   const [body, setBody] = useState('');
   const [viewMode, setViewMode] = useState<'unified' | 'split'>('unified');
@@ -70,10 +93,10 @@ export function RepositoryDetailChangesTab({ repo }: RepositoryDetailChangesTabP
 
   return (
     <section className="repository-view-changes-tab" aria-label="Repository changes">
-      <div className="repository-view-changes-shell" ref={containerRef}>
+      <div className="repository-view-changes-shell" ref={registerContainer('changes')}>
         <RepositoryChangesListPanel
           repo={repo}
-          splitRatio={splitRatio}
+          splitRatio={ratios.changes}
           isLoading={isLoading}
           isRefreshing={isRefreshing}
           isBusy={isBusy}
@@ -105,13 +128,14 @@ export function RepositoryDetailChangesTab({ repo }: RepositoryDetailChangesTabP
           />
         </RepositoryChangesListPanel>
 
-        <div
+        <ResizeDivider
+          label="Resize changes panels"
+          ratio={ratios.changes}
+          minRatio={changesBounds.min}
+          maxRatio={changesBounds.max}
+          onResizeStart={startResize('changes')}
+          onNudge={(direction) => resizeBy('changes', direction * KEYBOARD_NUDGE_STEP)}
           className="repository-view-changes-divider"
-          onMouseDown={handleResizeStart}
-          onDragStart={(event) => event.preventDefault()}
-          role="separator"
-          aria-orientation="vertical"
-          aria-label="Resize changes panels"
         />
 
         <RepositoryChangesPreviewPanel

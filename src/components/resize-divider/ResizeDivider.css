@@ -1,0 +1,9 @@
+.resize-divider {
+  width: 8px;
+  flex-shrink: 0;
+  cursor: col-resize;
+  background: color-mix(in srgb, var(--app-border) 70%, transparent);
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+}

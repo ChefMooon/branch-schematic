@@ -168,6 +168,15 @@ pub struct RepositoryFileDiff {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct CommitChangedFile {
+    pub path: String,
+    pub old_path: Option<String>,
+    pub status: String,
+    pub is_binary: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct WorkspaceDetails {
     pub id: String,
     pub display_name: String,
@@ -2743,6 +2752,219 @@ pub async fn get_repository_file_diff(
     })
 }
 
+fn resolve_commit_and_parent_trees<'repo>(
+    repo: &'repo Repository,
+    commit_hash: &str,
+) -> Result<(git2::Tree<'repo>, Option<git2::Tree<'repo>>), String> {
+    let oid = Oid::from_str(commit_hash)
+        .map_err(|error| format!("Invalid commit hash '{commit_hash}': {error}"))?;
+    let commit = repo
+        .find_commit(oid)
+        .map_err(|error| format!("Failed to resolve commit '{commit_hash}': {error}"))?;
+
+    let commit_tree = commit
+        .tree()
+        .map_err(|error| format!("Failed to read the tree of commit '{commit_hash}': {error}"))?;
+    let parent_tree = if commit.parent_count() > 0 {
+        Some(
+            commit
+                .parent(0)
+                .and_then(|parent| parent.tree())
+                .map_err(|error| {
+                    format!("Failed to read the parent tree of commit '{commit_hash}': {error}")
+                })?,
+        )
+    } else {
+        None
+    };
+
+    Ok((commit_tree, parent_tree))
+}
+
+fn commit_delta_status(status: git2::Delta) -> &'static str {
+    match status {
+        git2::Delta::Added => "added",
+        git2::Delta::Deleted => "deleted",
+        git2::Delta::Renamed => "renamed",
+        git2::Delta::Copied => "copied",
+        _ => "modified",
+    }
+}
+
+fn diff_commit_against_parent_tree<'repo>(
+    repo: &'repo Repository,
+    commit_tree: &'repo git2::Tree<'repo>,
+    parent_tree: Option<&'repo git2::Tree<'repo>>,
+    pathspec: Option<&str>,
+) -> Result<git2::Diff<'repo>, String> {
+    let mut options = git2::DiffOptions::new();
+    if let Some(path) = pathspec {
+        options.pathspec(path);
+    }
+
+    let mut diff = repo
+        .diff_tree_to_tree(parent_tree, Some(commit_tree), Some(&mut options))
+        .map_err(|error| format!("Failed to compare the commit against its parent: {error}"))?;
+
+    let mut find_options = git2::DiffFindOptions::new();
+    find_options.renames(true).copies(true);
+    diff.find_similar(Some(&mut find_options))
+        .map_err(|error| format!("Failed to detect renames in the commit: {error}"))?;
+
+    Ok(diff)
+}
+
+/// Lists every file changed by a single commit, diffed against its first parent
+/// (root commits diff against the empty tree). Rename/copy detection is enabled;
+/// each entry carries the destination path, an optional source path for renames
+/// and copies, a status label (`added` / `deleted` / `modified` / `renamed` /
+/// `copied`), and a binary flag when known. Results are sorted by path ascending.
+#[tauri::command]
+pub async fn get_commit_changed_files(
+    absolute_path: String,
+    commit_hash: String,
+) -> Result<Vec<CommitChangedFile>, String> {
+    let repo = Repository::open(&absolute_path)
+        .map_err(|error| format!("Failed to open Git repository: {error}"))?;
+    let (commit_tree, parent_tree) = resolve_commit_and_parent_trees(&repo, &commit_hash)?;
+    let diff = diff_commit_against_parent_tree(&repo, &commit_tree, parent_tree.as_ref(), None)?;
+
+    let mut files = Vec::new();
+    for delta in diff.deltas() {
+        let status = commit_delta_status(delta.status());
+        let path = delta
+            .new_file()
+            .path()
+            .map(|value| value.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let old_path = match status {
+            "renamed" | "copied" => delta
+                .old_file()
+                .path()
+                .map(|value| value.to_string_lossy().into_owned()),
+            _ => None,
+        };
+        let is_binary = delta.flags().contains(git2::DiffFlags::BINARY);
+
+        files.push(CommitChangedFile {
+            path,
+            old_path,
+            status: status.to_string(),
+            is_binary,
+        });
+    }
+    files.sort_by(|left, right| left.path.cmp(&right.path));
+
+    Ok(files)
+}
+
+/// Produces the bounded text diff of one repository-relative path introduced by
+/// a specific commit, using the same parent-resolution rules as
+/// `get_commit_changed_files` (first parent, empty tree for root commits) and the
+/// same guard rails as `get_repository_file_diff`: no-delta payloads, binary
+/// detection with a text-patch fallback, and 512 KB truncation via
+/// `MAX_FILE_DIFF_BYTES`.
+#[tauri::command]
+pub async fn get_commit_file_diff(
+    absolute_path: String,
+    commit_hash: String,
+    path: String,
+) -> Result<RepositoryFileDiff, String> {
+    fn unavailable(path: String) -> RepositoryFileDiff {
+        RepositoryFileDiff {
+            path,
+            old_path: None,
+            patch: None,
+            is_binary: false,
+            is_truncated: false,
+            unavailable_reason: Some(
+                "No text diff is available for the selected file.".to_string(),
+            ),
+        }
+    }
+
+    fn binary_unavailable(path: String, old_path: Option<String>) -> RepositoryFileDiff {
+        RepositoryFileDiff {
+            path,
+            old_path,
+            patch: None,
+            is_binary: true,
+            is_truncated: false,
+            unavailable_reason: Some("Binary files cannot be previewed as text diffs.".to_string()),
+        }
+    }
+
+    let repo = Repository::open(&absolute_path)
+        .map_err(|error| format!("Failed to open Git repository: {error}"))?;
+    repository_relative_path(&repo, &path)?;
+    let relative_path = Path::new(&path);
+    let (commit_tree, parent_tree) = resolve_commit_and_parent_trees(&repo, &commit_hash)?;
+    let diff = diff_commit_against_parent_tree(&repo, &commit_tree, parent_tree.as_ref(), None)?;
+
+    let delta_index = diff
+        .deltas()
+        .enumerate()
+        .find(|(_, delta)| {
+            delta.new_file().path() == Some(relative_path)
+                || delta.old_file().path() == Some(relative_path)
+        })
+        .map(|(index, _)| index);
+    let Some(delta_index) = delta_index else {
+        return Ok(unavailable(path));
+    };
+
+    let mut file_patch = match git2::Patch::from_diff(&diff, delta_index) {
+        Ok(Some(file_patch)) => file_patch,
+        Ok(None) => return Ok(unavailable(path)),
+        Err(error) => return Err(format!("Failed to generate Git diff: {error}")),
+    };
+
+    let delta = file_patch.delta();
+    let old_path = delta
+        .old_file()
+        .path()
+        .filter(|old| delta.status() != git2::Delta::Added)
+        .map(|value| value.to_string_lossy().into_owned());
+    if delta.flags().contains(git2::DiffFlags::BINARY) {
+        return Ok(binary_unavailable(path, old_path));
+    }
+
+    let mut patch_bytes = Vec::new();
+    let mut is_truncated = false;
+    file_patch
+        .print(&mut |_delta, _hunk, line| {
+            let origin = line.origin();
+            let prefix = matches!(origin, '+' | '-' | ' ').then_some(origin as u8);
+            let required_bytes = line.content().len() + usize::from(prefix.is_some());
+            if patch_bytes.len() + required_bytes > MAX_FILE_DIFF_BYTES {
+                is_truncated = true;
+                return true;
+            }
+
+            if let Some(prefix) = prefix {
+                patch_bytes.push(prefix);
+            }
+            patch_bytes.extend_from_slice(line.content());
+            true
+        })
+        .map_err(|error| format!("Failed to generate Git diff: {error}"))?;
+
+    let patch = String::from_utf8_lossy(&patch_bytes).into_owned();
+    if patch.contains("GIT binary patch") || patch.contains("Binary files ") {
+        return Ok(binary_unavailable(path, old_path));
+    }
+
+    Ok(RepositoryFileDiff {
+        path,
+        old_path,
+        patch: Some(patch),
+        is_binary: false,
+        is_truncated,
+        unavailable_reason: is_truncated
+            .then(|| "The preview was truncated to keep the application responsive.".to_string()),
+    })
+}
+
 fn stage_path(repo: &Repository, relative_path: &str) -> Result<(), String> {
     let mut index = repo
         .index()
@@ -3574,7 +3796,8 @@ mod tests {
                     remote_url TEXT,
                     repo_origin_type TEXT NOT NULL,
                     uncommitted_changes_count INTEGER NOT NULL,
-                    is_active INTEGER NOT NULL
+                    is_active INTEGER NOT NULL,
+                    archived_at DATETIME DEFAULT NULL
                 );
                 "#,
             )
@@ -3620,7 +3843,8 @@ mod tests {
                     remote_url TEXT,
                     repo_origin_type TEXT NOT NULL,
                     uncommitted_changes_count INTEGER NOT NULL,
-                    is_active INTEGER NOT NULL
+                    is_active INTEGER NOT NULL,
+                    archived_at DATETIME DEFAULT NULL
                 );
                 "#,
             )
@@ -3772,6 +3996,281 @@ mod tests {
             .is_some_and(|patch| patch.contains("+new file")));
         assert!(!changed_diff.is_binary);
         assert!(!untracked_diff.is_binary);
+
+        fs::remove_dir_all(repo_path).unwrap();
+    }
+
+    fn commit_workdir_state(repo: &Repository, message: &str) -> String {
+        let mut index = repo.index().unwrap();
+        index
+            .add_all(["*"].iter(), git2::IndexAddOption::DEFAULT, None)
+            .unwrap();
+        index.update_all(["*"].iter(), None).unwrap();
+        index.write().unwrap();
+
+        let tree_oid = index.write_tree().unwrap();
+        let tree = repo.find_tree(tree_oid).unwrap();
+        let signature = repo.signature().unwrap();
+        let parent = repo.head().ok().and_then(|head| head.peel_to_commit().ok());
+        let parents: Vec<&git2::Commit> = parent.iter().collect();
+        repo.commit(Some("HEAD"), &signature, &signature, message, &tree, &parents)
+            .unwrap()
+            .to_string()
+    }
+
+    #[test]
+    fn test_get_commit_changed_files_reports_modified_file() {
+        let (repo_path, repo) = create_test_repo("test_commit_changed_modified");
+        create_initial_commit(&repo, &repo_path);
+        fs::write(repo_path.join("README.md"), "# Test Repo\nupdated\n").unwrap();
+        let hash = commit_workdir_state(&repo, "Update readme");
+
+        let files = tauri::async_runtime::block_on(get_commit_changed_files(
+            repo_path.to_str().unwrap().to_string(),
+            hash.clone(),
+        ))
+        .unwrap();
+
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].path, "README.md");
+        assert_eq!(files[0].status, "modified");
+        assert!(files[0].old_path.is_none());
+        assert!(!files[0].is_binary);
+
+        let diff = tauri::async_runtime::block_on(get_commit_file_diff(
+            repo_path.to_str().unwrap().to_string(),
+            hash,
+            "README.md".to_string(),
+        ))
+        .unwrap();
+        assert!(diff.patch.as_deref().is_some_and(|patch| patch.contains("+updated")));
+
+        fs::remove_dir_all(repo_path).unwrap();
+    }
+
+    #[test]
+    fn test_get_commit_changed_files_reports_added_file() {
+        let (repo_path, repo) = create_test_repo("test_commit_changed_added");
+        create_initial_commit(&repo, &repo_path);
+        fs::write(repo_path.join("added.txt"), "brand new\n").unwrap();
+        let hash = commit_workdir_state(&repo, "Add file");
+
+        let files = tauri::async_runtime::block_on(get_commit_changed_files(
+            repo_path.to_str().unwrap().to_string(),
+            hash,
+        ))
+        .unwrap();
+
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].path, "added.txt");
+        assert_eq!(files[0].status, "added");
+
+        fs::remove_dir_all(repo_path).unwrap();
+    }
+
+    #[test]
+    fn test_get_commit_changed_files_reports_deleted_file() {
+        let (repo_path, repo) = create_test_repo("test_commit_changed_deleted");
+        create_initial_commit(&repo, &repo_path);
+        fs::write(repo_path.join("doomed.txt"), "delete me\n").unwrap();
+        commit_workdir_state(&repo, "Add doomed file");
+        fs::remove_file(repo_path.join("doomed.txt")).unwrap();
+        let hash = commit_workdir_state(&repo, "Delete doomed file");
+
+        let files = tauri::async_runtime::block_on(get_commit_changed_files(
+            repo_path.to_str().unwrap().to_string(),
+            hash.clone(),
+        ))
+        .unwrap();
+
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].path, "doomed.txt");
+        assert_eq!(files[0].status, "deleted");
+
+        let diff = tauri::async_runtime::block_on(get_commit_file_diff(
+            repo_path.to_str().unwrap().to_string(),
+            hash,
+            "doomed.txt".to_string(),
+        ))
+        .unwrap();
+        assert!(diff.patch.as_deref().is_some_and(|patch| patch.contains("-delete me")));
+
+        fs::remove_dir_all(repo_path).unwrap();
+    }
+
+    #[test]
+    fn test_get_commit_changed_files_reports_renamed_file_with_old_path() {
+        let (repo_path, repo) = create_test_repo("test_commit_changed_renamed");
+        create_initial_commit(&repo, &repo_path);
+        fs::write(repo_path.join("original.txt"), "stable content\n").unwrap();
+        commit_workdir_state(&repo, "Add original file");
+        fs::rename(repo_path.join("original.txt"), repo_path.join("renamed.txt")).unwrap();
+        let hash = commit_workdir_state(&repo, "Rename original file");
+
+        let files = tauri::async_runtime::block_on(get_commit_changed_files(
+            repo_path.to_str().unwrap().to_string(),
+            hash.clone(),
+        ))
+        .unwrap();
+
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].path, "renamed.txt");
+        assert_eq!(files[0].status, "renamed");
+        assert_eq!(files[0].old_path.as_deref(), Some("original.txt"));
+
+        let diff = tauri::async_runtime::block_on(get_commit_file_diff(
+            repo_path.to_str().unwrap().to_string(),
+            hash,
+            "renamed.txt".to_string(),
+        ))
+        .unwrap();
+        assert_eq!(diff.old_path.as_deref(), Some("original.txt"));
+        assert!(!diff.is_truncated);
+
+        fs::remove_dir_all(repo_path).unwrap();
+    }
+
+    #[test]
+    fn test_get_commit_changed_files_treats_root_commit_as_additions() {
+        let (repo_path, repo) = create_test_repo("test_commit_root");
+        create_initial_commit(&repo, &repo_path);
+        let head = repo.head().unwrap().peel_to_commit().unwrap();
+        let root_hash = head.id().to_string();
+
+        let files = tauri::async_runtime::block_on(get_commit_changed_files(
+            repo_path.to_str().unwrap().to_string(),
+            root_hash.clone(),
+        ))
+        .unwrap();
+
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].path, "README.md");
+        assert_eq!(files[0].status, "added");
+
+        let diff = tauri::async_runtime::block_on(get_commit_file_diff(
+            repo_path.to_str().unwrap().to_string(),
+            root_hash,
+            "README.md".to_string(),
+        ))
+        .unwrap();
+        assert!(diff.patch.as_deref().is_some_and(|patch| patch.contains("+++ b/README.md")));
+        assert!(diff.patch.as_deref().is_some_and(|patch| patch.contains("--- /dev/null")));
+
+        fs::remove_dir_all(repo_path).unwrap();
+    }
+
+    #[test]
+    fn test_get_commit_file_diff_flags_binary_content() {
+        let (repo_path, repo) = create_test_repo("test_commit_binary");
+        create_initial_commit(&repo, &repo_path);
+        fs::write(repo_path.join("asset.bin"), [0x00u8, 0x01, 0x02, 0x00, 0xFF]).unwrap();
+        let hash = commit_workdir_state(&repo, "Add binary asset");
+
+        let files = tauri::async_runtime::block_on(get_commit_changed_files(
+            repo_path.to_str().unwrap().to_string(),
+            hash.clone(),
+        ))
+        .unwrap();
+        assert_eq!(files.len(), 1);
+
+        let diff = tauri::async_runtime::block_on(get_commit_file_diff(
+            repo_path.to_str().unwrap().to_string(),
+            hash,
+            "asset.bin".to_string(),
+        ))
+        .unwrap();
+
+        assert!(
+            diff.is_binary || diff.patch.as_deref().is_some_and(|patch| patch.contains("GIT binary patch")),
+            "expected binary handling, got {diff:?}"
+        );
+
+        fs::remove_dir_all(repo_path).unwrap();
+    }
+
+    #[test]
+    fn test_get_commit_file_diff_truncates_large_patches() {
+        let (repo_path, repo) = create_test_repo("test_commit_truncated");
+        create_initial_commit(&repo, &repo_path);
+
+        let large_body = "padding line with plenty of text to grow the patch\n".repeat(12_000);
+        fs::write(repo_path.join("large.txt"), &large_body).unwrap();
+        let hash = commit_workdir_state(&repo, "Add large file");
+
+        let diff = tauri::async_runtime::block_on(get_commit_file_diff(
+            repo_path.to_str().unwrap().to_string(),
+            hash,
+            "large.txt".to_string(),
+        ))
+        .unwrap();
+
+        assert!(diff.is_truncated);
+        let patch = diff.patch.unwrap_or_default();
+        assert!(patch.len() <= MAX_FILE_DIFF_BYTES);
+        assert!(diff.unavailable_reason.is_some());
+
+        fs::remove_dir_all(repo_path).unwrap();
+    }
+
+    #[test]
+    fn test_get_commit_changed_files_diffs_merge_commits_against_first_parent_only() {
+        let (repo_path, repo) = create_test_repo("test_commit_merge_first_parent");
+        create_initial_commit(&repo, &repo_path);
+        let base = repo.head().unwrap().peel_to_commit().unwrap();
+        let base_tree = base.tree().unwrap();
+        let signature = repo.signature().unwrap();
+
+        let main_blob_oid = repo.blob(b"main side\n").unwrap();
+        let feature_blob_oid = repo.blob(b"feature side\n").unwrap();
+
+        let mut main_builder = repo.treebuilder(Some(&base_tree)).unwrap();
+        main_builder
+            .insert("main-file.txt", main_blob_oid, 0o100644)
+            .unwrap();
+        let main_tree = repo.find_tree(main_builder.write().unwrap()).unwrap();
+        let main_tip = repo
+            .commit(None, &signature, &signature, "Main side", &main_tree, &[&base])
+            .unwrap();
+
+        let mut feature_builder = repo.treebuilder(Some(&base_tree)).unwrap();
+        feature_builder
+            .insert("feature-file.txt", feature_blob_oid, 0o100644)
+            .unwrap();
+        let feature_tree = repo.find_tree(feature_builder.write().unwrap()).unwrap();
+        let feature_tip = repo
+            .commit(None, &signature, &signature, "Feature side", &feature_tree, &[&base])
+            .unwrap();
+
+        let mut merge_builder = repo.treebuilder(Some(&base_tree)).unwrap();
+        merge_builder
+            .insert("main-file.txt", main_blob_oid, 0o100644)
+            .unwrap();
+        merge_builder
+            .insert("feature-file.txt", feature_blob_oid, 0o100644)
+            .unwrap();
+        let merge_tree = repo.find_tree(merge_builder.write().unwrap()).unwrap();
+        let main_tip_commit = repo.find_commit(main_tip).unwrap();
+        let feature_tip_commit = repo.find_commit(feature_tip).unwrap();
+        let merge_commit = repo
+            .commit(
+                None,
+                &signature,
+                &signature,
+                "Merge feature",
+                &merge_tree,
+                &[&main_tip_commit, &feature_tip_commit],
+            )
+            .unwrap();
+
+        let files = tauri::async_runtime::block_on(get_commit_changed_files(
+            repo_path.to_str().unwrap().to_string(),
+            merge_commit.to_string(),
+        ))
+        .unwrap();
+
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].path, "feature-file.txt");
+        assert_eq!(files[0].status, "added");
 
         fs::remove_dir_all(repo_path).unwrap();
     }

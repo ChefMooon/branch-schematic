@@ -14,6 +14,8 @@ interface RepositoryDetailBodyProps {
   onSelectCommit: (commitHash: string) => void;
   activeTab: 'commits' | 'changes';
   onTabChange: (tab: 'commits' | 'changes') => void;
+  persistedPanelRatios?: Record<string, number>;
+  onPersistPanelRatios?: (ratios: Record<string, number>) => void;
 }
 
 export function RepositoryDetailBody({
@@ -26,6 +28,8 @@ export function RepositoryDetailBody({
   currentBranch,
   onSelectCommit,
   activeTab,
+  persistedPanelRatios,
+  onPersistPanelRatios,
 }: RepositoryDetailBodyProps) {
   const branchLabel = previewBranch ?? activeBranch ?? currentBranch ?? 'main';
 
@@ -34,16 +38,23 @@ export function RepositoryDetailBody({
       {activeTab === 'commits' ? (
         <div className="repository-view-tab-panel" id="repository-view-panel-commits" role="tabpanel" aria-labelledby="repository-view-tab-commits" tabIndex={0}>
           <RepositoryDetailCommitsTab
+            repo={repo}
             commits={commits}
             selectedCommit={selectedCommit}
             isLoadingCommits={isLoadingCommits}
             branchLabel={branchLabel}
             onSelectCommit={onSelectCommit}
+            persistedPanelRatios={persistedPanelRatios}
+            onPersistPanelRatios={onPersistPanelRatios}
           />
         </div>
       ) : (
         <div className="repository-view-tab-panel" id="repository-view-panel-changes" role="tabpanel" aria-labelledby="repository-view-tab-changes" tabIndex={0}>
-          <RepositoryDetailChangesTab repo={repo} />
+          <RepositoryDetailChangesTab
+            repo={repo}
+            persistedPanelRatios={persistedPanelRatios}
+            onPersistPanelRatios={onPersistPanelRatios}
+          />
         </div>
       )}
     </div>

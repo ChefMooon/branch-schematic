@@ -118,6 +118,14 @@
 - **Child component imports:** None
 - **Hooks consumed:** None
 
+### ResizeDivider
+
+- **Path:** `src/components/resize-divider/ResizeDivider.tsx`
+- **Architecture:** Shared component (Compliant)
+- **Lines:** 54
+- **Child component imports:** None
+- **Hooks consumed:** None
+
 ### SearchBar
 
 - **Path:** `src/components/search-bar/SearchBar.tsx`
@@ -536,6 +544,22 @@
 - **Child component imports:** RepositoryDiffPreview
 - **Hooks consumed:** None
 
+### RepositoryCommitDiffPanel
+
+- **Path:** `src/features/repository-detail/components/RepositoryCommitDiffPanel.tsx`
+- **Architecture:** Feature component (Compliant)
+- **Lines:** 56
+- **Child component imports:** RepositoryDiffPreview
+- **Hooks consumed:** None
+
+### RepositoryCommitFilesPanel
+
+- **Path:** `src/features/repository-detail/components/RepositoryCommitFilesPanel.tsx`
+- **Architecture:** Feature component (Compliant)
+- **Lines:** 127
+- **Child component imports:** PushStatusIndicator
+- **Hooks consumed:** `useEffect`, `useState`
+
 ### RepositoryCommitComposer
 
 - **Path:** `src/features/repository-detail/components/RepositoryCommitComposer.tsx`
@@ -564,17 +588,17 @@
 
 - **Path:** `src/features/repository-detail/components/RepositoryDetailChangesTab.tsx`
 - **Architecture:** Feature component (Compliant)
-- **Lines:** 129
-- **Child component imports:** RepositoryChangesListPanel, RepositoryChangesPreviewPanel, RepositoryCommitComposer
-- **Hooks consumed:** `useEffect`, `useMemo`, `useRepositoryChanges`, `useRepositoryFileDiff`, `useResizableChangesPanels`, `useState`
+- **Lines:** 143
+- **Child component imports:** RepositoryChangesListPanel, RepositoryChangesPreviewPanel, RepositoryCommitComposer, ResizeDivider
+- **Hooks consumed:** `useEffect`, `useMemo`, `useResizablePanels`, `useRepositoryChanges`, `useRepositoryFileDiff`, `useState`
 
 ### RepositoryDetailCommitsTab
 
 - **Path:** `src/features/repository-detail/components/RepositoryDetailCommitsTab.tsx`
 - **Architecture:** Feature component (Compliant)
-- **Lines:** 140
-- **Child component imports:** Button, PushStatusIndicator, RepositoryDetail
-- **Hooks consumed:** None
+- **Lines:** 175
+- **Child component imports:** PushStatusIndicator, ResizeDivider, RepositoryCommitDiffPanel, RepositoryCommitFilesPanel, RepositoryDetail
+- **Hooks consumed:** `useCommitChangedFiles`, `useCommitFileDiff`, `useEffect`, `useResizablePanels`, `useState`
 
 ### RepositoryDetailHeader
 

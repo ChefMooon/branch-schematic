@@ -66,16 +66,22 @@ describe('RepositoryDetailBody', () => {
     );
 
     expect(screen.getByRole('heading', { name: /commit history/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /initial commit/i })).toBeInTheDocument();
+    const historyItem = screen
+      .getAllByRole('button', { name: /initial commit/i })
+      .find((button) => button.className.includes('repository-view-commit-item'));
+    expect(historyItem).toBeInTheDocument();
     expect(screen.getByLabelText('Not pushed to upstream')).toBeInTheDocument();
-    expect(screen.getByText('Author')).toBeInTheDocument();
     expect(screen.getAllByText('abc123').length).toBeGreaterThan(0);
 
     const expectedLocalDate = new Date('2024-01-01T10:00:00Z').toLocaleString(undefined, {
       dateStyle: 'medium',
       timeStyle: 'short',
     });
-    expect(screen.getAllByText(expectedLocalDate)).toHaveLength(2);
+    expect(screen.getByText(expectedLocalDate)).toBeInTheDocument();
+    expect(invokeMock).toHaveBeenCalledWith('get_commit_changed_files', {
+      absolutePath: '/tmp/branch-schematic',
+      commitHash: 'abc123',
+    });
   });
 
   it('prevents text selection while resizing the changes layout', async () => {
@@ -215,6 +221,7 @@ describe('RepositoryDetailBody', () => {
           operationMessage: null,
         },
       })
+      .mockResolvedValueOnce(null)
       .mockResolvedValueOnce({
         path: 'src/App.tsx',
         oldPath: 'src/App.tsx',

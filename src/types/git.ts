@@ -204,6 +204,23 @@ export interface RepositoryFileDiff {
   unavailableReason?: string | null;
 }
 
+/**
+ * Change classification for a single file touched by a specific commit.
+ * Matches: git::get_commit_changed_files status mapping
+ */
+export type CommitChangeStatus = 'added' | 'deleted' | 'modified' | 'renamed' | 'copied';
+
+/**
+ * One file changed by a selected commit, returned by `get_commit_changed_files`.
+ * Matches Rust struct: git::CommitChangedFile
+ */
+export interface CommitChangedFile {
+  path: string;
+  oldPath?: string | null;
+  status: CommitChangeStatus;
+  isBinary?: boolean;
+}
+
 export interface CustomGroup {
   id: string;
   group_name: string;

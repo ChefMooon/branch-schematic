@@ -1,0 +1,10 @@
+[target.'cfg(windows)']
+# Unit test binaries have no application manifest, so the loader binds
+# comctl32 v5, which lacks TaskDialogIndirect (imported transitively via
+# tauri/muda). Delay-loading keeps test exes from binding comctl32 at
+# startup. The real app embeds a Common-Controls v6 manifest, so runtime
+# loads there still resolve to v6.
+rustflags = [
+  "-C", "link-arg=/DELAYLOAD:comctl32.dll",
+  "-C", "link-arg=delayimp.lib",
+]
