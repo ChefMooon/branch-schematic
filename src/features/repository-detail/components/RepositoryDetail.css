@@ -142,6 +142,102 @@
   text-transform: uppercase;
 }
 
+.repository-view-actions-picker {
+  position: relative;
+}
+
+.repository-view-actions-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border: 1px solid var(--app-border);
+  border-radius: 999px;
+  background: var(--app-surface-muted);
+  color: var(--app-text);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.repository-view-actions-trigger:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--app-accent) 35%, var(--app-border));
+}
+
+.repository-view-actions-trigger:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.repository-view-actions-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  min-width: 220px;
+  max-height: min(420px, calc(100vh - 160px));
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  padding: 6px;
+  border: 1px solid var(--app-border);
+  border-radius: 10px;
+  background: var(--app-surface);
+  box-shadow: 0 16px 32px color-mix(in srgb, var(--app-text) 14%, transparent);
+  z-index: 4;
+}
+
+.repository-view-action-section {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.repository-view-action-section-title {
+  padding: 4px 8px 2px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--app-muted);
+}
+
+.repository-view-action-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--app-text);
+  font-size: 12px;
+  font-weight: 600;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.repository-view-action-item:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--app-accent) 10%, var(--app-surface));
+}
+
+.repository-view-action-item:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.repository-view-action-item-danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--app-danger) 10%, var(--app-surface));
+  color: var(--app-danger);
+}
+
+.repository-view-action-divider {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--app-border);
+}
+
 .repository-view-eyebrow {
   margin: 0 0 4px;
   font-size: 11px;

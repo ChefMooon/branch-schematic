@@ -1,7 +1,11 @@
 import { render, screen } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { RepositoryDetailHeader } from './RepositoryDetailHeader';
 import type { TrackedPath } from '../../../types/git';
+
+vi.mock('./RepositoryDetailActionsMenu', () => ({
+  RepositoryDetailActionsMenu: () => <button type="button" aria-label="Repository actions">Actions</button>,
+}));
 
 describe('RepositoryDetailHeader', () => {
   it('renders repository title and summary details', () => {
@@ -36,6 +40,7 @@ describe('RepositoryDetailHeader', () => {
 
     expect(screen.getByRole('heading', { name: /branch schematic/i })).toBeInTheDocument();
     expect(screen.getByText('Repository details')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /repository actions/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /select preview branch/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /close repository details/i })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Commits' })).toHaveAttribute('aria-selected', 'true');

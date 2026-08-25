@@ -10,6 +10,10 @@ vi.mock('@tauri-apps/api/core', () => ({
   invoke: (...args: unknown[]) => invokeMock(...args),
 }));
 
+vi.mock('../../../components/notifications/NotificationProvider', () => ({
+  useNotifications: () => ({ addToast: vi.fn() }),
+}));
+
 describe('RepositoryDetail', () => {
   beforeEach(() => {
     invokeMock.mockReset();
@@ -260,5 +264,54 @@ describe('RepositoryDetail', () => {
       .join('\n');
 
     expect(styleText).toContain('.repository-view-overlay');
+  });
+
+  it('reloads the commits list when a git operation completes from the actions menu', async () => {
+    invokeMock.mockImplementation((command: string) => {
+      if (command === 'get_branch_commits') {
+        return Promise.resolve([
+          {
+            commit_hash: 'abc123',
+            author_name: 'Ada Lovelace',
+            commit_message: 'Initial commit',
+            committed_at: '2024-01-01T10:00:00Z',
+            signature_status: null,
+          },
+        ]);
+      }
+      return Promise.resolve(undefined);
+    });
+
+    const repo: TrackedPath = {
+      id: 'repo-1',
+      display_name: 'Branch Schematic',
+      absolute_path: '/tmp/branch-schematic',
+      current_branch: 'main',
+      default_branch_name: 'main',
+      available_branches: ['main'],
+      ahead_count: 0,
+      behind_count: 0,
+      has_upstream: true,
+      uncommitted_changes_count: 0,
+      remote_url: 'https://github.com/example/branch-schematic',
+      github_owner_login: 'example',
+      repo_origin_type: 'OWNED',
+      tags: [],
+    };
+
+    render(<RepositoryDetail isOpen repo={repo} onClose={() => undefined} />);
+
+    await screen.findByRole('button', { name: /initial commit/i });
+    const countCommitLoads = () =>
+      invokeMock.mock.calls.filter(([command]) => command === 'get_branch_commits').length;
+    const initialLoads = countCommitLoads();
+
+    await userEvent.click(screen.getByRole('button', { name: /repository actions/i }));
+    await userEvent.click(screen.getByRole('menuitem', { name: /fetch origin/i }));
+
+    await waitFor(() => {
+      expect(countCommitLoads()).toBe(initialLoads + 1);
+    });
+    expect(await screen.findByRole('button', { name: /initial commit/i })).toBeInTheDocument();
   });
 });

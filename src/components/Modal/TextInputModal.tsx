@@ -12,9 +12,11 @@ type TextInputModalProps = {
   placeholder?: string;
   confirmLabel?: string;
   cancelLabel?: string;
+  resetLabel?: string;
   isBusy?: boolean;
   onConfirm: (value: string) => void | Promise<void>;
   onCancel: () => void;
+  onReset?: () => void | Promise<void>;
 };
 
 export function TextInputModal({
@@ -26,9 +28,11 @@ export function TextInputModal({
   placeholder,
   confirmLabel = 'Confirm',
   cancelLabel = 'Cancel',
+  resetLabel,
   isBusy = false,
   onConfirm,
   onCancel,
+  onReset,
 }: TextInputModalProps) {
   const [draft, setDraft] = useState(inputValue);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -107,6 +111,17 @@ export function TextInputModal({
         </div>
 
         <div className="app-modal-footer">
+          {resetLabel && onReset ? (
+            <Button
+              type="button"
+              variant="danger"
+              className="app-modal-footer-reset"
+              onClick={() => void onReset()}
+              disabled={isBusy}
+            >
+              {resetLabel}
+            </Button>
+          ) : null}
           <Button type="button" variant="basic" onClick={onCancel} disabled={isBusy}>
             {cancelLabel}
           </Button>

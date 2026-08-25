@@ -4,6 +4,7 @@ import { Button } from '../../../components/button/Button';
 import { Tabs } from '../../../components/tabs/Tabs';
 import { useClickOutside } from '../../../hooks/useClickOutside';
 import type { TrackedPath } from '../../../types/git';
+import { RepositoryDetailActionsMenu } from './RepositoryDetailActionsMenu';
 
 interface RepositoryDetailHeaderProps {
   repo: TrackedPath;
@@ -13,9 +14,10 @@ interface RepositoryDetailHeaderProps {
   onClose: () => void;
   activeTab: 'commits' | 'changes';
   onTabChange: (tab: 'commits' | 'changes') => void;
+  onHistoryChanged?: () => void;
 }
 
-export function RepositoryDetailHeader({ repo, activeBranch, previewBranch, onSelectPreviewBranch, onClose, activeTab, onTabChange }: RepositoryDetailHeaderProps) {
+export function RepositoryDetailHeader({ repo, activeBranch, previewBranch, onSelectPreviewBranch, onClose, activeTab, onTabChange, onHistoryChanged }: RepositoryDetailHeaderProps) {
   const [isBranchMenuOpen, setIsBranchMenuOpen] = useState(false);
   const [isSummaryPopoverOpen, setIsSummaryPopoverOpen] = useState(false);
   const branchContainerRef = useRef<HTMLDivElement>(null);
@@ -54,6 +56,8 @@ export function RepositoryDetailHeader({ repo, activeBranch, previewBranch, onSe
         </div>
 
         <div className="repository-view-header-actions">
+          <RepositoryDetailActionsMenu repo={repo} onClose={onClose} onHistoryChanged={onHistoryChanged} />
+
           <div className="repository-view-summary-pill-row" ref={summaryPopoverRef}>
             <button
               type="button"

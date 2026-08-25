@@ -2477,6 +2477,10 @@
   gap: 0.45rem;
 }
 
+.app-modal-footer-reset {
+  margin-right: auto;
+}
+
 .tag-modal-manage-link {
   border: none;
   background: transparent;

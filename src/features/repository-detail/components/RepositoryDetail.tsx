@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { invoke } from '@tauri-apps/api/core';
 import { useBackdropDismiss } from '../../../hooks/useBackdropDismiss';
@@ -27,9 +27,19 @@ export function RepositoryDetail({ isOpen, repo, onClose }: RepositoryDetailProp
   const { handleMouseDown, handleMouseUp, handleMouseLeave, handleTouchStart, handleTouchEnd } = useBackdropDismiss(dialogRef, onClose, isOpen);
   const [commits, setCommits] = useState<CommitRecord[]>([]);
   const [selectedCommitHash, setSelectedCommitHash] = useState<string | null>(null);
+  const selectedCommitHashRef = useRef<string | null>(null);
+  const [commitsRefreshToken, setCommitsRefreshToken] = useState(0);
   const [isLoadingCommits, setIsLoadingCommits] = useState(false);
   const [previewBranch, setPreviewBranch] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'commits' | 'changes'>('commits');
+
+  useEffect(() => {
+    selectedCommitHashRef.current = selectedCommitHash;
+  }, [selectedCommitHash]);
+
+  const handleHistoryChanged = useCallback(() => {
+    setCommitsRefreshToken((token) => token + 1);
+  }, []);
 
   useEffect(() => {
     if (!isOpen || !repo) return;
@@ -45,6 +55,7 @@ export function RepositoryDetail({ isOpen, repo, onClose }: RepositoryDetailProp
 
     let isMounted = true;
     const branchId = `${repo.id}-${previewBranch}`;
+    const previouslySelectedHash = selectedCommitHashRef.current;
 
     const loadCommits = async () => {
       setIsLoadingCommits(true);
@@ -57,7 +68,11 @@ export function RepositoryDetail({ isOpen, repo, onClose }: RepositoryDetailProp
         if (!isMounted) return;
 
         setCommits(result ?? []);
-        setSelectedCommitHash(result?.[0]?.commit_hash ?? null);
+        setSelectedCommitHash(
+          previouslySelectedHash && result?.some((commit) => commit.commit_hash === previouslySelectedHash)
+            ? previouslySelectedHash
+            : result?.[0]?.commit_hash ?? null,
+        );
       } catch (error) {
         console.error('Failed to load branch commits', error);
         if (isMounted) {
@@ -76,7 +91,7 @@ export function RepositoryDetail({ isOpen, repo, onClose }: RepositoryDetailProp
     return () => {
       isMounted = false;
     };
-  }, [isOpen, previewBranch, repo?.id]);
+  }, [isOpen, previewBranch, repo?.id, commitsRefreshToken]);
 
   useEffect(() => {
     if (!isOpen || !repo) return;
@@ -193,6 +208,7 @@ export function RepositoryDetail({ isOpen, repo, onClose }: RepositoryDetailProp
           onClose={onClose}
           activeTab={activeTab}
           onTabChange={setActiveTab}
+          onHistoryChanged={handleHistoryChanged}
         />
 
         <div className="repository-view-body">
