@@ -76,6 +76,20 @@ Build production desktop binaries:
 npm run tauri build
 ```
 
+Run the test suite:
+
+```bash
+npm test
+```
+
+Generate saved coverage reports:
+
+```bash
+npm run test:coverage
+```
+
+The command writes an HTML report, `lcov.info`, and JSON coverage data to the local `coverage/` directory.
+
 ## Database Management & Schema Specification
 
 Branch Schematic uses SQLite locally through `@tauri-apps/plugin-sql` for persisted application state and local data storage.

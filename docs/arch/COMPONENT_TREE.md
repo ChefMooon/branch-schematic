@@ -18,7 +18,7 @@
 
 - **Path:** `src/components/Modal/TextInputModal.tsx`
 - **Architecture:** Shared component (Compliant)
-- **Lines:** 129
+- **Lines:** 144
 - **Child component imports:** Button
 - **Hooks consumed:** `useBackdropDismiss`, `useEffect`, `useRef`, `useState`
 
@@ -122,7 +122,7 @@
 
 - **Path:** `src/components/resize-divider/ResizeDivider.tsx`
 - **Architecture:** Shared component (Compliant)
-- **Lines:** 54
+- **Lines:** 61
 - **Child component imports:** None
 - **Hooks consumed:** None
 
@@ -544,22 +544,6 @@
 - **Child component imports:** RepositoryDiffPreview
 - **Hooks consumed:** None
 
-### RepositoryCommitDiffPanel
-
-- **Path:** `src/features/repository-detail/components/RepositoryCommitDiffPanel.tsx`
-- **Architecture:** Feature component (Compliant)
-- **Lines:** 56
-- **Child component imports:** RepositoryDiffPreview
-- **Hooks consumed:** None
-
-### RepositoryCommitFilesPanel
-
-- **Path:** `src/features/repository-detail/components/RepositoryCommitFilesPanel.tsx`
-- **Architecture:** Feature component (Compliant)
-- **Lines:** 127
-- **Child component imports:** PushStatusIndicator
-- **Hooks consumed:** `useEffect`, `useState`
-
 ### RepositoryCommitComposer
 
 - **Path:** `src/features/repository-detail/components/RepositoryCommitComposer.tsx`
@@ -568,19 +552,43 @@
 - **Child component imports:** Button
 - **Hooks consumed:** None
 
+### RepositoryCommitDiffPanel
+
+- **Path:** `src/features/repository-detail/components/RepositoryCommitDiffPanel.tsx`
+- **Architecture:** Feature component (Compliant)
+- **Lines:** 60
+- **Child component imports:** RepositoryDiffPreview
+- **Hooks consumed:** None
+
+### RepositoryCommitFilesPanel
+
+- **Path:** `src/features/repository-detail/components/RepositoryCommitFilesPanel.tsx`
+- **Architecture:** Feature component (Compliant)
+- **Lines:** 138
+- **Child component imports:** PushStatusIndicator, RepositoryDetail
+- **Hooks consumed:** `useEffect`, `useState`
+
 ### RepositoryDetail
 
 - **Path:** `src/features/repository-detail/components/RepositoryDetail.tsx`
 - **Architecture:** Feature component (Compliant)
-- **Lines:** 216
+- **Lines:** 244
 - **Child component imports:** RepositoryDetailBody, RepositoryDetailHeader
-- **Hooks consumed:** `useBackdropDismiss`, `useEffect`, `useMemo`, `useRef`, `useState`
+- **Hooks consumed:** `useBackdropDismiss`, `useCallback`, `useEffect`, `useMemo`, `useRef`, `useState`
+
+### RepositoryDetailActionsMenu
+
+- **Path:** `src/features/repository-detail/components/RepositoryDetailActionsMenu.tsx`
+- **Architecture:** Feature component (Compliant)
+- **Lines:** 522
+- **Child component imports:** ConfirmationModal, NotificationProvider, OpenWithModal, RepoThemeModal, TextInputModal
+- **Hooks consumed:** `useClickOutside`, `useEffect`, `useNotifications`, `useRef`, `useRepositoryOpenActions`, `useState`, `useWorkspaceStore`
 
 ### RepositoryDetailBody
 
 - **Path:** `src/features/repository-detail/components/RepositoryDetailBody.tsx`
 - **Architecture:** Feature component (Compliant)
-- **Lines:** 52
+- **Lines:** 63
 - **Child component imports:** RepositoryDetail, RepositoryDetailChangesTab, RepositoryDetailCommitsTab
 - **Hooks consumed:** None
 
@@ -588,24 +596,24 @@
 
 - **Path:** `src/features/repository-detail/components/RepositoryDetailChangesTab.tsx`
 - **Architecture:** Feature component (Compliant)
-- **Lines:** 143
+- **Lines:** 153
 - **Child component imports:** RepositoryChangesListPanel, RepositoryChangesPreviewPanel, RepositoryCommitComposer, ResizeDivider
-- **Hooks consumed:** `useEffect`, `useMemo`, `useResizablePanels`, `useRepositoryChanges`, `useRepositoryFileDiff`, `useState`
+- **Hooks consumed:** `useEffect`, `useMemo`, `useRepositoryChanges`, `useRepositoryFileDiff`, `useResizablePanels`, `useState`
 
 ### RepositoryDetailCommitsTab
 
 - **Path:** `src/features/repository-detail/components/RepositoryDetailCommitsTab.tsx`
 - **Architecture:** Feature component (Compliant)
-- **Lines:** 175
-- **Child component imports:** PushStatusIndicator, ResizeDivider, RepositoryCommitDiffPanel, RepositoryCommitFilesPanel, RepositoryDetail
+- **Lines:** 200
+- **Child component imports:** PushStatusIndicator, RepositoryCommitDiffPanel, RepositoryCommitFilesPanel, RepositoryDetail, ResizeDivider
 - **Hooks consumed:** `useCommitChangedFiles`, `useCommitFileDiff`, `useEffect`, `useResizablePanels`, `useState`
 
 ### RepositoryDetailHeader
 
 - **Path:** `src/features/repository-detail/components/RepositoryDetailHeader.tsx`
 - **Architecture:** Feature component (Compliant)
-- **Lines:** 168
-- **Child component imports:** Button, Tabs
+- **Lines:** 172
+- **Child component imports:** Button, RepositoryDetailActionsMenu, Tabs
 - **Hooks consumed:** `useClickOutside`, `useEffect`, `useRef`, `useState`
 
 ### RepositoryDiffPreview
@@ -678,6 +686,9 @@ Components over 150 lines or with more than 5 internal sub-imports:
 - `src/features/management/components/SettingsManagementModal.tsx`: over 150 lines
 - `src/features/onboarding/components/OnboardingPresentation.tsx`: over 150 lines
 - `src/features/repository-detail/components/RepositoryDetail.tsx`: over 150 lines
+- `src/features/repository-detail/components/RepositoryDetailActionsMenu.tsx`: over 150 lines
+- `src/features/repository-detail/components/RepositoryDetailChangesTab.tsx`: over 150 lines
+- `src/features/repository-detail/components/RepositoryDetailCommitsTab.tsx`: over 150 lines
 - `src/features/repository-detail/components/RepositoryDetailHeader.tsx`: over 150 lines
 - `src/features/repository-open/components/OpenWithModal.tsx`: over 150 lines
 - `src/features/repository-update-diagnostics/components/RepositoryUpdateDiagnosticsModal.tsx`: over 150 lines

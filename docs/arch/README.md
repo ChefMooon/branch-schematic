@@ -1,6 +1,6 @@
 # Architecture Documentation
 
-_Refreshed: 2026-08-23T05:21:02.145Z_
+_Refreshed: 2026-08-28T20:10:49.281Z_
 
 ## Available Maps
 
@@ -15,9 +15,9 @@ _Refreshed: 2026-08-23T05:21:02.145Z_
 
 ## Totals
 
-- Components documented: 73
+- Components documented: 77
 - Database tables mapped: 17
-- IPC handlers documented: 127
+- IPC handlers documented: 129
 - State stores documented: 4
-- Test files mapped: 41 (198 tests)
+- Test files mapped: 48 (253 tests)
 

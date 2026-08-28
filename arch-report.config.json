@@ -1,0 +1,55 @@
+{
+  "thresholds": {
+    "complexity": 10,
+    "crapBands": {
+      "medium": 30,
+      "high": 60,
+      "critical": 110
+    }
+  },
+  "reports": {
+    "complexity": {
+      "enabled": true,
+      "blockOnAny": false
+    },
+    "crap": {
+      "enabled": true,
+      "blockOnAny": false
+    },
+    "todo": {
+      "enabled": true,
+      "blockOnAny": false
+    }
+  },
+  "scoring": {
+    "deductions": {
+      "critical": 25,
+      "high": 10,
+      "medium": 5,
+      "low": 3
+    },
+    "gradeBands": {
+      "A": 90,
+      "B": 80,
+      "C": 70,
+      "D": 60
+    },
+    "failUnder": 70,
+    "locWeightCap": 500
+  },
+  "baseline": {
+    "path": null
+  },
+  "coverage": {
+    "path": null,
+    "command": "npm run test:coverage",
+    "frontend": {
+      "path": null,
+      "command": null
+    },
+    "backend": {
+      "path": null,
+      "command": null
+    }
+  }
+}

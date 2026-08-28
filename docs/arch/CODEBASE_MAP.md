@@ -26,6 +26,7 @@ branch-schematic/
 ├── .vscode/
 │   ├── extensions.json
 │   └── tasks.json
+├── arch-report.config.json
 ├── arch-snap.json
 ├── img/
 │   └── dashboard.png
@@ -65,6 +66,7 @@ branch-schematic/
 │   │   ├── Modal/
 │   │   │   ├── ConfirmationModal.test.tsx
 │   │   │   ├── ConfirmationModal.tsx
+│   │   │   ├── TextInputModal.test.tsx
 │   │   │   └── TextInputModal.tsx
 │   │   ├── notifications/
 │   │   │   ├── NotificationDropdown.tsx
@@ -75,6 +77,10 @@ branch-schematic/
 │   │   ├── push-status-indicator/
 │   │   │   ├── PushStatusIndicator.css
 │   │   │   └── PushStatusIndicator.tsx
+│   │   ├── resize-divider/
+│   │   │   ├── ResizeDivider.css
+│   │   │   ├── ResizeDivider.test.tsx
+│   │   │   └── ResizeDivider.tsx
 │   │   ├── search-bar/
 │   │   │   ├── SearchBar.css
 │   │   │   ├── SearchBar.test.tsx
@@ -221,18 +227,27 @@ branch-schematic/
 │   │   │   │   ├── RepositoryChangesListPanel.tsx
 │   │   │   │   ├── RepositoryChangesPreviewPanel.tsx
 │   │   │   │   ├── RepositoryCommitComposer.tsx
+│   │   │   │   ├── RepositoryCommitDiffPanel.tsx
+│   │   │   │   ├── RepositoryCommitFilesPanel.tsx
 │   │   │   │   ├── RepositoryDetail.css
 │   │   │   │   ├── RepositoryDetail.test.tsx
 │   │   │   │   ├── RepositoryDetail.tsx
+│   │   │   │   ├── RepositoryDetailActionsMenu.test.tsx
+│   │   │   │   ├── RepositoryDetailActionsMenu.tsx
 │   │   │   │   ├── RepositoryDetailBody.test.tsx
 │   │   │   │   ├── RepositoryDetailBody.tsx
 │   │   │   │   ├── RepositoryDetailChangesTab.test.tsx
 │   │   │   │   ├── RepositoryDetailChangesTab.tsx
+│   │   │   │   ├── RepositoryDetailCommitsTab.test.tsx
 │   │   │   │   ├── RepositoryDetailCommitsTab.tsx
 │   │   │   │   ├── RepositoryDetailHeader.test.tsx
 │   │   │   │   ├── RepositoryDetailHeader.tsx
 │   │   │   │   └── RepositoryDiffPreview.tsx
 │   │   │   ├── hooks/
+│   │   │   │   ├── useCommitChangedFiles.test.ts
+│   │   │   │   ├── useCommitChangedFiles.ts
+│   │   │   │   ├── useCommitFileDiff.test.ts
+│   │   │   │   ├── useCommitFileDiff.ts
 │   │   │   │   ├── useRepositoryChanges.ts
 │   │   │   │   └── useRepositoryFileDiff.ts
 │   │   │   └── types/
@@ -257,7 +272,9 @@ branch-schematic/
 │   │   ├── useBackdropDismiss.ts
 │   │   ├── useClickOutside.ts
 │   │   ├── useNotificationListener.ts
-│   │   └── useOS.ts
+│   │   ├── useOS.ts
+│   │   ├── useResizablePanels.test.ts
+│   │   └── useResizablePanels.ts
 │   ├── lib/
 │   │   └── db.ts
 │   ├── main.tsx
@@ -281,6 +298,8 @@ branch-schematic/
 │   │   └── git.ts
 │   └── vite-env.d.ts
 ├── src-tauri/
+│   ├── .cargo/
+│   │   └── config.toml
 │   ├── .gitignore
 │   ├── 2
 │   ├── build.rs
