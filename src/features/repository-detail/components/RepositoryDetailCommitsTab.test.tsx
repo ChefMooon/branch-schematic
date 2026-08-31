@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CommitChangedFile, RepositoryFileDiff, TrackedPath } from '../../../types/git';
 import type { CommitRecord } from './RepositoryDetail';
 import { RepositoryDetailCommitsTab } from './RepositoryDetailCommitsTab';
@@ -93,6 +93,31 @@ function renderTab(overrides: Partial<Parameters<typeof RepositoryDetailCommitsT
 describe('RepositoryDetailCommitsTab', () => {
   beforeEach(() => {
     invokeMock.mockReset();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('renders relative commit dates with full-date tooltips', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2024-01-03T10:00:00Z'));
+    const relativeCommits = commits.map((commit, index) => ({
+      ...commit,
+      committed_at: index === 0 ? '2024-01-03T09:07:00Z' : '2024-01-01T10:00:00Z',
+    }));
+
+    renderTab({ commits: relativeCommits, selectedCommit: relativeCommits[0] });
+
+    const minuteDate = screen.getByText('53 minutes ago');
+    expect(minuteDate).toHaveAttribute(
+      'title',
+      new Date('2024-01-03T09:07:00Z').toLocaleString(undefined, {
+        dateStyle: 'medium',
+        timeStyle: 'short',
+      }),
+    );
+    expect(screen.getByText('2 days ago')).toBeInTheDocument();
   });
 
   it('renders loading, empty, and loaded history states', () => {

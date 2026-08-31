@@ -19,10 +19,13 @@ describe('RepositoryDetailBody', () => {
 
   afterEach(() => {
     vi.unstubAllEnvs();
+    vi.useRealTimers();
   });
 
   it('renders repository summary details and commit history state', () => {
     vi.stubEnv('TZ', 'America/Los_Angeles');
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2024-01-03T10:00:00Z'));
 
     const repo: TrackedPath = {
       id: 'repo-1',
@@ -77,7 +80,7 @@ describe('RepositoryDetailBody', () => {
       dateStyle: 'medium',
       timeStyle: 'short',
     });
-    expect(screen.getByText(expectedLocalDate)).toBeInTheDocument();
+    expect(historyItem?.querySelector(`[title="${expectedLocalDate}"]`)).toHaveTextContent('2 days ago');
     expect(invokeMock).toHaveBeenCalledWith('get_commit_changed_files', {
       absolutePath: '/tmp/branch-schematic',
       commitHash: 'abc123',

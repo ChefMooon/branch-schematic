@@ -21,7 +21,7 @@ interface RepositoryDetailCommitsTabProps {
   onPersistPanelRatios?: (ratios: Record<string, number>) => void;
 }
 
-function formatCommitDate(value: string) {
+function formatExactCommitDate(value: string) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) {
     return value;
@@ -31,6 +31,35 @@ function formatCommitDate(value: string) {
     dateStyle: 'medium',
     timeStyle: 'short',
   });
+}
+
+function formatRelativeCommitDate(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  const elapsedSeconds = Math.max(0, Math.floor((Date.now() - date.getTime()) / 1000));
+  if (elapsedSeconds < 60) return 'just now';
+  if (elapsedSeconds < 3600) {
+    const minutes = Math.floor(elapsedSeconds / 60);
+    return `${minutes} minute${minutes === 1 ? '' : 's'} ago`;
+  }
+  if (elapsedSeconds < 86400) {
+    const hours = Math.floor(elapsedSeconds / 3600);
+    return `${hours} hour${hours === 1 ? '' : 's'} ago`;
+  }
+  if (elapsedSeconds < 2592000) {
+    const days = Math.floor(elapsedSeconds / 86400);
+    return `${days} day${days === 1 ? '' : 's'} ago`;
+  }
+  if (elapsedSeconds < 31536000) {
+    const months = Math.floor(elapsedSeconds / 2592000);
+    return `${months} month${months === 1 ? '' : 's'} ago`;
+  }
+
+  const years = Math.floor(elapsedSeconds / 31536000);
+  return `${years} year${years === 1 ? '' : 's'} ago`;
 }
 
 const COMMIT_PANEL_CONFIGS: ResizablePanelConfig[] = [
@@ -129,7 +158,9 @@ export function RepositoryDetailCommitsTab({
                               </span>
                               <span>
                                 <Clock size={12} weight="fill" />
-                                {formatCommitDate(commit.committed_at)}
+                                <span title={formatExactCommitDate(commit.committed_at)}>
+                                  {formatRelativeCommitDate(commit.committed_at)}
+                                </span>
                               </span>
                             </div>
                           </div>
