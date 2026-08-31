@@ -280,6 +280,87 @@ describe('RepositoryCard', () => {
     expect(screen.getByTestId('repository-view')).toBeInTheDocument();
   });
 
+  it('prevents only the second primary mouse-down on empty card space', () => {
+    const repo = {
+      id: 'repo-selection-guard',
+      display_name: 'Selection Guard Repo',
+      absolute_path: 'C:/repos/selection-guard-repo',
+      status: 'ready',
+      is_favorite: 0,
+      tags: [],
+      available_branches: ['main'],
+      current_branch: 'main',
+      default_branch_name: 'main',
+      uncommitted_changes_count: 0,
+      has_upstream: false,
+      ahead_count: 0,
+      behind_count: 0,
+      ahead_of_default_count: 0,
+      behind_default_count: 0,
+      alias_name: '',
+      theme_color_hex: null,
+      icon_name: null,
+      group_id: null,
+      favorite: 0,
+      group_name: null,
+      origin_type: 'LOCAL_ONLY',
+    } as unknown as TrackedPath;
+
+    const { container } = render(<RepositoryCard repo={repo} onRefresh={() => {}} />);
+    const card = container.querySelector('.repo-card');
+
+    expect(card).not.toBeNull();
+
+    const firstMouseDown = new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0, detail: 1 });
+    card!.dispatchEvent(firstMouseDown);
+    expect(firstMouseDown.defaultPrevented).toBe(false);
+
+    const secondMouseDown = new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0, detail: 2 });
+    card!.dispatchEvent(secondMouseDown);
+    expect(secondMouseDown.defaultPrevented).toBe(true);
+
+    const secondaryMouseDown = new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 2, detail: 2 });
+    card!.dispatchEvent(secondaryMouseDown);
+    expect(secondaryMouseDown.defaultPrevented).toBe(false);
+  });
+
+  it('does not prevent selection on interactive card descendants', () => {
+    const repo = {
+      id: 'repo-interactive-selection',
+      display_name: 'Interactive Selection Repo',
+      absolute_path: 'C:/repos/interactive-selection-repo',
+      status: 'ready',
+      is_favorite: 0,
+      tags: [],
+      available_branches: ['main'],
+      current_branch: 'main',
+      default_branch_name: 'main',
+      uncommitted_changes_count: 0,
+      has_upstream: false,
+      ahead_count: 0,
+      behind_count: 0,
+      alias_name: '',
+      theme_color_hex: null,
+      icon_name: null,
+      group_id: null,
+      favorite: 0,
+      group_name: null,
+      origin_type: 'LOCAL_ONLY',
+    } as unknown as TrackedPath;
+
+    const { container } = render(<RepositoryCard repo={repo} onRefresh={() => {}} />);
+    const card = container.querySelector('.repo-card');
+    const button = document.createElement('button');
+    card?.appendChild(button);
+
+    expect(card).not.toBeNull();
+
+    const mouseDown = new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0, detail: 2 });
+    button.dispatchEvent(mouseDown);
+
+    expect(mouseDown.defaultPrevented).toBe(false);
+  });
+
   it('does not open the details view when double-clicking the interactive icon area', () => {
     const repo = {
       id: 'repo-6',

@@ -267,6 +267,48 @@ export function RepositoryCard({ repo, onRefresh, onOpenManagement, onOpenManage
     setIsThemeModalOpen(true);
   };
 
+  const handleCardMouseDown = (event: React.MouseEvent<HTMLDivElement>) => {
+    if (event.button !== 0 || event.detail !== 2) {
+      return;
+    }
+
+    const target = event.target as HTMLElement | null;
+    if (!target) {
+      return;
+    }
+
+    const interactiveSelector = [
+      '.repo-icon-wrapper',
+      '.repo-title-row',
+      '.repo-title-shell',
+      '.repo-card-selection-control',
+      '.repo-card-overflow-menu',
+      '.repo-card-action-button',
+      '.repo-branch-section',
+      '.branch-dropdown-root',
+      '.branch-dropdown-trigger',
+      '.repo-secondary-row',
+      '.repo-card-missing-state__actions',
+      'a',
+      'button',
+      'input',
+      'select',
+      'textarea',
+      '[contenteditable="true"]',
+      '[role="button"]',
+      '[role="menu"]',
+      '[role="dialog"]',
+      '[role="listbox"]',
+      '[aria-haspopup]'
+    ].join(', ');
+
+    if (target.closest(interactiveSelector)) {
+      return;
+    }
+
+    event.preventDefault();
+  };
+
   const handleCardDoubleClick = (event: React.MouseEvent<HTMLDivElement>) => {
     const target = event.target as HTMLElement | null;
     if (!target) {
@@ -383,6 +425,7 @@ export function RepositoryCard({ repo, onRefresh, onOpenManagement, onOpenManage
     <div
       className={`repo-card origin-${originType.toLowerCase()} ${(repo.is_favorite ?? 0) === 1 ? 'is-favorited' : ''} ${(repo.is_pinned ?? 0) === 1 ? 'is-pinned' : ''} ${isSelected ? 'is-selected' : ''} ${isMissing ? 'is-missing' : ''}`}
       style={{ borderColor: `${resolvedThemeColor}55` }}
+      onMouseDown={handleCardMouseDown}
       onDoubleClick={handleCardDoubleClick}
     >
       {/* Top Header Information Stack */}
