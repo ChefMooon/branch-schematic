@@ -202,7 +202,7 @@ export function CloneRemoteRepositoryModal({
 	const urlBranchRequestKeyRef = useRef(0);
 
 	const { addToast } = useNotifications();
-	const { hydrateFromBackend, hydrateQuickFilterMetadata } = useWorkspaceStore();
+	const { hydrateFromBackend, hydrateQuickFilterMetadata, refreshRepositoryGitStatus } = useWorkspaceStore();
 	const { activeProfile } = useProfileContext();
 
 	const canUseRemoteClone =
@@ -524,6 +524,7 @@ export function CloneRemoteRepositoryModal({
 			});
 
 			await hydrateFromBackend();
+			await refreshRepositoryGitStatus(response.path_id, response.absolute_path);
 			await hydrateQuickFilterMetadata();
 
 			addToast({
@@ -560,6 +561,7 @@ export function CloneRemoteRepositoryModal({
 		addToast,
 		hydrateFromBackend,
 		hydrateQuickFilterMetadata,
+		refreshRepositoryGitStatus,
 		onClose,
 		selectedRepository,
 		setActiveRepositoryState,
@@ -595,6 +597,7 @@ export function CloneRemoteRepositoryModal({
 			});
 
 			await hydrateFromBackend();
+			await refreshRepositoryGitStatus(response.path_id, response.absolute_path);
 			await hydrateQuickFilterMetadata();
 
 			addToast({
@@ -624,6 +627,7 @@ export function CloneRemoteRepositoryModal({
 		addToast,
 		hydrateFromBackend,
 		hydrateQuickFilterMetadata,
+		refreshRepositoryGitStatus,
 		onClose,
 		urlCloneIntoSubfolder,
 		urlBranchInput,

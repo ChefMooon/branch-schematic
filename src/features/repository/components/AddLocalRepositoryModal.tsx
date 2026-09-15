@@ -17,7 +17,7 @@ export function AddLocalRepositoryModal({ isOpen, onClose }: AddLocalRepositoryM
   const [localPath, setLocalPath] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const { hydrateFromBackend, hydrateQuickFilterMetadata, reconcileImportedRepository } = useWorkspaceStore();
+  const { hydrateFromBackend, hydrateQuickFilterMetadata, refreshRepositoryGitStatus, reconcileImportedRepository } = useWorkspaceStore();
   const { addToast } = useNotifications();
 
   useEffect(() => {
@@ -57,8 +57,9 @@ export function AddLocalRepositoryModal({ isOpen, onClose }: AddLocalRepositoryM
     try {
       const result = await invoke<RepositoryTrackResult>('add_new_tracked_path', { absolutePath: trimmedPath });
       reconcileImportedRepository(result);
-      void hydrateFromBackend();
-      void hydrateQuickFilterMetadata();
+      await hydrateFromBackend();
+      await refreshRepositoryGitStatus(result.id, result.absolute_path);
+      await hydrateQuickFilterMetadata();
 
       addToast({
         title: result.outcome === 'already_tracked' ? 'Repository already tracked' : 'Repository added',

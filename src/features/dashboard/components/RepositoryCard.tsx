@@ -31,6 +31,7 @@ import { useResolveRepoOrigin } from "../hooks/useResolveRepoOrigin";
 import { useRepoOriginBadgeState } from "../hooks/useResolveRepoOrigin";
 import type { RepoOriginType } from "../hooks/useResolveRepoOrigin";
 import { RepositoryDetail } from "../../repository-detail/components/RepositoryDetail";
+import { RepositoryProfileAssignmentControl } from '../../auth-profile/components/RepositoryProfileAssignmentControl';
 
 interface RepositoryCardProps {
   repo: TrackedPath;
@@ -70,6 +71,7 @@ export function RepositoryCard({ repo, onRefresh, onOpenManagement, onOpenManage
   const [isTagModalOpen, setIsTagModalOpen] = useState(false);
   const [isThemeModalOpen, setIsThemeModalOpen] = useState(false);
   const [isConfirmingRemove, setIsConfirmingRemove] = useState(false);
+  const [isConfirmingReplacePublication, setIsConfirmingReplacePublication] = useState(false);
   const [isRepositoryDetailOpen, setIsRepositoryDetailOpen] = useState(false);
   const [aliasInput, setAliasInput] = useState("");
   const [loadingAction, setLoadingAction] = useState<"fetch" | "pull" | "push" | "checkout" | "alias" | "refresh" | null>(null);
@@ -101,27 +103,42 @@ export function RepositoryCard({ repo, onRefresh, onOpenManagement, onOpenManage
     }
   };
 
-  const executeGitOperation = async (operation: "fetch" | "pull" | "push") => {
+  const executeGitOperation = async (operation: "fetch" | "pull" | "push", replaceExisting = false) => {
     if (isRepositoryVerifying) return;
     setLoadingAction(operation);
     try {
-      const message = await invoke<string>(`git_${operation}_operation`, { pathId: repo.id });
+      const result = await invoke<string | { message?: string; outcome?: string }>(`git_${operation}_operation`, {
+        pathId: repo.id,
+        ...(operation === "push" ? { replaceExisting } : {}),
+      });
+      const resultMessage = typeof result === "string" ? result : result?.message;
+      const resultOutcome = typeof result === "string" ? undefined : result?.outcome;
       addToast({
         variant: "success",
-        title: operation === "fetch" ? "Fetch Complete" : operation === "pull" ? "Pull Complete" : "Push Complete",
-        message: message || "Operation completed successfully.",
+        title: operation === "fetch" ? "Fetch Complete" : operation === "pull" ? "Pull Complete" : resultOutcome === "published" ? "Branch Published" : "Push Complete",
+        message: resultMessage || "Operation completed successfully.",
       });
     } catch (err) {
       console.error(`Git execution failure during ${operation}:`, err);
+      const message = typeof err === "string" ? err : `Could not ${operation} ${repo.display_name}.`;
+      if (operation === "push" && !replaceExisting && message.includes("[publication_conflict]")) {
+        setIsConfirmingReplacePublication(true);
+        return;
+      }
       addToast({
         variant: "error",
         title: operation === "fetch" ? "Fetch Failed" : operation === "pull" ? "Pull Failed" : "Push Failed",
-        message: typeof err === "string" ? err : `Could not ${operation} ${repo.display_name}.`,
+        message,
       });
     } finally {
       setLoadingAction(null);
       onRefresh();
     }
+  };
+
+  const confirmReplacePublication = async () => {
+    setIsConfirmingReplacePublication(false);
+    await executeGitOperation("push", true);
   };
 
   const handleRefreshGitStatus = async () => {
@@ -475,6 +492,7 @@ export function RepositoryCard({ repo, onRefresh, onOpenManagement, onOpenManage
           onPush={() => {
             void executeGitOperation("push");
           }}
+          pushLabel={repo.has_upstream ? "Push changes" : "Publish branch"}
           onToggleFavorite={() => {
             void handleFavoriteToggle();
           }}
@@ -496,6 +514,10 @@ export function RepositoryCard({ repo, onRefresh, onOpenManagement, onOpenManage
           {repo.health_state.replace(/_/g, ' ')}{repo.last_verification_error ? `: ${repo.last_verification_error}` : ''}
         </div>
       ) : null}
+
+      <div className="repo-secondary-row">
+        <RepositoryProfileAssignmentControl repoPathId={repo.id} onChanged={onRefresh} compact />
+      </div>
 
       {isMissing ? (
         <div className="repo-card-missing-state">
@@ -598,6 +620,18 @@ export function RepositoryCard({ repo, onRefresh, onOpenManagement, onOpenManage
         isOpen={isRepositoryDetailOpen}
         repo={repo}
         onClose={() => setIsRepositoryDetailOpen(false)}
+      />
+
+      <ConfirmationModal
+        isOpen={isConfirmingReplacePublication}
+        title="Replace remote branch?"
+        message={`The remote branch '${repo.current_branch ?? "current"}' already exists. Replacing it may discard remote commits.`}
+        confirmLabel="Replace branch"
+        cancelLabel="Cancel"
+        variant="danger"
+        isBusy={loadingAction === "push"}
+        onConfirm={() => void confirmReplacePublication()}
+        onCancel={() => setIsConfirmingReplacePublication(false)}
       />
 
       {!isMissing ? (

@@ -9,6 +9,23 @@ The plan review found material implementation gaps around state ownership, modal
 
 The change is worthwhile, but onboarding should not require authentication or prevent local work. The current application already supports a local-first workflow with a seeded Basic profile, while remote repository operations require a healthy Full OAuth profile. The flow should orient users, establish one small first success, and make authentication an optional capability upgrade.
 
+## Repository profile guidance
+
+Onboarding should explain that a repository assignment wins over the active
+profile; otherwise the repository inherits the active non-fallback profile, or
+the `local-basic-profile` fallback when no user profile exists. Users can assign,
+replace, or clear a profile directly from repository actions. A clone retains a
+profile only when one was explicitly selected; an omitted selection remains
+inherited. Stale assignments block Git operations until repaired or cleared, and
+profile deletion is blocked while assignments remain.
+
+Basic is local-only. Local system uses the operating system's Git credentials
+and SSH configuration. Full OAuth supplies keyring-backed credentials for HTTPS
+Git remotes and provider API access; OAuth does not authenticate SSH remotes,
+which require the user's SSH setup. Tokens remain in the OS keyring and are
+never shown in onboarding. Normal errors are redacted and categorized; detailed
+profile/transport diagnostics are developer-only.
+
 ## Decision Register
 ### Round 1 decisions
 - `d1-first-run`: **Resolved**. Track onboarding globally for the local app/database; allow users to skip immediately and replay it from the main Settings page. This preserves local-first access and makes the education recoverable.

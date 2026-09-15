@@ -5,6 +5,7 @@ import { Tabs } from '../../../components/tabs/Tabs';
 import { useClickOutside } from '../../../hooks/useClickOutside';
 import type { TrackedPath } from '../../../types/git';
 import { RepositoryDetailActionsMenu } from './RepositoryDetailActionsMenu';
+import { RepositoryProfileAssignmentControl } from '../../auth-profile/components/RepositoryProfileAssignmentControl';
 
 interface RepositoryDetailHeaderProps {
   repo: TrackedPath;
@@ -57,6 +58,7 @@ export function RepositoryDetailHeader({ repo, activeBranch, previewBranch, onSe
 
         <div className="repository-view-header-actions">
           <RepositoryDetailActionsMenu repo={repo} onClose={onClose} onHistoryChanged={onHistoryChanged} />
+          <RepositoryProfileAssignmentControl repoPathId={repo.id} />
 
           <div className="repository-view-summary-pill-row" ref={summaryPopoverRef}>
             <button

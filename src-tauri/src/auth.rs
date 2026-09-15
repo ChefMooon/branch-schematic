@@ -111,6 +111,50 @@ pub struct RemoteAuthProfile {
     pub updated_at: Option<String>,
 }
 
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "snake_case")]
+pub struct ResolvedProfile {
+    pub repository_id: Option<String>,
+    pub profile_id: String,
+    pub profile_name: String,
+    pub auth_level: String,
+    pub resolution_source: String,
+    #[serde(skip)]
+    pub(crate) profile: RemoteAuthProfile,
+}
+
+fn resolved_profile(
+    repository_id: Option<&str>,
+    profile: RemoteAuthProfile,
+    resolution_source: &str,
+) -> ResolvedProfile {
+    ResolvedProfile {
+        repository_id: repository_id.map(str::to_string),
+        profile_id: profile.id.clone(),
+        profile_name: profile.display_name.clone(),
+        auth_level: normalize_auth_level(&profile.auth_level),
+        resolution_source: resolution_source.to_string(),
+        profile,
+    }
+}
+
+fn choose_profile_resolution<'a>(
+    assignment: Option<&'a str>,
+    active: Option<&'a str>,
+    fallback: Option<&'a str>,
+) -> Result<(&'a str, &'static str), String> {
+    if let Some(profile_id) = assignment.filter(|value| !value.trim().is_empty()) {
+        return Ok((profile_id, "repository_assignment"));
+    }
+    if let Some(profile_id) = active.filter(|value| !value.trim().is_empty()) {
+        return Ok((profile_id, "active_profile"));
+    }
+    if let Some(profile_id) = fallback.filter(|value| !value.trim().is_empty()) {
+        return Ok((profile_id, "local_fallback"));
+    }
+    Err("No authentication profile is available. Recreate the local fallback profile before using Git operations.".to_string())
+}
+
 fn normalize_auth_level(value: &str) -> String {
     match value {
         "local_system" => "local_system".to_string(),
@@ -189,15 +233,6 @@ async fn clear_token_from_keyring(profile_id: &str, provider: &str) -> Result<()
         Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
         Err(error) => Err(format!("Unable to remove token from keyring: {error}")),
     }
-}
-
-fn normalize_scope_values(values: Option<Vec<String>>) -> Vec<String> {
-    values
-        .unwrap_or_default()
-        .into_iter()
-        .map(|entry| entry.trim().to_string())
-        .filter(|entry| !entry.is_empty())
-        .collect()
 }
 
 fn determine_token_status(token_value: Option<&str>, token_expires_at: Option<&str>) -> String {
@@ -525,18 +560,14 @@ async fn fetch_profile_row(
         return Ok(None);
     };
 
-    let scopes = load_repo_scopes(pool, profile_id).await?;
+    let scopes = load_assigned_repositories(pool, profile_id).await?;
     let provider_name = resolve_provider_name(
         row.get::<Option<String>, _>("api_base_url").as_deref(),
         None,
     );
-    let token_value = match load_token_from_keyring(&profile_id, &provider_name).await {
-        Ok(token) => normalize_keyring_token(token),
-        Err(error) => {
-            eprintln!("Unable to read token from keyring: {error}");
-            None
-        }
-    };
+    let token_value = load_token_from_keyring(&profile_id, &provider_name)
+        .await
+        .map(normalize_keyring_token)?;
 
     Ok(Some(RemoteAuthProfile {
         id: row.get("id"),
@@ -582,9 +613,12 @@ fn public_profile(profile: RemoteAuthProfile) -> AuthProfileRow {
     }
 }
 
-async fn load_repo_scopes(pool: &SqlitePool, profile_id: &str) -> Result<Vec<String>, String> {
+async fn load_assigned_repositories(
+    pool: &SqlitePool,
+    profile_id: &str,
+) -> Result<Vec<String>, String> {
     let rows = sqlx::query(
-        "SELECT repo_path_id FROM profile_repo_scopes WHERE profile_id = $1 ORDER BY repo_path_id",
+        "SELECT repo_path_id FROM repository_profile_assignments WHERE profile_id = $1 ORDER BY repo_path_id",
     )
     .bind(profile_id)
     .fetch_all(pool)
@@ -598,32 +632,12 @@ async fn load_repo_scopes(pool: &SqlitePool, profile_id: &str) -> Result<Vec<Str
     Ok(scopes)
 }
 
-async fn save_repo_scopes(
-    pool: &SqlitePool,
-    profile_id: &str,
-    scopes: &[String],
-) -> Result<(), String> {
-    sqlx::query("DELETE FROM profile_repo_scopes WHERE profile_id = $1")
-        .bind(profile_id)
-        .execute(pool)
-        .await
-        .map_err(|error| error.to_string())?;
-
-    for scope in scopes.iter().filter(|entry| !entry.trim().is_empty()) {
-        sqlx::query(
-            "INSERT OR IGNORE INTO profile_repo_scopes (repo_path_id, profile_id) VALUES ($1, $2)",
-        )
-        .bind(scope)
-        .bind(profile_id)
-        .execute(pool)
-        .await
-        .map_err(|error| error.to_string())?;
-    }
-
-    Ok(())
-}
-
 async fn set_active_profile(pool: &SqlitePool, profile_id: &str) -> Result<(), String> {
+    if profile_id == "local-basic-profile" {
+        return Err(
+            "The local fallback profile cannot be selected as the active user profile.".to_string(),
+        );
+    }
     sqlx::query("UPDATE auth_profiles SET is_active = CASE WHEN id = $1 THEN 1 ELSE 0 END")
         .bind(profile_id)
         .execute(pool)
@@ -640,7 +654,7 @@ pub async fn get_profiles(
     let pool = state.inner().pool();
 
     let rows = sqlx::query(
-        "SELECT id FROM auth_profiles ORDER BY is_favorite DESC, is_active DESC, profile_name ASC"
+        "SELECT id FROM auth_profiles ORDER BY is_favorite DESC, is_active DESC, profile_name ASC",
     )
     .fetch_all(pool)
     .await
@@ -666,7 +680,7 @@ pub async fn add_profile(
 
     let profile_id = profile.id.unwrap_or_else(|| Uuid::new_v4().to_string());
     let should_activate = profile.is_active.unwrap_or(0) == 1
-        || sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM auth_profiles WHERE is_active = 1")
+        || sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM auth_profiles WHERE is_active = 1 AND id <> 'local-basic-profile'")
             .fetch_one(pool)
             .await
             .map_err(|error| error.to_string())?
@@ -690,10 +704,12 @@ pub async fn add_profile(
 
     if should_activate {
         set_active_profile(pool, &profile_id).await?;
+    } else {
+        sqlx::query("UPDATE auth_profiles SET is_active = 0 WHERE id = 'local-basic-profile'")
+            .execute(pool)
+            .await
+            .map_err(|error| error.to_string())?;
     }
-
-    let scopes = normalize_scope_values(profile.repository_scope);
-    save_repo_scopes(pool, &profile_id, &scopes).await?;
 
     fetch_profile_row(pool, &profile_id)
         .await?
@@ -738,9 +754,6 @@ pub async fn update_profile(
             .map_err(|error| error.to_string())?;
     }
 
-    let scopes = normalize_scope_values(profile.repository_scope);
-    save_repo_scopes(pool, &profile_id, &scopes).await?;
-
     fetch_profile_row(pool, &profile_id)
         .await?
         .map(public_profile)
@@ -753,6 +766,17 @@ pub async fn delete_profile(
     profile_id: String,
 ) -> Result<(), String> {
     let pool = state.inner().pool();
+
+    let assignment_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM repository_profile_assignments WHERE profile_id = $1",
+    )
+    .bind(&profile_id)
+    .fetch_one(pool)
+    .await
+    .map_err(|e| e.to_string())?;
+    if assignment_count > 0 {
+        return Err("This profile is assigned to repositories. Reassign or clear those assignments before deleting it.".to_string());
+    }
 
     let active_profile: Option<String> = sqlx::query_scalar::<_, String>(
         "SELECT id FROM auth_profiles WHERE id = $1 AND is_active = 1",
@@ -773,10 +797,12 @@ pub async fn delete_profile(
         eprintln!("Failed to clear stored token: {error}");
     }
 
-    let remaining_profile_count: i64 = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM auth_profiles")
-        .fetch_one(pool)
-        .await
-        .map_err(|error| error.to_string())?;
+    let remaining_profile_count: i64 = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM auth_profiles WHERE id <> 'local-basic-profile'",
+    )
+    .fetch_one(pool)
+    .await
+    .map_err(|error| error.to_string())?;
 
     if remaining_profile_count == 0 {
         ensure_seed_profile(pool).await?;
@@ -944,13 +970,12 @@ pub async fn exchange_code_for_token(
         .and_then(|profile| profile.avatar_url.clone());
 
     if !payload.profile_id.trim().is_empty() {
-        let profile_exists: Option<String> = sqlx::query_scalar(
-            "SELECT id FROM auth_profiles WHERE id = $1",
-        )
-        .bind(&payload.profile_id)
-        .fetch_optional(pool)
-        .await
-        .map_err(|error| error.to_string())?;
+        let profile_exists: Option<String> =
+            sqlx::query_scalar("SELECT id FROM auth_profiles WHERE id = $1")
+                .bind(&payload.profile_id)
+                .fetch_optional(pool)
+                .await
+                .map_err(|error| error.to_string())?;
         if profile_exists.is_none() {
             return Err("The OAuth profile must be created before authorization.".to_string());
         }
@@ -976,7 +1001,10 @@ pub async fn exchange_code_for_token(
 
         if let Err(error) = profile_update {
             let restore_result = match previous_token {
-                Some(previous_token) => persist_token_in_keyring(&payload.profile_id, &provider_name, &previous_token).await,
+                Some(previous_token) => {
+                    persist_token_in_keyring(&payload.profile_id, &provider_name, &previous_token)
+                        .await
+                }
                 None => clear_token_from_keyring(&payload.profile_id, &provider_name).await,
             };
             if let Err(restore_error) = restore_result {
@@ -996,32 +1024,139 @@ pub async fn exchange_code_for_token(
     })
 }
 
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "snake_case")]
+pub struct RepositoryProfileAssignment {
+    pub repo_path_id: String,
+    pub profile_id: Option<String>,
+    pub profile_name: Option<String>,
+    pub auth_level: Option<String>,
+    pub stale: bool,
+}
+
+#[tauri::command]
+pub async fn get_repository_profile_assignment(
+    state: tauri::State<'_, crate::DbState>,
+    repo_path_id: String,
+) -> Result<RepositoryProfileAssignment, String> {
+    let row = sqlx::query(
+        "SELECT a.repo_path_id, a.profile_id, p.profile_name, p.auth_level
+         FROM repository_profile_assignments a
+         LEFT JOIN auth_profiles p ON p.id = a.profile_id
+         WHERE a.repo_path_id = $1",
+    )
+    .bind(&repo_path_id)
+    .fetch_optional(state.inner().pool())
+    .await
+    .map_err(|e| e.to_string())?;
+    Ok(match row {
+        Some(row) => {
+            let profile_id: String = row.get("profile_id");
+            RepositoryProfileAssignment {
+                repo_path_id,
+                profile_id: Some(profile_id),
+                profile_name: row.get("profile_name"),
+                auth_level: row.get("auth_level"),
+                stale: row.get::<Option<String>, _>("profile_name").is_none(),
+            }
+        }
+        None => RepositoryProfileAssignment {
+            repo_path_id,
+            profile_id: None,
+            profile_name: None,
+            auth_level: None,
+            stale: false,
+        },
+    })
+}
+
+#[tauri::command]
+pub async fn assign_repository_profile(
+    state: tauri::State<'_, crate::DbState>,
+    repo_path_id: String,
+    profile_id: String,
+) -> Result<RepositoryProfileAssignment, String> {
+    let pool = state.inner().pool();
+    let exists: Option<String> = sqlx::query_scalar("SELECT id FROM auth_profiles WHERE id = $1")
+        .bind(&profile_id)
+        .fetch_optional(pool)
+        .await
+        .map_err(|e| e.to_string())?;
+    if exists.is_none() {
+        return Err("The selected authentication profile no longer exists.".to_string());
+    }
+    let repo_exists: Option<String> =
+        sqlx::query_scalar("SELECT id FROM tracked_paths WHERE id = $1")
+            .bind(&repo_path_id)
+            .fetch_optional(pool)
+            .await
+            .map_err(|e| e.to_string())?;
+    if repo_exists.is_none() {
+        return Err("The selected repository no longer exists.".to_string());
+    }
+    sqlx::query("INSERT INTO repository_profile_assignments (repo_path_id, profile_id) VALUES ($1, $2)
+                 ON CONFLICT(repo_path_id) DO UPDATE SET profile_id = excluded.profile_id, assigned_at = CURRENT_TIMESTAMP")
+        .bind(&repo_path_id).bind(&profile_id).execute(pool).await.map_err(|e| e.to_string())?;
+    get_repository_profile_assignment_internal(pool, &repo_path_id).await
+}
+
+#[tauri::command]
+pub async fn clear_repository_profile(
+    state: tauri::State<'_, crate::DbState>,
+    repo_path_id: String,
+) -> Result<(), String> {
+    sqlx::query("DELETE FROM repository_profile_assignments WHERE repo_path_id = $1")
+        .bind(repo_path_id)
+        .execute(state.inner().pool())
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+async fn get_repository_profile_assignment_internal(
+    pool: &SqlitePool,
+    repo_path_id: &str,
+) -> Result<RepositoryProfileAssignment, String> {
+    let row = sqlx::query("SELECT a.repo_path_id, a.profile_id, p.profile_name, p.auth_level FROM repository_profile_assignments a LEFT JOIN auth_profiles p ON p.id = a.profile_id WHERE a.repo_path_id = $1")
+        .bind(repo_path_id).fetch_optional(pool).await.map_err(|e| e.to_string())?;
+    let Some(row) = row else {
+        return Ok(RepositoryProfileAssignment {
+            repo_path_id: repo_path_id.to_string(),
+            profile_id: None,
+            profile_name: None,
+            auth_level: None,
+            stale: false,
+        });
+    };
+    let profile_id: String = row.get("profile_id");
+    let profile_name: Option<String> = row.get("profile_name");
+    Ok(RepositoryProfileAssignment {
+        repo_path_id: repo_path_id.to_string(),
+        profile_id: Some(profile_id),
+        auth_level: row.get("auth_level"),
+        stale: profile_name.is_none(),
+        profile_name,
+    })
+}
+
 pub async fn resolve_profile_for_repository(
     pool: &SqlitePool,
     repo_path_id: &str,
-) -> Result<Option<RemoteAuthProfile>, String> {
+) -> Result<ResolvedProfile, String> {
     let scope_profile_id: Option<String> = sqlx::query_scalar::<_, String>(
-        "SELECT profile_id FROM profile_repo_scopes WHERE repo_path_id = $1 ORDER BY profile_id LIMIT 1"
+        "SELECT profile_id FROM repository_profile_assignments WHERE repo_path_id = $1",
     )
     .bind(repo_path_id)
     .fetch_optional(pool)
     .await
     .map_err(|error| error.to_string())?;
 
-    if let Some(profile_id) = scope_profile_id {
-        return fetch_profile_row(pool, &profile_id).await;
-    }
-
     let active_profile_id: Option<String> = sqlx::query_scalar::<_, String>(
-        "SELECT id FROM auth_profiles WHERE is_active = 1 ORDER BY profile_name ASC LIMIT 1",
+        "SELECT id FROM auth_profiles WHERE is_active = 1 AND id <> 'local-basic-profile' ORDER BY profile_name ASC LIMIT 1",
     )
     .fetch_optional(pool)
     .await
     .map_err(|error| error.to_string())?;
-
-    if let Some(profile_id) = active_profile_id {
-        return fetch_profile_row(pool, &profile_id).await;
-    }
 
     let fallback_profile_id: Option<String> =
         sqlx::query_scalar::<_, String>("SELECT id FROM auth_profiles WHERE id = $1 LIMIT 1")
@@ -1030,30 +1165,54 @@ pub async fn resolve_profile_for_repository(
             .await
             .map_err(|error| error.to_string())?;
 
-    if let Some(profile_id) = fallback_profile_id {
-        return fetch_profile_row(pool, &profile_id).await;
+    let (profile_id, resolution_source) = choose_profile_resolution(
+        scope_profile_id.as_deref(),
+        active_profile_id.as_deref(),
+        fallback_profile_id.as_deref(),
+    )?;
+    let profile = fetch_profile_row(pool, profile_id).await?;
+    match profile {
+        Some(profile) => Ok(resolved_profile(
+            Some(repo_path_id),
+            profile,
+            resolution_source,
+        )),
+        None => match resolution_source {
+            "repository_assignment" => Err(format!(
+                "Repository authentication profile '{}' no longer exists. Remove or repair the repository profile mapping, then try again.",
+                profile_id
+            )),
+            "active_profile" => Err(format!("Active authentication profile '{profile_id}' no longer exists.")),
+            _ => Err("The local fallback authentication profile is unavailable.".to_string()),
+        },
     }
-
-    Ok(None)
 }
 
 pub async fn resolve_profile_for_remote(
     pool: &SqlitePool,
     profile_id: Option<&str>,
-) -> Result<Option<RemoteAuthProfile>, String> {
+) -> Result<ResolvedProfile, String> {
     if let Some(explicit_profile_id) = profile_id.map(str::trim).filter(|value| !value.is_empty()) {
-        return fetch_profile_row(pool, explicit_profile_id).await;
+        return fetch_profile_row(pool, explicit_profile_id)
+            .await?
+            .ok_or_else(|| {
+                format!("Authentication profile '{explicit_profile_id}' no longer exists.")
+            })
+            .map(|profile| resolved_profile(None, profile, "repository_assignment"));
     }
 
     let active_profile_id: Option<String> = sqlx::query_scalar::<_, String>(
-        "SELECT id FROM auth_profiles WHERE is_active = 1 ORDER BY profile_name ASC LIMIT 1",
+        "SELECT id FROM auth_profiles WHERE is_active = 1 AND id <> 'local-basic-profile' ORDER BY profile_name ASC LIMIT 1",
     )
     .fetch_optional(pool)
     .await
     .map_err(|error| error.to_string())?;
 
     if let Some(active_id) = active_profile_id {
-        return fetch_profile_row(pool, &active_id).await;
+        return fetch_profile_row(pool, &active_id)
+            .await?
+            .ok_or_else(|| format!("Active authentication profile '{active_id}' no longer exists."))
+            .map(|profile| resolved_profile(None, profile, "active_profile"));
     }
 
     let fallback_profile_id: Option<String> =
@@ -1064,23 +1223,92 @@ pub async fn resolve_profile_for_remote(
             .map_err(|error| error.to_string())?;
 
     if let Some(fallback_id) = fallback_profile_id {
-        return fetch_profile_row(pool, &fallback_id).await;
+        return fetch_profile_row(pool, &fallback_id)
+            .await?
+            .ok_or_else(|| "The local fallback authentication profile is unavailable.".to_string())
+            .map(|profile| resolved_profile(None, profile, "local_fallback"));
     }
 
-    Ok(None)
+    Err("No authentication profile is available. Recreate the local fallback profile before using Git operations.".to_string())
+}
+
+#[tauri::command]
+pub async fn get_resolved_profile(
+    state: tauri::State<'_, crate::DbState>,
+    repo_path_id: String,
+) -> Result<ResolvedProfile, String> {
+    resolve_profile_for_repository(state.inner().pool(), &repo_path_id).await
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        determine_token_status, format_oauth_provider_error, generate_code_challenge,
-        normalize_keyring_token, parse_access_token, parse_github_user_profile,
-        resolve_oauth_redirect_uri, resolve_oauth_token_url,
+        choose_profile_resolution, determine_token_status, format_oauth_provider_error,
+        generate_code_challenge, normalize_keyring_token, parse_access_token,
+        parse_github_user_profile,
+        resolve_oauth_redirect_uri, resolve_oauth_token_url, resolved_profile, RemoteAuthProfile,
     };
 
     #[test]
     fn reports_token_as_none_when_missing() {
         assert_eq!(determine_token_status(None, None), "none");
+    }
+
+    #[test]
+    fn resolver_precedence_is_assignment_then_active_then_local_fallback() {
+        assert_eq!(
+            choose_profile_resolution(Some("assigned"), Some("active"), Some("fallback")).unwrap(),
+            ("assigned", "repository_assignment")
+        );
+        assert_eq!(
+            choose_profile_resolution(None, Some("active"), Some("fallback")).unwrap(),
+            ("active", "active_profile")
+        );
+        assert_eq!(
+            choose_profile_resolution(None, None, Some("fallback")).unwrap(),
+            ("fallback", "local_fallback")
+        );
+    }
+
+    #[test]
+    fn resolver_ignores_blank_ids_and_reports_missing_fallback() {
+        assert_eq!(
+            choose_profile_resolution(Some(" "), Some(""), Some("fallback")).unwrap(),
+            ("fallback", "local_fallback")
+        );
+        assert!(choose_profile_resolution(None, None, None)
+            .unwrap_err()
+            .contains("No authentication profile is available"));
+    }
+
+    #[test]
+    fn resolved_profile_preserves_source_without_serializing_credentials() {
+        let profile = RemoteAuthProfile {
+            id: "profile-id".to_string(),
+            display_name: "Profile".to_string(),
+            auth_level: "full_oauth".to_string(),
+            username: None,
+            email: None,
+            avatar_url: None,
+            api_base_url: None,
+            repository_scope: None,
+            folder_scope: None,
+            commit_name: None,
+            commit_email: None,
+            token_value: Some("secret-token".to_string()),
+            token_expires_at: None,
+            last_token_check_at: None,
+            is_active: 1,
+            is_favorite: 0,
+            created_at: None,
+            updated_at: None,
+        };
+        let resolved = resolved_profile(Some("repo-id"), profile, "active_profile");
+        assert_eq!(resolved.repository_id.as_deref(), Some("repo-id"));
+        assert_eq!(resolved.resolution_source, "active_profile");
+        assert!(!serde_json::to_string(&resolved)
+            .unwrap()
+            .contains("secret-token"));
     }
 
     #[test]
@@ -1106,10 +1334,7 @@ mod tests {
             normalize_keyring_token(Some(" from-keyring ".to_string())),
             Some("from-keyring".to_string())
         );
-        assert_eq!(
-            normalize_keyring_token(Some("   ".to_string())),
-            None
-        );
+        assert_eq!(normalize_keyring_token(Some("   ".to_string())), None);
         assert_eq!(normalize_keyring_token(None), None);
     }
 

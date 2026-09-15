@@ -65,6 +65,7 @@ export function RepositoryDetailActionsMenu({ repo, onClose, onHistoryChanged }:
   const [isRenameModalOpen, setIsRenameModalOpen] = useState(false);
   const [isThemeModalOpen, setIsThemeModalOpen] = useState(false);
   const [isArchiveConfirmOpen, setIsArchiveConfirmOpen] = useState(false);
+  const [isConfirmingReplacePublication, setIsConfirmingReplacePublication] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const { addToast } = useNotifications();
   const repositoryOpenActions = useRepositoryOpenActions(repo.absolute_path);
@@ -99,7 +100,7 @@ export function RepositoryDetailActionsMenu({ repo, onClose, onHistoryChanged }:
   const isBusy = loadingAction !== null;
   const isFavorite = (repo.is_favorite ?? 0) === 1;
   const isPinned = (repo.is_pinned ?? 0) === 1;
-  const canUseRemoteActions = repo.repo_origin_type !== 'LOCAL_ONLY';
+  const canUseRemoteActions = repo.repo_origin_type !== 'LOCAL_ONLY' || Boolean(repo.remote_url?.trim());
   const isMissing = repo.status === 'missing';
 
   const closeMenu = () => setIsOpen(false);
@@ -133,24 +134,34 @@ export function RepositoryDetailActionsMenu({ repo, onClose, onHistoryChanged }:
     })();
   };
 
-  const executeGitOperation = (operation: 'fetch' | 'pull' | 'push') => {
+  const executeGitOperation = (operation: 'fetch' | 'pull' | 'push', replaceExisting = false) => {
     if (repo.status === 'verifying') return;
     closeMenu();
     setLoadingAction(operation);
     void (async () => {
       try {
-        const message = await invoke<string>(`git_${operation}_operation`, { pathId: repo.id });
+        const result = await invoke<string | { message?: string; outcome?: string }>(`git_${operation}_operation`, {
+          pathId: repo.id,
+          ...(operation === 'push' ? { replaceExisting } : {}),
+        });
+        const resultMessage = typeof result === 'string' ? result : result?.message;
+        const resultOutcome = typeof result === 'string' ? undefined : result?.outcome;
         addToast({
           variant: 'success',
-          title: operation === 'fetch' ? 'Fetch Complete' : operation === 'pull' ? 'Pull Complete' : 'Push Complete',
-          message: message || 'Operation completed successfully.',
+          title: operation === 'fetch' ? 'Fetch Complete' : operation === 'pull' ? 'Pull Complete' : resultOutcome === 'published' ? 'Branch Published' : 'Push Complete',
+          message: resultMessage || 'Operation completed successfully.',
         });
       } catch (error) {
         console.error(`Git execution failure during ${operation}:`, error);
+        const message = typeof error === 'string' ? error : `Could not ${operation} ${repo.display_name}.`;
+        if (operation === 'push' && !replaceExisting && message.includes('[publication_conflict]')) {
+          setIsConfirmingReplacePublication(true);
+          return;
+        }
         addToast({
           variant: 'error',
           title: operation === 'fetch' ? 'Fetch Failed' : operation === 'pull' ? 'Pull Failed' : 'Push Failed',
-          message: typeof error === 'string' ? error : `Could not ${operation} ${repo.display_name}.`,
+          message,
         });
       } finally {
         setLoadingAction(null);
@@ -158,6 +169,11 @@ export function RepositoryDetailActionsMenu({ repo, onClose, onHistoryChanged }:
         onHistoryChanged?.();
       }
     })();
+  };
+
+  const confirmReplacePublication = async () => {
+    setIsConfirmingReplacePublication(false);
+    executeGitOperation('push', true);
   };
 
   const handleNativeAction = (action: () => Promise<void>) => {
@@ -370,7 +386,7 @@ export function RepositoryDetailActionsMenu({ repo, onClose, onHistoryChanged }:
                 />
                 <ActionMenuItem
                   icon={<ArrowUp size={14} />}
-                  label="Push changes"
+                  label={repo.has_upstream ? 'Push changes' : 'Publish branch'}
                   onSelect={() => executeGitOperation('push')}
                   disabled={isBusy}
                 />
@@ -491,6 +507,18 @@ export function RepositoryDetailActionsMenu({ repo, onClose, onHistoryChanged }:
         currentIconName={repo.icon_name ?? null}
         onClose={() => setIsThemeModalOpen(false)}
         onThemeChange={handleThemeChange}
+      />
+
+      <ConfirmationModal
+        isOpen={isConfirmingReplacePublication}
+        title="Replace remote branch?"
+        message={`The remote branch '${repo.current_branch ?? 'current'}' already exists. Replacing it may discard remote commits.`}
+        confirmLabel="Replace branch"
+        cancelLabel="Cancel"
+        variant="danger"
+        isBusy={loadingAction === 'push'}
+        onConfirm={() => void confirmReplacePublication()}
+        onCancel={() => setIsConfirmingReplacePublication(false)}
       />
 
       <ConfirmationModal

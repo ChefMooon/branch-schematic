@@ -38,6 +38,7 @@ vi.mock('../../../stores/workspace-store', () => ({
   useWorkspaceStore: () => ({
     hydrateFromBackend: vi.fn(async () => undefined),
     hydrateQuickFilterMetadata: vi.fn(async () => undefined),
+    refreshRepositoryGitStatus: vi.fn(async () => undefined),
   }),
 }));
 
@@ -857,4 +858,3 @@ describe('CloneRemoteRepositoryModal', () => {
     }
   });
 });
-

@@ -200,7 +200,7 @@ async fn reconcile_branch_snapshot(
     for snapshot in snapshots {
         let branch = &snapshot.branch;
         let branch_id = format!("{}-{}", path_id, branch.name);
-                sqlx::query(
+        sqlx::query(
                         "INSERT INTO cached_git_branches (
                                 id, path_id, branch_name, is_head, unpushed_commit_count, last_commit_hash, updated_at
                          )
@@ -315,7 +315,11 @@ async fn mark_refresh_success(
          verification_failure_count = ?, last_verification_error = ? WHERE id = ?",
     )
     .bind("healthy")
-    .bind(if transition.is_cache_stale { 1_i64 } else { 0_i64 })
+    .bind(if transition.is_cache_stale {
+        1_i64
+    } else {
+        0_i64
+    })
     .bind(i64::from(transition.failure_count))
     .bind(transition.error)
     .bind(path_id)
@@ -450,8 +454,8 @@ mod tests {
             },
         ];
         reconcile_branch_snapshot(&pool, "repo-1", Some(2), &snapshots)
-        .await
-        .unwrap();
+            .await
+            .unwrap();
         let cached_count: Option<i64> = sqlx::query_scalar(
             "SELECT unpushed_commit_count FROM cached_git_branches
              WHERE path_id = 'repo-1' AND is_head = 1",
@@ -465,8 +469,8 @@ mod tests {
             commits: collect_recent_history(&repository, &commit.to_string()),
         }];
         reconcile_branch_snapshot(&pool, "repo-1", Some(0), &remaining)
-        .await
-        .unwrap();
+            .await
+            .unwrap();
         let cached_count: Option<i64> = sqlx::query_scalar(
             "SELECT unpushed_commit_count FROM cached_git_branches
              WHERE path_id = 'repo-1' AND is_head = 1",

@@ -7,6 +7,7 @@ const invokeMock = vi.fn();
 const addToastMock = vi.fn();
 const hydrateFromBackendMock = vi.fn(async () => undefined);
 const hydrateQuickFilterMetadataMock = vi.fn(async () => undefined);
+const refreshRepositoryGitStatusMock = vi.fn(async () => undefined);
 const reconcileImportedRepositoryMock = vi.fn();
 
 vi.mock('@tauri-apps/api/core', () => ({
@@ -21,6 +22,7 @@ vi.mock('../../../stores/workspace-store', () => ({
   useWorkspaceStore: () => ({
     hydrateFromBackend: hydrateFromBackendMock,
     hydrateQuickFilterMetadata: hydrateQuickFilterMetadataMock,
+    refreshRepositoryGitStatus: refreshRepositoryGitStatusMock,
     reconcileImportedRepository: reconcileImportedRepositoryMock,
   }),
 }));
@@ -58,6 +60,7 @@ describe('AddLocalRepositoryModal notifications', () => {
         variant: 'success',
         target: 'toast',
       }));
+      expect(refreshRepositoryGitStatusMock).toHaveBeenCalledWith('repo-1', 'C:/repos/example');
     });
   });
 

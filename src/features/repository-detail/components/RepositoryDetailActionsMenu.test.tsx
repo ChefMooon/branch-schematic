@@ -22,6 +22,7 @@ describe('RepositoryDetailActionsMenu', () => {
     absolute_path: '/tmp/branch-schematic',
     current_branch: 'main',
     repo_origin_type: 'OWNED',
+    has_upstream: true,
   };
 
   const renderMenu = (repoOverrides: Partial<TrackedPath> = {}, onClose: () => void = () => undefined) => {
@@ -57,6 +58,34 @@ describe('RepositoryDetailActionsMenu', () => {
     expect(screen.getByRole('menuitem', { name: /push changes/i })).toBeInTheDocument();
   });
 
+  it('labels the push action as publication when the branch has no upstream', async () => {
+    renderMenu({ has_upstream: false });
+
+    await userEvent.click(screen.getByRole('button', { name: /repository actions/i }));
+
+    expect(screen.getByRole('menuitem', { name: /publish branch/i })).toBeInTheDocument();
+  });
+
+  it('requires explicit confirmation before replacing an existing remote branch', async () => {
+    invokeMock.mockRejectedValueOnce(
+      "Branch 'main' already exists on origin [publication_conflict]. Publishing over it requires explicit destructive confirmation.",
+    );
+    renderMenu({ has_upstream: false });
+
+    await userEvent.click(screen.getByRole('button', { name: /repository actions/i }));
+    await userEvent.click(screen.getByRole('menuitem', { name: /publish branch/i }));
+
+    expect(await screen.findByRole('dialog', { name: /replace remote branch/i })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: /replace branch/i }));
+
+    await waitFor(() => {
+      expect(invokeMock).toHaveBeenCalledWith('git_push_operation', {
+        pathId: 'repo-1',
+        replaceExisting: true,
+      });
+    });
+  });
+
   it('runs fetch through the backend and syncs git status afterwards', async () => {
     renderMenu();
 
@@ -68,11 +97,44 @@ describe('RepositoryDetailActionsMenu', () => {
     await waitFor(() => {
       expect(invokeMock).toHaveBeenCalledWith('git_fetch_operation', { pathId: 'repo-1' });
     });
+
     await waitFor(() => {
       expect(invokeMock).toHaveBeenCalledWith('refresh_repository_git_status', {
         pathId: 'repo-1',
         absolutePath: '/tmp/branch-schematic',
       });
+    });
+  });
+
+  it('propagates backend push errors to the toast unchanged', async () => {
+    const backendMessage = 'Git authentication [authentication]. The selected profile has no readable keyring token.';
+    invokeMock.mockRejectedValueOnce(backendMessage);
+    renderMenu();
+
+    await userEvent.click(screen.getByRole('button', { name: /repository actions/i }));
+    await userEvent.click(screen.getByRole('menuitem', { name: /push changes/i }));
+
+    await waitFor(() => {
+      expect(addToastMock).toHaveBeenCalledWith({
+        variant: 'error',
+        title: 'Push Failed',
+        message: backendMessage,
+      });
+    });
+  });
+
+  it('completes a push and reports the backend message', async () => {
+    invokeMock.mockResolvedValueOnce('Pushed main.');
+    renderMenu();
+
+    await userEvent.click(screen.getByRole('button', { name: /repository actions/i }));
+    await userEvent.click(screen.getByRole('menuitem', { name: /push changes/i }));
+
+    await waitFor(() => {
+      expect(addToastMock).toHaveBeenCalledWith(expect.objectContaining({
+        variant: 'success',
+        message: 'Pushed main.',
+      }));
     });
   });
 

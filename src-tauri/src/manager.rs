@@ -1003,20 +1003,26 @@ impl WatcherManager {
         self.register_active_paths(paths).await;
     }
 
-    pub async fn notify_workspace_updated(&self, repository_ids: Vec<String>, trigger_reason: &str) {
+    pub async fn notify_workspace_updated(
+        &self,
+        repository_ids: Vec<String>,
+        trigger_reason: &str,
+    ) {
         if repository_ids.is_empty() {
             let Some(app_handle) = &self.app_handle else {
                 return;
             };
             let revision = self.state.revision.fetch_add(1, Ordering::AcqRel) + 1;
-            for event in workspace_updated_events(revision, Vec::new(), trigger_reason.to_string()) {
+            for event in workspace_updated_events(revision, Vec::new(), trigger_reason.to_string())
+            {
                 self.state.event_batches.fetch_add(1, Ordering::Relaxed);
                 let _ = app_handle.emit(WORKSPACE_UPDATED_EVENT, event);
             }
             return;
         }
         for repository_id in repository_ids {
-            self.queue_workspace_updated(&repository_id, trigger_reason).await;
+            self.queue_workspace_updated(&repository_id, trigger_reason)
+                .await;
         }
     }
 

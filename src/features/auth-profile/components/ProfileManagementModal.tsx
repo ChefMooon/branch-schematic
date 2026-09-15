@@ -30,17 +30,6 @@ interface ProfileManagementModalProps {
   onSelectProfile: (profileId: string | null) => void;
 }
 
-function getScopeText(value?: string[] | null) {
-  return Array.isArray(value) ? value.join(', ') : '';
-}
-
-function parseScopeText(value: string) {
-  return value
-    .split(',')
-    .map((entry) => entry.trim())
-    .filter(Boolean);
-}
-
 const authLevelOptions: { value: AuthLevel; label: string }[] = [
   { value: 'basic', label: 'Basic local' },
   { value: 'local_system', label: 'Local system' },
@@ -493,22 +482,6 @@ export function ProfileManagementModal({
                 />
               </label>
             </div>
-            <label style={styles.field}>
-              <span style={styles.label}>Repository scope</span>
-              <textarea
-                value={getScopeText(draft.repository_scope)}
-                onChange={(event) => setDraft((current) => ({ ...current, repository_scope: parseScopeText(event.target.value) }))}
-                style={{ ...styles.input, minHeight: '72px', resize: 'vertical' }}
-              />
-            </label>
-            <label style={styles.field}>
-              <span style={styles.label}>Folder scope</span>
-              <textarea
-                value={getScopeText(draft.folder_scope)}
-                onChange={(event) => setDraft((current) => ({ ...current, folder_scope: parseScopeText(event.target.value) }))}
-                style={{ ...styles.input, minHeight: '72px', resize: 'vertical' }}
-              />
-            </label>
           </CollapsiblePanel>
           </div>
 

@@ -20,6 +20,7 @@ type RepoCardHeaderProps = {
   onFetch: () => void | Promise<void>;
   onPull: () => void | Promise<void>;
   onPush: () => void | Promise<void>;
+  pushLabel?: string;
   onToggleFavorite: () => void | Promise<void>;
   onTogglePinned?: () => void | Promise<void>;
   onValidate?: () => void | Promise<void>;
@@ -47,6 +48,7 @@ export function RepoCardHeader({
   onFetch,
   onPull,
   onPush,
+  pushLabel = 'Push changes',
   onToggleFavorite,
   onTogglePinned,
   onValidate,
@@ -107,12 +109,13 @@ export function RepoCardHeader({
             isFavorite={isFavorite}
             isPinned={(repo.is_pinned ?? 0) === 1}
             isBusy={isAnyLoading}
-            canUseRemoteActions={originType !== 'LOCAL_ONLY'}
+            canUseRemoteActions={originType !== 'LOCAL_ONLY' || Boolean(repo.remote_url?.trim())}
             onOpenDetails={onOpenDetails}
             onRefreshStatus={onRefreshStatus}
             onFetch={onFetch}
             onPull={onPull}
             onPush={onPush}
+            pushLabel={pushLabel}
             onRenameAlias={onStartEditing}
             onToggleFavorite={onToggleFavorite}
             onTogglePinned={onTogglePinned ?? (() => undefined)}

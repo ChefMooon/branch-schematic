@@ -31,6 +31,7 @@ type RepoCardOverflowMenuProps = {
   onFetch: () => void | Promise<void>;
   onPull: () => void | Promise<void>;
   onPush: () => void | Promise<void>;
+  pushLabel?: string;
   onRenameAlias: () => void;
   onToggleFavorite: () => void | Promise<void>;
   onTogglePinned: () => void | Promise<void>;
@@ -53,6 +54,7 @@ export function RepoCardOverflowMenu({
   onFetch,
   onPull,
   onPush,
+  pushLabel = "Push changes",
   onRenameAlias,
   onToggleFavorite,
   onTogglePinned,
@@ -243,7 +245,7 @@ export function RepoCardOverflowMenu({
                   disabled={isBusy}
                 >
                   <ArrowUp size={16} />
-                  <span>Push changes</span>
+                  <span>{pushLabel}</span>
                 </button>
               </>
             ) : null}

@@ -3,8 +3,8 @@ use crate::db;
 use crate::manager::{RefreshPriority, WatcherManager};
 use crate::DbState;
 use git2::{
-    AutotagOption, Branch, BranchType, Cred, CredentialType, FetchOptions, Oid, PushOptions,
-    RemoteCallbacks, Repository, RepositoryState, ResetType,
+    AutotagOption, Branch, BranchType, Cred, CredentialType, Direction, FetchOptions, Oid,
+    PushOptions, RemoteCallbacks, Repository, RepositoryState, ResetType,
 };
 use reqwest::header::{HeaderValue, ACCEPT, AUTHORIZATION, USER_AGENT};
 use serde::{Deserialize, Serialize};
@@ -394,6 +394,20 @@ fn ensure_native_remote_access(
     }
 }
 
+fn ensure_native_remote_access_for_url(
+    profile: Option<&auth::RemoteAuthProfile>,
+    remote_url: &str,
+) -> Result<Option<String>, String> {
+    let credentials = ensure_native_remote_access(profile)?;
+    if credentials.is_some() && classify_remote_url(remote_url)?.kind.is_ssh() {
+        return Err(
+            "Full OAuth profiles authenticate HTTPS remotes only. Configure an SSH key or agent for this remote, or switch the remote URL to HTTPS.".to_string(),
+        );
+    }
+
+    Ok(credentials)
+}
+
 fn describe_git_network_error(raw_error: &str) -> String {
     let lowered = raw_error.to_lowercase();
     if lowered.contains("authentication")
@@ -409,13 +423,32 @@ fn describe_git_network_error(raw_error: &str) -> String {
         || lowered.contains("network is unreachable")
         || lowered.contains("timed out")
     {
-        return format!(
-            "Git could not reach the configured remote. Check your network connection and try again. Detail: {}",
-            raw_error
-        );
+        return "Git could not reach the configured remote. Check your network connection and try again."
+            .to_string();
     }
 
-    raw_error.to_string()
+    "Git operation failed. Check the repository and remote configuration, then try again."
+        .to_string()
+}
+
+fn describe_git2_network_error(context: &str, error: git2::Error) -> String {
+    let category = classify_git2_error(&error);
+    let guidance = match category {
+        GitFailureCategory::Authentication =>
+            "Git could not authenticate with the configured remote. Check the selected profile, OS-managed Git credentials, or SSH agent, then try again.",
+        GitFailureCategory::Permission =>
+            "The remote denied permission to update this repository. Check the selected profile and repository write access.",
+        GitFailureCategory::Transport =>
+            "Git could not reach the configured remote. Check the remote URL and network connection, then try again.",
+        GitFailureCategory::RemoteRejected =>
+            "The remote rejected the Git update. Check branch protection, permissions, and whether the remote branch changed.",
+        GitFailureCategory::RemoteConfiguration =>
+            "Git could not use the configured remote. Check the remote URL and repository configuration, then try again.",
+    };
+    format!(
+        "{context} [{category}; git_error_code={:?}]. {guidance}",
+        error.code()
+    )
 }
 
 fn normalize_pagination(page: Option<u32>, per_page: Option<u32>) -> (u32, u32) {
@@ -543,20 +576,18 @@ async fn resolve_repository_origin_metadata(
         return ("OWNED".to_string(), None);
     };
 
-    let profile = match auth::resolve_profile_for_remote(pool, profile_id).await {
+    let resolved_profile = match auth::resolve_profile_for_remote(pool, profile_id).await {
         Ok(profile) => profile,
         Err(error) => {
             eprintln!(
                 "Skipping GitHub enrichment for remote '{}' because profile resolution failed: {}",
                 remote_url, error
             );
-            None
+            return ("OWNED".to_string(), github_owner_login);
         }
     };
 
-    let Some(profile) = profile else {
-        return ("OWNED".to_string(), github_owner_login);
-    };
+    let profile = &resolved_profile.profile;
 
     let Some(meta) = fetch_single_github_repo_metadata(&profile, &owner, &repo_name).await else {
         return ("OWNED".to_string(), github_owner_login);
@@ -948,13 +979,10 @@ pub async fn list_remote_repositories(
     per_page: Option<u32>,
 ) -> Result<RemoteRepositoryPage, String> {
     let (page, per_page) = normalize_pagination(page, per_page);
-    let profile = auth::resolve_profile_for_remote(state.inner().pool(), profile_id.as_deref())
-        .await?
-        .ok_or_else(|| {
-            "No active profile is available for remote repository access.".to_string()
-        })?;
+    let resolved_profile =
+        auth::resolve_profile_for_remote(state.inner().pool(), profile_id.as_deref()).await?;
 
-    fetch_remote_repositories_page(&profile, page, per_page)
+    fetch_remote_repositories_page(&resolved_profile.profile, page, per_page)
         .await
         .map_err(|error| describe_remote_repository_listing_error(&error))
 }
@@ -966,13 +994,11 @@ pub async fn list_enterprise_repositories(
     page: Option<u32>,
     per_page: Option<u32>,
 ) -> Result<RemoteRepositoryPage, String> {
-    let profile = auth::resolve_profile_for_remote(state.inner().pool(), profile_id.as_deref())
-        .await?
-        .ok_or_else(|| {
-            "No active profile is available for enterprise repository access.".to_string()
-        })?;
+    let resolved_profile =
+        auth::resolve_profile_for_remote(state.inner().pool(), profile_id.as_deref()).await?;
 
-    if profile
+    if resolved_profile
+        .profile
         .api_base_url
         .as_deref()
         .map(str::trim)
@@ -983,7 +1009,7 @@ pub async fn list_enterprise_repositories(
     }
 
     let (page, per_page) = normalize_pagination(page, per_page);
-    fetch_remote_repositories_page(&profile, page, per_page)
+    fetch_remote_repositories_page(&resolved_profile.profile, page, per_page)
         .await
         .map_err(|error| describe_remote_repository_listing_error(&error))
 }
@@ -1003,12 +1029,18 @@ pub async fn list_remote_branches(
         return Err("Owner and repository name are required to list branches.".to_string());
     }
 
-    let profile = auth::resolve_profile_for_remote(state.inner().pool(), profile_id.as_deref())
-        .await?
-        .ok_or_else(|| "No active profile is available for remote branch access.".to_string())?;
+    let resolved_profile =
+        auth::resolve_profile_for_remote(state.inner().pool(), profile_id.as_deref()).await?;
     let (page, per_page) = normalize_pagination(page, per_page);
 
-    fetch_remote_branches_page(&profile, &owner, &repo_name, page, per_page).await
+    fetch_remote_branches_page(
+        &resolved_profile.profile,
+        &owner,
+        &repo_name,
+        page,
+        per_page,
+    )
+    .await
 }
 
 #[tauri::command]
@@ -1032,10 +1064,11 @@ pub async fn clone_remote_repository(
         return Err("The destination path must be an existing directory.".to_string());
     }
 
-    let profile =
+    let resolved_profile =
         auth::resolve_profile_for_remote(state.inner().pool(), profile_id.as_deref()).await?;
+    let profile = &resolved_profile.profile;
     let clone_url = resolve_clone_url(
-        profile.as_ref(),
+        Some(profile),
         owner.as_deref(),
         repo_name.as_deref(),
         repo_url.as_deref(),
@@ -1063,48 +1096,24 @@ pub async fn clone_remote_repository(
         ));
     }
 
-    let token = ensure_native_remote_access(profile.as_ref())?;
-
     {
-        let authenticator = auth_git2::GitAuthenticator::new();
-        let config = git2::Config::open_default()
-            .map_err(|error| format!("Unable to read Git config: {}", error))?;
-        let mut callbacks = RemoteCallbacks::new();
-        if let Some(access_token) = token {
-            callbacks.credentials(move |_url, username_from_url, allowed_types| {
-                if allowed_types.contains(CredentialType::USER_PASS_PLAINTEXT) {
-                    return Cred::userpass_plaintext("x-access-token", &access_token);
-                }
+        with_built_remote_callbacks(None, Some(profile), &clone_url, |callbacks| {
+            let mut fetch_options = FetchOptions::new();
+            fetch_options.remote_callbacks(callbacks);
+            fetch_options.download_tags(AutotagOption::All);
 
-                if allowed_types.contains(CredentialType::SSH_KEY) {
-                    if let Some(username) = username_from_url {
-                        return Cred::ssh_key_from_agent(username);
-                    }
-                }
+            let mut builder = git2::build::RepoBuilder::new();
+            builder.fetch_options(fetch_options);
 
-                Cred::default()
-            });
-        } else {
-            callbacks.credentials(authenticator.credentials(&config));
-        }
+            if let Some(branch_name) = branch
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+            {
+                builder.branch(branch_name);
+            }
 
-        let mut fetch_options = FetchOptions::new();
-        fetch_options.remote_callbacks(callbacks);
-        fetch_options.download_tags(AutotagOption::All);
-
-        let mut builder = git2::build::RepoBuilder::new();
-        builder.fetch_options(fetch_options);
-
-        if let Some(branch_name) = branch
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-        {
-            builder.branch(branch_name);
-        }
-
-        builder.clone(&clone_url, &target_path).map_err(|error| {
-            describe_git_network_error(&format!("Failed to clone remote repository: {}", error))
+            builder.clone(&clone_url, &target_path).map(|_| ())
         })?;
     }
 
@@ -1124,6 +1133,23 @@ pub async fn clone_remote_repository(
             .await
             .map_err(|error| format!("Failed to resolve tracked repository id: {}", error))?
             .ok_or_else(|| "The cloned repository could not be tracked.".to_string())?;
+
+    if let Some(selected_profile_id) = profile_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|id| !id.is_empty())
+    {
+        sqlx::query(
+            "INSERT INTO repository_profile_assignments (repo_path_id, profile_id)
+             VALUES ($1, $2)
+             ON CONFLICT(repo_path_id) DO UPDATE SET profile_id = excluded.profile_id, assigned_at = CURRENT_TIMESTAMP",
+        )
+        .bind(&path_id)
+        .bind(selected_profile_id)
+        .execute(state.inner().pool())
+        .await
+        .map_err(|error| format!("Unable to persist the selected repository profile: {error}"))?;
+    }
 
     manager
         .ensure_monitored(
@@ -3380,6 +3406,213 @@ pub async fn refresh_repository_git_status(
 // Real network operations: fetch / pull / push
 // ==========================================
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RemoteKind {
+    Https,
+    Ssh,
+}
+
+impl RemoteKind {
+    fn is_ssh(self) -> bool {
+        matches!(self, Self::Ssh)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct RemoteClassification {
+    kind: RemoteKind,
+    host: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum GitFailureCategory {
+    Authentication,
+    Permission,
+    Transport,
+    RemoteRejected,
+    RemoteConfiguration,
+}
+
+impl std::fmt::Display for GitFailureCategory {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(match self {
+            Self::Authentication => "authentication",
+            Self::Permission => "permission",
+            Self::Transport => "transport",
+            Self::RemoteRejected => "remote_rejected",
+            Self::RemoteConfiguration => "remote_configuration",
+        })
+    }
+}
+
+fn classify_remote_url(remote_url: &str) -> Result<RemoteClassification, String> {
+    let value = remote_url.trim();
+    if let Ok(parsed) = url::Url::parse(value) {
+        let kind = match parsed.scheme().to_ascii_lowercase().as_str() {
+            "https" => RemoteKind::Https,
+            "ssh" => RemoteKind::Ssh,
+            scheme => {
+                return Err(format!(
+                    "Unsupported remote URL scheme '{scheme}'. Use an HTTPS or SSH remote."
+                ))
+            }
+        };
+        let host = parsed
+            .host_str()
+            .filter(|host| !host.is_empty())
+            .ok_or_else(|| "The configured remote URL has no host.".to_string())?;
+        return Ok(RemoteClassification {
+            kind,
+            host: host.to_string(),
+        });
+    }
+
+    // Git's scp-like syntax is intentionally parsed without treating a
+    // Windows drive letter (for example C:\repo) as a remote.
+    if !value.contains("://") {
+        if let Some((user_host, path)) = value.split_once(':') {
+            if !path.is_empty() {
+                if let Some((_, host)) = user_host.rsplit_once('@') {
+                    if !host.is_empty() {
+                        return Ok(RemoteClassification {
+                            kind: RemoteKind::Ssh,
+                            host: host.to_string(),
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    Err("The configured remote URL is invalid. Use an HTTPS or SSH remote.".to_string())
+}
+
+fn classify_git2_error(error: &git2::Error) -> GitFailureCategory {
+    if error.code() == git2::ErrorCode::Auth {
+        return GitFailureCategory::Authentication;
+    }
+    let message = error.message().to_ascii_lowercase();
+    if message.contains("permission denied")
+        || message.contains("not permitted")
+        || message.contains("prohibited")
+    {
+        return GitFailureCategory::Permission;
+    }
+    if message.contains("authentication")
+        || message.contains("credential")
+        || message.contains("username")
+    {
+        return GitFailureCategory::Authentication;
+    }
+    if message.contains("rejected")
+        || message.contains("non-fast-forward")
+        || message.contains("protected branch")
+    {
+        return GitFailureCategory::RemoteRejected;
+    }
+    if message.contains("resolve host")
+        || message.contains("failed to connect")
+        || message.contains("network")
+        || message.contains("timed out")
+    {
+        return GitFailureCategory::Transport;
+    }
+    GitFailureCategory::RemoteConfiguration
+}
+
+fn remote_auth_error(message: &str) -> String {
+    format!("Git authentication [authentication]. {message}")
+}
+
+fn redact_git_message(message: &str) -> String {
+    let mut redacted = message.to_string();
+    for scheme in ["https://", "http://", "ssh://"] {
+        while let Some(start) = redacted.find(scheme) {
+            let Some(at_offset) = redacted[start..].find('@') else {
+                break;
+            };
+            let at = start + at_offset;
+            if redacted[start..at].contains(':') {
+                redacted.replace_range(start..at, scheme);
+            } else {
+                break;
+            }
+        }
+    }
+    redacted
+}
+
+fn with_built_remote_callbacks<F, T>(
+    repo: Option<&Repository>,
+    profile: Option<&auth::RemoteAuthProfile>,
+    remote_url: &str,
+    action: F,
+) -> Result<T, String>
+where
+    F: FnOnce(RemoteCallbacks<'_>) -> Result<T, git2::Error>,
+{
+    let classification = classify_remote_url(remote_url)?;
+    let Some(profile) = profile else {
+        return Err(remote_auth_error(
+            "Select a Local system or Full OAuth profile before contacting a remote.",
+        ));
+    };
+
+    match profile.auth_level.as_str() {
+        "basic" => Err(remote_auth_error(
+            "Basic profiles are local-only and cannot perform remote Git operations.",
+        )),
+        "full_oauth" if classification.kind == RemoteKind::Ssh => Err(remote_auth_error(
+            "Full OAuth supports HTTPS remotes only. Configure SSH through your system Git/SSH setup or switch the remote URL to HTTPS; an OAuth token is not used for SSH.",
+        )),
+        "full_oauth" => {
+            let token = profile
+                .token_value
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .ok_or_else(|| {
+                    remote_auth_error(
+                        "The Full OAuth profile has no readable keyring token. Reconnect the profile and try again.",
+                    )
+                })?
+                .to_string();
+            let mut callbacks = RemoteCallbacks::new();
+            callbacks.credentials(move |_url, _username, allowed_types| {
+                if allowed_types.contains(CredentialType::USER_PASS_PLAINTEXT) {
+                    return Cred::userpass_plaintext("x-access-token", &token);
+                }
+                if allowed_types.contains(CredentialType::USERNAME) {
+                    return Cred::username("x-access-token");
+                }
+                Cred::default()
+            });
+            action(callbacks)
+                .map_err(|error| describe_git2_network_error("Git network operation failed", error))
+        }
+        "local_system" => {
+            let config = match repo {
+                Some(repo) => repo.config().map_err(|_| {
+                    "Git authentication [authentication]. Unable to read the OS Git configuration."
+                        .to_string()
+                })?,
+                None => git2::Config::open_default().map_err(|_| {
+                    "Git authentication [authentication]. Unable to read the OS Git configuration."
+                        .to_string()
+                })?,
+            };
+            let authenticator = auth_git2::GitAuthenticator::new();
+            let mut callbacks = RemoteCallbacks::new();
+            callbacks.credentials(authenticator.credentials(&config));
+            action(callbacks)
+                .map_err(|error| describe_git2_network_error("Git network operation failed", error))
+        }
+        _ => Err(remote_auth_error(
+            "The selected authentication profile is invalid. Choose Local system or Full OAuth.",
+        )),
+    }
+}
+
 /// Builds git2 `RemoteCallbacks` wired to `auth-git2`'s credential negotiation
 /// (SSH agent, SSH key files, the OS git credential helper, and cached HTTPS
 /// credentials), then hands them to `action` for the duration of a single network
@@ -3393,35 +3626,143 @@ fn with_auth_callbacks<F, T>(
 where
     F: FnOnce(RemoteCallbacks) -> Result<T, git2::Error>,
 {
-    let config = repo
-        .config()
-        .map_err(|e| format!("Failed to read Git config: {}", e))?;
-    let authenticator = auth_git2::GitAuthenticator::new();
-    let mut callbacks = RemoteCallbacks::new();
-    if let Some(token) = ensure_native_remote_access(profile)? {
-        callbacks.credentials(move |_url, username_from_url, allowed_types| {
-            if allowed_types.contains(CredentialType::USER_PASS_PLAINTEXT) {
-                return Cred::userpass_plaintext("x-access-token", &token);
-            }
-            if allowed_types.contains(CredentialType::SSH_KEY) {
-                if let Some(username) = username_from_url {
-                    return Cred::ssh_key_from_agent(username);
-                }
-            }
-            Cred::default()
-        });
-    } else {
-        callbacks.credentials(authenticator.credentials(&config));
+    with_auth_callbacks_for_direction(repo, profile, Direction::Fetch, action)
+}
+
+fn with_auth_callbacks_for_direction<F, T>(
+    repo: &Repository,
+    profile: Option<&auth::RemoteAuthProfile>,
+    direction: Direction,
+    action: F,
+) -> Result<T, String>
+where
+    F: FnOnce(RemoteCallbacks) -> Result<T, git2::Error>,
+{
+    let remote = repo
+        .find_remote("origin")
+        .map_err(|e| format!("Failed to resolve 'origin' remote: {}", e))?;
+    let remote_url = match direction {
+        Direction::Push => remote
+            .pushurl()
+            .or_else(|| remote.url())
+            .unwrap_or_default(),
+        Direction::Fetch => remote.url().unwrap_or_default(),
     }
-    action(callbacks)
-        .map_err(|e| describe_git_network_error(&format!("Git network operation failed: {}", e)))
+    .to_string();
+    with_built_remote_callbacks(Some(repo), profile, &remote_url, action)
 }
 
 async fn resolve_profile_for_repo(
     state: &sqlx::SqlitePool,
     path_id: &str,
-) -> Result<Option<auth::RemoteAuthProfile>, String> {
+) -> Result<auth::ResolvedProfile, String> {
     auth::resolve_profile_for_repository(state, path_id).await
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct GitAuthenticationDiagnostics {
+    pub repository_path_id: String,
+    pub resolved_profile_id: String,
+    pub resolved_profile_name: String,
+    pub auth_level: String,
+    pub resolution_source: String,
+    pub token_present: bool,
+    pub remote_scheme: Option<String>,
+    pub remote_host: Option<String>,
+    pub credential_strategy: String,
+    pub git_error_code: Option<String>,
+}
+
+fn remote_location(url: &str) -> (Option<String>, Option<String>) {
+    classify_remote_url(url)
+        .map(|remote| {
+            (
+                Some(
+                    match remote.kind {
+                        RemoteKind::Https => "https",
+                        RemoteKind::Ssh => "ssh",
+                    }
+                    .to_string(),
+                ),
+                Some(remote.host),
+            )
+        })
+        .unwrap_or((None, None))
+}
+
+fn credential_strategy(profile: &auth::RemoteAuthProfile, remote_url: &str) -> String {
+    let is_ssh = classify_remote_url(remote_url)
+        .map(|remote| remote.kind.is_ssh())
+        .unwrap_or(false);
+    match (profile.auth_level.as_str(), is_ssh) {
+        ("full_oauth", true) => "ssh_setup_required".to_string(),
+        ("full_oauth", false) => "oauth_https_token".to_string(),
+        ("local_system", _) => "os_git_credentials".to_string(),
+        _ => "local_only_rejected".to_string(),
+    }
+}
+
+/// Returns redacted profile/remote metadata for developer diagnosis only.
+/// It intentionally never returns a URL, token, password, or authorization header.
+#[tauri::command]
+pub async fn diagnose_git_authentication(
+    state: tauri::State<'_, DbState>,
+    path_id: String,
+) -> Result<GitAuthenticationDiagnostics, String> {
+    if !cfg!(debug_assertions) {
+        return Err(
+            "Git authentication diagnostics are available only in developer builds.".to_string(),
+        );
+    }
+
+    let resolved_profile = resolve_profile_for_repo(state.inner().pool(), &path_id).await?;
+    let absolute_path = db::get_absolute_path_for_id(state.inner().pool(), &path_id)
+        .await
+        .map_err(|error| format!("Failed to resolve repository path: {error}"))?;
+    let repo = Repository::open(&absolute_path)
+        .map_err(|error| format!("Failed to open Git repository: {error}"))?;
+    let remote = repo
+        .find_remote("origin")
+        .map_err(|error| GitAuthenticationDiagnostics {
+            repository_path_id: path_id.clone(),
+            resolved_profile_id: resolved_profile.profile_id.clone(),
+            resolved_profile_name: resolved_profile.profile_name.clone(),
+            auth_level: resolved_profile.auth_level.clone(),
+            resolution_source: resolved_profile.resolution_source.clone(),
+            token_present: resolved_profile.profile.token_value.is_some(),
+            remote_scheme: None,
+            remote_host: None,
+            credential_strategy: "no_origin".to_string(),
+            git_error_code: Some(format!("{:?}", error.code())),
+        });
+
+    let (remote_scheme, remote_host, strategy, error_code) = match remote {
+        Ok(remote) => {
+            let remote_url = remote.url().unwrap_or_default();
+            let (scheme, host) = remote_location(remote_url);
+            (
+                scheme,
+                host,
+                credential_strategy(&resolved_profile.profile, remote_url),
+                None,
+            )
+        }
+        Err(diagnostics) => return Ok(diagnostics),
+    };
+
+    Ok(GitAuthenticationDiagnostics {
+        repository_path_id: path_id,
+        resolved_profile_id: resolved_profile.profile_id,
+        resolved_profile_name: resolved_profile.profile_name,
+        auth_level: resolved_profile.auth_level,
+        resolution_source: resolved_profile.resolution_source,
+        token_present: resolved_profile.profile.token_value.is_some(),
+        remote_scheme,
+        remote_host,
+        credential_strategy: strategy,
+        git_error_code: error_code,
+    })
 }
 
 /// Fetches all configured refspecs from the repository's `origin` remote.
@@ -3449,53 +3790,149 @@ fn push_branch_to_origin(
     profile: Option<&auth::RemoteAuthProfile>,
     refspec: &str,
 ) -> Result<(), String> {
-    let config = repo
-        .config()
-        .map_err(|e| format!("Failed to read Git config: {}", e))?;
-    let authenticator = auth_git2::GitAuthenticator::new();
     let rejection: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
     let rejection_for_callback = rejection.clone();
 
-    let mut callbacks = RemoteCallbacks::new();
-    if let Some(token) = ensure_native_remote_access(profile)? {
-        callbacks.credentials(move |_url, username_from_url, allowed_types| {
-            if allowed_types.contains(CredentialType::USER_PASS_PLAINTEXT) {
-                return Cred::userpass_plaintext("x-access-token", &token);
+    with_auth_callbacks_for_direction(repo, profile, Direction::Push, |mut callbacks| {
+        callbacks.push_update_reference(move |refname, status| {
+            if let Some(message) = status {
+                let mut guard = rejection_for_callback.lock().unwrap();
+                let category = if message.to_ascii_lowercase().contains("permission")
+                    || message.to_ascii_lowercase().contains("denied")
+                    || message.to_ascii_lowercase().contains("prohibited")
+                {
+                    GitFailureCategory::Permission
+                } else {
+                    GitFailureCategory::RemoteRejected
+                };
+                *guard = Some(format!(
+                    "Remote update '{}' failed [{}]: {}",
+                    refname,
+                    category,
+                    redact_git_message(message)
+                ));
             }
-            if allowed_types.contains(CredentialType::SSH_KEY) {
-                if let Some(username) = username_from_url {
-                    return Cred::ssh_key_from_agent(username);
-                }
-            }
-            Cred::default()
+            Ok(())
         });
-    } else {
-        callbacks.credentials(authenticator.credentials(&config));
-    }
-    callbacks.push_update_reference(move |refname, status| {
-        if let Some(message) = status {
-            let mut guard = rejection_for_callback.lock().unwrap();
-            *guard = Some(format!("Remote rejected '{}': {}", refname, message));
-        }
-        Ok(())
-    });
 
-    let mut push_options = PushOptions::new();
-    push_options.remote_callbacks(callbacks);
-
-    let mut remote = repo
-        .find_remote("origin")
-        .map_err(|e| format!("Failed to resolve 'origin' remote: {}", e))?;
-
-    remote
-        .push(&[refspec], Some(&mut push_options))
-        .map_err(|e| describe_git_network_error(&format!("Push transport failed: {}", e)))?;
+        let mut push_options = PushOptions::new();
+        push_options.remote_callbacks(callbacks);
+        let mut remote = repo.find_remote("origin")?;
+        remote.push(&[refspec], Some(&mut push_options))
+    })?;
 
     if let Some(message) = rejection.lock().unwrap().take() {
-        return Err(message);
+        return Err(format!("Git remote update failed. {message}"));
     }
 
     Ok(())
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct GitPushResult {
+    pub outcome: String,
+    pub branch_name: String,
+    pub message: String,
+}
+
+fn ensure_origin_remote(repo: &Repository) -> Result<(), String> {
+    repo.find_remote("origin")
+        .map(|_| ())
+        .map_err(|_| "This repository has no 'origin' remote configured.".to_string())
+}
+
+fn remote_branch_exists(
+    repo: &Repository,
+    profile: Option<&auth::RemoteAuthProfile>,
+    branch_name: &str,
+) -> Result<bool, String> {
+    let remote_branch = format!("refs/heads/{branch_name}");
+    with_auth_callbacks_for_direction(repo, profile, Direction::Fetch, |callbacks| {
+        let mut remote = repo.find_remote("origin")?;
+        remote.connect_auth(Direction::Fetch, Some(callbacks), None)?;
+        let exists = remote
+            .list()?
+            .iter()
+            .any(|reference| reference.name() == remote_branch);
+        remote.disconnect()?;
+        Ok(exists)
+    })
+}
+
+fn push_current_branch(
+    repo: &Repository,
+    profile: Option<&auth::RemoteAuthProfile>,
+    branch_name: &str,
+    replace_existing: bool,
+) -> Result<GitPushResult, String> {
+    ensure_origin_remote(repo)?;
+
+    let head_ref = repo
+        .head()
+        .map_err(|_| "The repository has no current branch checked out.".to_string())?;
+    if !head_ref.is_branch() {
+        return Err(
+            "The repository is in a detached HEAD state; check out a branch before pushing."
+                .to_string(),
+        );
+    }
+
+    let local_branch = repo
+        .find_branch(branch_name, BranchType::Local)
+        .map_err(|_| format!("The current branch '{branch_name}' could not be found."))?;
+    let _local_commit = local_branch.get().target().ok_or_else(|| {
+        format!("The current branch '{branch_name}' has no local commit to push.")
+    })?;
+
+    if let Ok(upstream) = local_branch.upstream() {
+        let upstream_name = upstream
+            .name()
+            .map_err(|_| format!("The upstream for '{branch_name}' could not be resolved."))?
+            .ok_or_else(|| format!("The upstream for '{branch_name}' could not be resolved."))?;
+        let upstream_remote_branch = upstream_name
+            .split_once('/')
+            .map(|(_, remote_branch)| remote_branch)
+            .filter(|remote_branch| !remote_branch.is_empty())
+            .ok_or_else(|| format!("The upstream for '{branch_name}' could not be resolved."))?;
+        let refspec = format!(
+            "refs/heads/{branch_name}:refs/heads/{upstream_remote_branch}"
+        );
+        push_branch_to_origin(repo, profile, &refspec)?;
+        return Ok(GitPushResult {
+            outcome: "pushed".to_string(),
+            branch_name: branch_name.to_string(),
+            message: format!("Pushed '{branch_name}' to its upstream."),
+        });
+    }
+
+    if remote_branch_exists(repo, profile, branch_name)? && !replace_existing {
+        return Err(format!(
+            "Branch '{branch_name}' already exists on origin [publication_conflict]. Publishing over it requires explicit destructive confirmation."
+        ));
+    }
+
+    let refspec = if replace_existing {
+        format!("+refs/heads/{branch_name}:refs/heads/{branch_name}")
+    } else {
+        format!("refs/heads/{branch_name}:refs/heads/{branch_name}")
+    };
+    push_branch_to_origin(repo, profile, &refspec)?;
+
+    let mut branch = repo
+        .find_branch(branch_name, BranchType::Local)
+        .map_err(|_| format!("The current branch '{branch_name}' could not be found."))?;
+    branch
+        .set_upstream(Some(&format!("origin/{branch_name}")))
+        .map_err(|error| {
+            format!("Published '{branch_name}', but could not set its upstream: {error}")
+        })?;
+
+    Ok(GitPushResult {
+        outcome: "published".to_string(),
+        branch_name: branch_name.to_string(),
+        message: format!("Published '{branch_name}' to origin and set its upstream."),
+    })
 }
 
 /// Contacts the repository's `origin` remote and updates local remote-tracking
@@ -3513,8 +3950,8 @@ pub async fn git_fetch_operation(
     let repo = Repository::open(&absolute_path)
         .map_err(|e| format!("Failed to open Git repository: {}", e))?;
 
-    let profile = resolve_profile_for_repo(state.inner().pool(), &path_id).await?;
-    let fetch_result = fetch_from_origin(&repo, profile.as_ref());
+    let resolved_profile = resolve_profile_for_repo(state.inner().pool(), &path_id).await?;
+    let fetch_result = fetch_from_origin(&repo, Some(&resolved_profile.profile));
 
     let _ = refresh_and_cache_git_status(state.inner().pool(), &path_id, &absolute_path).await;
 
@@ -3536,8 +3973,8 @@ pub async fn git_pull_operation(
     let repo = Repository::open(&absolute_path)
         .map_err(|e| format!("Failed to open Git repository: {}", e))?;
 
-    let profile = resolve_profile_for_repo(state.inner().pool(), &path_id).await?;
-    fetch_from_origin(&repo, profile.as_ref())?;
+    let resolved_profile = resolve_profile_for_repo(state.inner().pool(), &path_id).await?;
+    fetch_from_origin(&repo, Some(&resolved_profile.profile))?;
 
     let pull_result = (|| -> Result<String, String> {
         let head_ref = repo
@@ -3609,14 +4046,12 @@ pub async fn git_pull_operation(
     pull_result
 }
 
-/// Pushes the current branch to its already-configured upstream on `origin`.
-/// Does not create a new remote branch or set up tracking for unpublished branches
-/// (a "publish branch" flow is a possible future addition).
 #[tauri::command]
 pub async fn git_push_operation(
     state: tauri::State<'_, DbState>,
     path_id: String,
-) -> Result<String, String> {
+    replace_existing: Option<bool>,
+) -> Result<GitPushResult, String> {
     let absolute_path = db::get_absolute_path_for_id(state.inner().pool(), &path_id)
         .await
         .map_err(|e| format!("Failed to resolve repository path: {}", e))?;
@@ -3624,31 +4059,21 @@ pub async fn git_push_operation(
     let repo = Repository::open(&absolute_path)
         .map_err(|e| format!("Failed to open Git repository: {}", e))?;
 
-    let profile = resolve_profile_for_repo(state.inner().pool(), &path_id).await?;
-    let push_result = (|| -> Result<String, String> {
+    let resolved_profile = resolve_profile_for_repo(state.inner().pool(), &path_id).await?;
+    let push_result = (|| -> Result<GitPushResult, String> {
         let head_ref = repo
             .head()
-            .map_err(|e| format!("Failed to resolve HEAD: {}", e))?;
+            .map_err(|_| "The repository has no current branch checked out.".to_string())?;
         let branch_name = head_ref
             .shorthand()
-            .ok_or_else(|| "Could not determine the current branch name.".to_string())?
+            .ok_or_else(|| "The repository has no current branch checked out.".to_string())?
             .to_string();
-
-        let local_branch = repo
-            .find_branch(&branch_name, BranchType::Local)
-            .map_err(|e| format!("Failed to read local branch '{}': {}", branch_name, e))?;
-
-        local_branch.upstream().map_err(|_| {
-            format!(
-                "Branch '{}' has no upstream branch configured to push to.",
-                branch_name
-            )
-        })?;
-
-        let refspec = format!("refs/heads/{branch_name}:refs/heads/{branch_name}");
-        push_branch_to_origin(&repo, profile.as_ref(), &refspec)?;
-
-        Ok(format!("Pushed '{}' to origin.", branch_name))
+        push_current_branch(
+            &repo,
+            Some(&resolved_profile.profile),
+            &branch_name,
+            replace_existing.unwrap_or(false),
+        )
     })();
 
     let _ = refresh_and_cache_git_status(state.inner().pool(), &path_id, &absolute_path).await;
@@ -3733,6 +4158,30 @@ mod tests {
         .unwrap();
     }
 
+    fn create_bare_remote_fixture(
+        name: &str,
+    ) -> (std::path::PathBuf, std::path::PathBuf, Repository) {
+        let root = std::env::current_dir()
+            .unwrap()
+            .join("target")
+            .join(format!("phase4-{name}-{}", std::process::id()));
+        if root.exists() {
+            fs::remove_dir_all(&root).unwrap();
+        }
+        fs::create_dir_all(&root).unwrap();
+        let local_path = root.join("local");
+        let bare_path = root.join("remote.git");
+        let repo = Repository::init(&local_path).unwrap();
+        let bare = Repository::init_bare(&bare_path).unwrap();
+        drop(bare);
+        let mut config = repo.config().unwrap();
+        config.set_str("user.name", "Phase 4 Test").unwrap();
+        config.set_str("user.email", "phase4@example.com").unwrap();
+        repo.remote("origin", bare_path.to_str().unwrap()).unwrap();
+        create_initial_commit(&repo, &local_path);
+        (root, bare_path, repo)
+    }
+
     #[test]
     fn explains_missing_oauth_token_when_repository_list_fails() {
         assert_eq!(
@@ -3752,6 +4201,306 @@ mod tests {
             ensure_native_remote_access(Some(&test_profile("full_oauth", Some("token")))).unwrap(),
             Some("token".to_string())
         );
+    }
+
+    #[test]
+    fn full_oauth_uses_token_for_https_remotes() {
+        assert_eq!(
+            ensure_native_remote_access_for_url(
+                Some(&test_profile("full_oauth", Some("token"))),
+                "https://github.com/example/repository.git",
+            )
+            .unwrap(),
+            Some("token".to_string())
+        );
+    }
+
+    #[test]
+    fn full_oauth_rejects_ssh_remotes_with_actionable_guidance() {
+        let error = ensure_native_remote_access_for_url(
+            Some(&test_profile("full_oauth", Some("token"))),
+            "git@github.com:example/repository.git",
+        )
+        .unwrap_err();
+
+        assert!(error.contains("HTTPS remotes only"));
+        assert!(error.contains("SSH key or agent"));
+    }
+
+    #[test]
+    fn credential_strategy_covers_https_and_ssh_auth_matrix() {
+        let oauth = test_profile("full_oauth", Some("token"));
+        let local = test_profile("local_system", None);
+        let basic = test_profile("basic", None);
+
+        assert_eq!(
+            credential_strategy(&oauth, "https://example.com/org/repo.git"),
+            "oauth_https_token"
+        );
+        assert_eq!(
+            credential_strategy(&oauth, "git@example.com:org/repo.git"),
+            "ssh_setup_required"
+        );
+        assert_eq!(
+            credential_strategy(&local, "https://example.com/org/repo.git"),
+            "os_git_credentials"
+        );
+        assert_eq!(
+            credential_strategy(&local, "ssh://git@example.com/org/repo.git"),
+            "os_git_credentials"
+        );
+        assert_eq!(
+            credential_strategy(&basic, "https://example.com/org/repo.git"),
+            "local_only_rejected"
+        );
+    }
+
+    #[test]
+    fn full_oauth_rejects_missing_token_without_invoking_callbacks() {
+        let error = with_built_remote_callbacks(
+            None,
+            Some(&test_profile("full_oauth", None)),
+            "https://example.com/org/repo.git",
+            |_callbacks| -> Result<(), git2::Error> {
+                panic!("callbacks must not be built without a token")
+            },
+        )
+        .unwrap_err();
+
+        assert!(error.contains("no readable keyring token"));
+        assert!(!error.contains("secret-token"));
+    }
+
+    #[test]
+    fn remote_url_parser_rejects_windows_paths_and_unsupported_schemes() {
+        assert!(classify_remote_url(r"C:\repos\local").is_err());
+        assert!(classify_remote_url("file:///repos/local").is_err());
+        assert!(classify_remote_url("https:///missing-host/repo.git").is_err());
+        assert_eq!(
+            classify_remote_url("HTTPS://example.com/org/repo.git").unwrap(),
+            RemoteClassification {
+                kind: RemoteKind::Https,
+                host: "example.com".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn git_error_categories_cover_auth_permission_rejection_transport_and_configuration() {
+        let cases = [
+            (
+                git2::Error::new(git2::ErrorCode::Auth, git2::ErrorClass::Net, "auth"),
+                GitFailureCategory::Authentication,
+            ),
+            (
+                git2::Error::from_str("permission denied by remote"),
+                GitFailureCategory::Permission,
+            ),
+            (
+                git2::Error::from_str("non-fast-forward rejected"),
+                GitFailureCategory::RemoteRejected,
+            ),
+            (
+                git2::Error::from_str("failed to connect to host"),
+                GitFailureCategory::Transport,
+            ),
+            (
+                git2::Error::from_str("unsupported remote"),
+                GitFailureCategory::RemoteConfiguration,
+            ),
+        ];
+
+        for (error, expected) in cases {
+            assert_eq!(classify_git2_error(&error), expected);
+        }
+    }
+
+    #[test]
+    fn push_requires_origin_and_current_branch() {
+        let root = std::env::current_dir()
+            .unwrap()
+            .join("target")
+            .join(format!("phase5-missing-origin-{}", std::process::id()));
+        if root.exists() {
+            fs::remove_dir_all(&root).unwrap();
+        }
+        fs::create_dir_all(&root).unwrap();
+        let repo = Repository::init(&root).unwrap();
+        let error = push_current_branch(
+            &repo,
+            Some(&test_profile("local_system", None)),
+            "main",
+            false,
+        )
+        .unwrap_err();
+        assert!(error.contains("no 'origin' remote"));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn local_system_keeps_os_credential_selection_for_ssh() {
+        assert_eq!(
+            ensure_native_remote_access_for_url(
+                Some(&test_profile("local_system", None)),
+                "git@github.com:example/repository.git",
+            )
+            .unwrap(),
+            None
+        );
+    }
+
+    #[test]
+    fn classifies_https_ssh_and_scp_remotes_without_exposing_credentials() {
+        assert_eq!(
+            classify_remote_url("https://x-access-token:secret@example.com/org/repo.git").unwrap(),
+            RemoteClassification {
+                kind: RemoteKind::Https,
+                host: "example.com".to_string(),
+            }
+        );
+        assert_eq!(
+            classify_remote_url("ssh://git@example.com/org/repo.git").unwrap(),
+            RemoteClassification {
+                kind: RemoteKind::Ssh,
+                host: "example.com".to_string(),
+            }
+        );
+        assert_eq!(
+            classify_remote_url("git@example.com:org/repo.git").unwrap(),
+            RemoteClassification {
+                kind: RemoteKind::Ssh,
+                host: "example.com".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn oauth_ssh_preflight_never_constructs_token_or_agent_credentials() {
+        let error = with_built_remote_callbacks(
+            None,
+            Some(&test_profile("full_oauth", Some("secret-token"))),
+            "git@example.com:org/repo.git",
+            |_callbacks| Ok::<_, git2::Error>(()),
+        )
+        .unwrap_err();
+
+        assert!(error.contains("SSH"));
+        assert!(error.contains("not used"));
+        assert!(!error.contains("secret-token"));
+    }
+
+    #[test]
+    fn basic_profiles_are_rejected_before_remote_callbacks() {
+        let error = with_built_remote_callbacks(
+            None,
+            Some(&test_profile("basic", None)),
+            "https://example.com/org/repo.git",
+            |_callbacks| Ok::<_, git2::Error>(()),
+        )
+        .unwrap_err();
+
+        assert!(error.contains("local-only"));
+        assert!(error.contains("authentication"));
+    }
+
+    #[test]
+    fn network_error_preserves_git_error_code_and_category() {
+        let error = git2::Error::from_str("Could not resolve host");
+        let described = describe_git2_network_error("Fetch transport failed", error);
+        assert!(described.contains("transport"));
+        assert!(described.contains("git_error_code=GenericError"));
+        assert!(!described.contains("secret"));
+    }
+
+    #[test]
+    fn rejection_messages_are_redacted() {
+        assert_eq!(
+            redact_git_message("remote https://user:secret@example.com/repo.git rejected"),
+            "remote https://example.com/repo.git rejected"
+        );
+    }
+
+    #[test]
+    fn first_publication_pushes_branch_and_sets_upstream() {
+        let (root, _bare_path, repo) = create_bare_remote_fixture("publication");
+        let branch_name = repo.head().unwrap().shorthand().unwrap().to_string();
+        let result = push_current_branch(
+            &repo,
+            Some(&test_profile("local_system", None)),
+            &branch_name,
+            false,
+        )
+        .unwrap();
+
+        assert_eq!(result.outcome, "published");
+        let expected_upstream = format!("origin/{branch_name}");
+        assert_eq!(
+            repo.find_branch(&branch_name, BranchType::Local)
+                .unwrap()
+                .upstream()
+                .unwrap()
+                .name()
+                .unwrap(),
+            Some(expected_upstream.as_str())
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn existing_upstream_push_preserves_normal_push_behavior() {
+        let (root, _bare_path, repo) = create_bare_remote_fixture("upstream");
+        let branch_name = repo.head().unwrap().shorthand().unwrap().to_string();
+        push_branch_to_origin(
+            &repo,
+            Some(&test_profile("local_system", None)),
+            &format!("refs/heads/{branch_name}:refs/heads/{branch_name}"),
+        )
+        .unwrap();
+        let upstream_name = format!("origin/{branch_name}");
+        repo.find_branch(&branch_name, BranchType::Local)
+            .unwrap()
+            .set_upstream(Some(&upstream_name))
+            .unwrap();
+        let local_path = root.join("local");
+        create_initial_commit(&repo, &local_path);
+
+        let result = push_current_branch(
+            &repo,
+            Some(&test_profile("local_system", None)),
+            &branch_name,
+            false,
+        )
+        .unwrap();
+
+        assert_eq!(result.outcome, "pushed");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn diagnostics_expose_only_remote_scheme_and_host() {
+        assert_eq!(
+            remote_location("https://x-access-token:secret@example.com/org/repo.git"),
+            (Some("https".to_string()), Some("example.com".to_string()))
+        );
+        assert_eq!(
+            remote_location("git@example.com:org/repo.git"),
+            (Some("ssh".to_string()), Some("example.com".to_string()))
+        );
+        let diagnostics = GitAuthenticationDiagnostics {
+            repository_path_id: "repo".to_string(),
+            resolved_profile_id: "profile".to_string(),
+            resolved_profile_name: "Profile".to_string(),
+            auth_level: "full_oauth".to_string(),
+            resolution_source: "active_profile".to_string(),
+            token_present: true,
+            remote_scheme: Some("https".to_string()),
+            remote_host: Some("example.com".to_string()),
+            credential_strategy: "oauth_https_token".to_string(),
+            git_error_code: None,
+        };
+        let serialized = serde_json::to_string(&diagnostics).unwrap();
+        assert!(!serialized.contains("secret"));
+        assert!(!serialized.contains("x-access-token"));
     }
 
     #[test]
@@ -4013,9 +4762,16 @@ mod tests {
         let signature = repo.signature().unwrap();
         let parent = repo.head().ok().and_then(|head| head.peel_to_commit().ok());
         let parents: Vec<&git2::Commit> = parent.iter().collect();
-        repo.commit(Some("HEAD"), &signature, &signature, message, &tree, &parents)
-            .unwrap()
-            .to_string()
+        repo.commit(
+            Some("HEAD"),
+            &signature,
+            &signature,
+            message,
+            &tree,
+            &parents,
+        )
+        .unwrap()
+        .to_string()
     }
 
     #[test]
@@ -4043,7 +4799,10 @@ mod tests {
             "README.md".to_string(),
         ))
         .unwrap();
-        assert!(diff.patch.as_deref().is_some_and(|patch| patch.contains("+updated")));
+        assert!(diff
+            .patch
+            .as_deref()
+            .is_some_and(|patch| patch.contains("+updated")));
 
         fs::remove_dir_all(repo_path).unwrap();
     }
@@ -4093,7 +4852,10 @@ mod tests {
             "doomed.txt".to_string(),
         ))
         .unwrap();
-        assert!(diff.patch.as_deref().is_some_and(|patch| patch.contains("-delete me")));
+        assert!(diff
+            .patch
+            .as_deref()
+            .is_some_and(|patch| patch.contains("-delete me")));
 
         fs::remove_dir_all(repo_path).unwrap();
     }
@@ -4104,7 +4866,11 @@ mod tests {
         create_initial_commit(&repo, &repo_path);
         fs::write(repo_path.join("original.txt"), "stable content\n").unwrap();
         commit_workdir_state(&repo, "Add original file");
-        fs::rename(repo_path.join("original.txt"), repo_path.join("renamed.txt")).unwrap();
+        fs::rename(
+            repo_path.join("original.txt"),
+            repo_path.join("renamed.txt"),
+        )
+        .unwrap();
         let hash = commit_workdir_state(&repo, "Rename original file");
 
         let files = tauri::async_runtime::block_on(get_commit_changed_files(
@@ -4153,8 +4919,14 @@ mod tests {
             "README.md".to_string(),
         ))
         .unwrap();
-        assert!(diff.patch.as_deref().is_some_and(|patch| patch.contains("+++ b/README.md")));
-        assert!(diff.patch.as_deref().is_some_and(|patch| patch.contains("--- /dev/null")));
+        assert!(diff
+            .patch
+            .as_deref()
+            .is_some_and(|patch| patch.contains("+++ b/README.md")));
+        assert!(diff
+            .patch
+            .as_deref()
+            .is_some_and(|patch| patch.contains("--- /dev/null")));
 
         fs::remove_dir_all(repo_path).unwrap();
     }
@@ -4163,7 +4935,11 @@ mod tests {
     fn test_get_commit_file_diff_flags_binary_content() {
         let (repo_path, repo) = create_test_repo("test_commit_binary");
         create_initial_commit(&repo, &repo_path);
-        fs::write(repo_path.join("asset.bin"), [0x00u8, 0x01, 0x02, 0x00, 0xFF]).unwrap();
+        fs::write(
+            repo_path.join("asset.bin"),
+            [0x00u8, 0x01, 0x02, 0x00, 0xFF],
+        )
+        .unwrap();
         let hash = commit_workdir_state(&repo, "Add binary asset");
 
         let files = tauri::async_runtime::block_on(get_commit_changed_files(
@@ -4181,7 +4957,11 @@ mod tests {
         .unwrap();
 
         assert!(
-            diff.is_binary || diff.patch.as_deref().is_some_and(|patch| patch.contains("GIT binary patch")),
+            diff.is_binary
+                || diff
+                    .patch
+                    .as_deref()
+                    .is_some_and(|patch| patch.contains("GIT binary patch")),
             "expected binary handling, got {diff:?}"
         );
 
@@ -4229,7 +5009,14 @@ mod tests {
             .unwrap();
         let main_tree = repo.find_tree(main_builder.write().unwrap()).unwrap();
         let main_tip = repo
-            .commit(None, &signature, &signature, "Main side", &main_tree, &[&base])
+            .commit(
+                None,
+                &signature,
+                &signature,
+                "Main side",
+                &main_tree,
+                &[&base],
+            )
             .unwrap();
 
         let mut feature_builder = repo.treebuilder(Some(&base_tree)).unwrap();
@@ -4238,7 +5025,14 @@ mod tests {
             .unwrap();
         let feature_tree = repo.find_tree(feature_builder.write().unwrap()).unwrap();
         let feature_tip = repo
-            .commit(None, &signature, &signature, "Feature side", &feature_tree, &[&base])
+            .commit(
+                None,
+                &signature,
+                &signature,
+                "Feature side",
+                &feature_tree,
+                &[&base],
+            )
             .unwrap();
 
         let mut merge_builder = repo.treebuilder(Some(&base_tree)).unwrap();

@@ -324,7 +324,7 @@ pub const DB_NAME: &str = "branch-schematic-dev.db";
 #[cfg(not(debug_assertions))]
 pub const DB_NAME: &str = "branch-schematic.db";
 
-pub const EXPECTED_SCHEMA_VERSION: i64 = 6;
+pub const EXPECTED_SCHEMA_VERSION: i64 = 7;
 pub const ONBOARDING_VERSION: i64 = 1;
 pub const DEFAULT_DETAIL_STATUS_REFRESH_INTERVAL: i64 = 5;
 pub const MIN_DETAIL_STATUS_REFRESH_INTERVAL: i64 = 2;
@@ -635,6 +635,25 @@ pub fn get_migrations() -> Vec<Migration> {
             sql: "
             ALTER TABLE cached_git_branches ADD COLUMN unpushed_commit_count INTEGER DEFAULT NULL;
             PRAGMA user_version = 6;
+            ",
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 7,
+            description: "replace_ambiguous_profile_scopes_with_repository_assignments",
+            sql: "
+            -- Alpha data may contain ambiguous many-to-many identities. Do not migrate it.
+            DROP TABLE IF EXISTS profile_repo_scopes;
+            CREATE TABLE IF NOT EXISTS repository_profile_assignments (
+                repo_path_id TEXT PRIMARY KEY NOT NULL,
+                profile_id TEXT NOT NULL,
+                assigned_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY(repo_path_id) REFERENCES tracked_paths(id) ON DELETE CASCADE,
+                FOREIGN KEY(profile_id) REFERENCES auth_profiles(id) ON DELETE RESTRICT
+            );
+            CREATE INDEX IF NOT EXISTS idx_repository_profile_assignments_profile
+                ON repository_profile_assignments(profile_id);
+            PRAGMA user_version = 7;
             ",
             kind: MigrationKind::Up,
         },
