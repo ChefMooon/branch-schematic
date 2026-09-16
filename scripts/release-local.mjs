@@ -138,10 +138,12 @@ export async function runRelease({ tag, releaseId = null, resume = false, rootPa
     await executeStep(status, 'extract-release-notes', 'powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', 'scripts/extract-release-notes.ps1', '-Tag', tag, '-OutputPath', notesPath], { executor, cwd: rootPath, env });
     const notes = await fs.readFile(notesPath, 'utf8');
     const releaseArgs = resume
-      ? ['release', 'view', releaseId, '--repo', REPOSITORY]
+      ? ['api', `repos/${REPOSITORY}/releases/${releaseId}`]
       : ['release', 'create', tag, '--repo', REPOSITORY, '--draft', '--verify-tag', '--title', `Branch Schematic ${tag}`, '--notes-file', notesPath];
     const releaseResult = await executeStep(status, resume ? 'verify-draft-release' : 'create-draft-release', 'gh', releaseArgs, { executor, cwd: rootPath, env });
-    const releaseUrl = releaseResult.stdout.trim().split(/\r?\n/).at(-1) || null;
+    const releaseUrl = resume
+      ? JSON.parse(releaseResult.stdout).html_url
+      : releaseResult.stdout.trim().split(/\r?\n/).at(-1) || null;
     status.state.release = { tag, version, url: releaseUrl, notesLength: notes.length };
     await fs.writeFile(path.join(runDirectory, 'status.json'), `${JSON.stringify(status.state, null, 2)}\n`, 'utf8');
     await executeStep(status, 'prepare-release-config', 'node', ['scripts/prepare-release-config.mjs', '--tag', tag, '--output', configPath], { executor, cwd: rootPath, env });
