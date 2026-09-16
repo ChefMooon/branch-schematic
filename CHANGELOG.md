@@ -2,6 +2,12 @@
 
 All notable changes to Branch Schematic will be documented here.
 
+## [0.1.1] - 2026-09-16
+
+### Fixed
+
+- Repaired production GitHub sign-in configuration.
+
 ## [0.1.0] - Unreleased
 
 ### Added
