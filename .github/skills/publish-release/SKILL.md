@@ -8,8 +8,18 @@ description: 'Prepare and publish a Branch Schematic Windows release. Use when b
 ## When to Use
 
 Use this skill for every Windows release, updater rehearsal, or version bump.
-The project publishes unsigned Windows NSIS artifacts through
+The project publishes Windows NSIS artifacts through
 `.github/workflows/release.yml` when a stable `vX.Y.Z` tag is pushed.
+
+This project has two independent signing concerns:
+
+- **Windows Authenticode signing** signs the executable/NSIS installer and
+   identifies the Windows publisher. The release must not be treated as ready
+   until the configured Windows signing provider has signed the installer.
+- **Tauri updater signing** signs updater artifacts and adds a `signature`
+   value plus a `.sig` asset to `latest.json`. This release requires the
+   matching public key and private key credentials; do not disable it to make
+   a release pass.
 
 The release workflow creates a draft GitHub release. Do not publish it until
 the installer and updater manifest have been inspected.
@@ -29,9 +39,10 @@ the installer and updater manifest have been inspected.
    at the stable `releases/latest/download/latest.json` feed. The workflow's
    `scripts/prepare-release-config.mjs` deliberately generates a temporary
    `src-tauri/tauri.release.conf.json` with a tag-specific endpoint for the
-   release build; do not commit that generated file. Because this project is
-   unsigned, the release configuration must not require a public key or emit
-   updater signatures.
+   release build; do not commit that generated file. The generated
+   configuration must inject `TAURI_UPDATER_PUBLIC_KEY`, enable updater
+   artifacts, and point to the tag-specific endpoint. Keep this separate from
+   the Windows Authenticode signing step.
 4. Run the repository checks:
    - `npm run test:version`
    - `npm run test:updater-manifest`
@@ -42,18 +53,18 @@ the installer and updater manifest have been inspected.
    - `git diff --check`
 5. Verify the exact release tag and configuration as the workflow will:
    - `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/check-version-consistency.ps1 -Tag vX.Y.Z`
-   - `node scripts/prepare-release-config.mjs --tag vX.Y.Z --output src-tauri/tauri.release.conf.json` only after the script has been made unsigned-compatible; the current script still requires `TAURI_UPDATER_PUBLIC_KEY`.
+   - Set `TAURI_UPDATER_PUBLIC_KEY` from the repository Actions variable, then run `node scripts/prepare-release-config.mjs --tag vX.Y.Z --output src-tauri/tauri.release.conf.json`; inspect the tag-specific endpoint and matching public key without printing the key.
    - Remove the generated release config after inspection and never commit it.
 6. Commit the complete release change set with a Conventional Commit message,
    create an annotated `vX.Y.Z` tag, and push the branch and tag.
 7. Wait for the Windows workflow to finish. Inspect the draft release's NSIS
-   installer and `latest.json`. Confirm that `latest.json` has the expected
-   version, changelog notes, HTTPS GitHub download URL, and Windows platform
-   entry. There must be no `.sig` requirement for this unsigned release.
-8. Do not use `scripts/validate-updater-manifest.mjs` unchanged: its current
-   contract requires a signature and is for signed updater artifacts. Publish
-   the draft only after the unsigned artifact and manifest checks pass. Keep
-   the release non-prerelease.
+   installer and `latest.json`. Confirm that the installer has a valid
+   Authenticode signature from the intended publisher. Confirm that
+   `latest.json` has the expected version, changelog notes, HTTPS GitHub
+   download URL, Windows platform entry, non-empty updater signature, and
+   matching `.sig` asset.
+8. Publish the draft only after both the Windows installer-signing check and
+   the matching updater-manifest check pass. Keep the release non-prerelease.
 
 ## Update Rehearsal
 
@@ -62,10 +73,11 @@ the installer and updater manifest have been inspected.
   point to the same repository and that the generated release URL contains the
   pushed `vX.Y.Z` tag.
 - The existing `npm run test:updater-manifest` and
-   `scripts/validate-updater-manifest.mjs` tests currently assert signed
-   manifests. Update them before using them as the unsigned release gate.
-   For a real draft, download `latest.json` and the NSIS installer and verify
-   the manifest contains no signature requirement.
+   `scripts/validate-updater-manifest.mjs` validate the signed updater
+   manifest contract. They do not prove Authenticode signing. For a real
+   draft, download `latest.json` and the NSIS installer, validate the
+   manifest and `.sig` asset, and separately verify the installer's
+   Authenticode signature.
 - On Windows, verify the app's updater UX matches the current implementation:
   the update downloads first, then offers installation and restart or deferral.
   Confirm that deferral does not repeatedly notify for the same version and
@@ -79,8 +91,13 @@ the installer and updater manifest have been inspected.
 - Release tags must be stable `vX.Y.Z`; prerelease and build suffixes are
   rejected by `scripts/check-version-consistency.ps1` and
   `scripts/prepare-release-config.mjs`.
-- An unsigned release must not require `TAURI_UPDATER_PUBLIC_KEY`,
-   `TAURI_SIGNING_PRIVATE_KEY`, or `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`.
+- The release requires `TAURI_UPDATER_PUBLIC_KEY` as a repository Actions
+   variable, `TAURI_SIGNING_PRIVATE_KEY` as a GitHub Actions secret, and
+   `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` when the key is protected. Missing
+   values must fail the workflow; never use placeholders.
+- Windows Authenticode credentials must be supplied through the selected
+   signing provider's GitHub Actions secrets or identity, never committed or
+   printed. The workflow must fail closed when those credentials are absent.
 - Never commit generated release configuration, or release credentials.
 - Never commit updater private keys, passwords, Authenticode material, or
-  release credentials.
+   release credentials.

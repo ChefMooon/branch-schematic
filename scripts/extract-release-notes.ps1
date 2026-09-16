@@ -49,7 +49,7 @@ if ([string]::IsNullOrWhiteSpace($releaseNotes) -or $releaseNotes -notmatch '(?m
   throw "CHANGELOG.md release entry for [$version] has no bullet-point notes."
 }
 
-$outputDirectory = Split-Path -Parent (Resolve-Path -LiteralPath $OutputPath -ErrorAction SilentlyContinue)
+$outputDirectory = Split-Path -Parent ([System.IO.Path]::GetFullPath($OutputPath))
 if ($outputDirectory -and -not (Test-Path -LiteralPath $outputDirectory)) {
   New-Item -ItemType Directory -Path $outputDirectory -Force | Out-Null
 }

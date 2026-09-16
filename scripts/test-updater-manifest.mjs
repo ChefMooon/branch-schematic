@@ -14,10 +14,12 @@ const validManifest = {
   platforms: {
     'windows-x86_64': {
       url: 'https://github.com/ChefMooon/branch-schematic/releases/download/v0.1.0/branch-schematic_0.1.0_x64-setup.exe',
+      signature: 'signed-fixture',
     },
   },
 };
 await fs.writeFile(path.join(assetDir, 'branch-schematic_0.1.0_x64-setup.exe'), 'fixture');
+await fs.writeFile(path.join(assetDir, 'branch-schematic_0.1.0_x64-setup.exe.sig'), 'signature-fixture');
 
 async function expectFailure(name, callback) {
   try {
@@ -31,9 +33,9 @@ async function expectFailure(name, callback) {
 try {
   await validateManifest(validManifest, { assetDir, expectedVersion: '0.1.0' });
 
-  const unexpectedSignature = structuredClone(validManifest);
-  unexpectedSignature.platforms['windows-x86_64'].signature = 'unexpected-signature';
-  await expectFailure('unexpected signature', () => validateManifest(unexpectedSignature, { assetDir, expectedVersion: '0.1.0' }));
+  const missingSignature = structuredClone(validManifest);
+  delete missingSignature.platforms['windows-x86_64'].signature;
+  await expectFailure('missing signature', () => validateManifest(missingSignature, { assetDir, expectedVersion: '0.1.0' }));
 
   const wrongPlatform = structuredClone(validManifest);
   delete wrongPlatform.platforms['windows-x86_64'];
@@ -47,7 +49,7 @@ try {
   malformedDate.pub_date = 'not-a-date';
   await expectFailure('malformed publication date', () => validateManifest(malformedDate, { assetDir, expectedVersion: '0.1.0' }));
 
-  console.log('Updater manifest validation tests passed (unsigned matching, signature rejection, platform, version, and date cases).');
+  console.log('Updater manifest validation tests passed (signed matching, signature, platform, version, and date cases).');
 } finally {
   await fs.rm(root, { recursive: true, force: true });
 }

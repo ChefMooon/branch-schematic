@@ -28,10 +28,14 @@ async function run() {
   const rootPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
   const configPath = path.join(rootPath, 'src-tauri', 'tauri.conf.json');
   const config = JSON.parse(await fs.readFile(configPath, 'utf8'));
+  const publicKey = process.env.TAURI_UPDATER_PUBLIC_KEY?.trim();
+  if (!publicKey) throw new Error('TAURI_UPDATER_PUBLIC_KEY is required.');
+
   config.bundle = { ...config.bundle, createUpdaterArtifacts: true, targets: ['nsis'] };
   config.plugins = {
     ...(config.plugins ?? {}),
     updater: {
+      pubkey: publicKey,
       endpoints: [`https://github.com/ChefMooon/branch-schematic/releases/download/${options.tag}/latest.json`],
     },
   };
