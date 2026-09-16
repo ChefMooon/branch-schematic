@@ -30,3 +30,4 @@ website/.vitepress/cache
 
 # Temporary files
 .tmp
+.release-status

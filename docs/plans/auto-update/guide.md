@@ -8,7 +8,8 @@ The implementation uses:
 - Tauri's official updater plugin.
 - A Tauri updater signing key pair.
 - GitHub Releases as a static update feed.
-- GitHub Actions and `tauri-apps/tauri-action@v1` to build and publish assets.
+- A Windows maintainer machine with Node, Rust, Tauri CLI, and GitHub CLI to
+  build and upload assets locally.
 - A Svelte/TypeScript frontend that checks for metadata first and requires
   explicit user consent before downloading and installing an update.
 
@@ -25,7 +26,7 @@ The updater has four cooperating parts:
 | Tauri configuration | Embeds the public key, declares the feed URL, and enables updater artifacts. | [`src-tauri/tauri.conf.json`](../src-tauri/tauri.conf.json) |
 | Rust/Tauri runtime | Registers the updater and process plugins and grants capability permissions. | [`src-tauri/src/lib.rs`](../src-tauri/src/lib.rs), [`src-tauri/capabilities/default.json`](../src-tauri/capabilities/default.json) |
 | Frontend | Checks metadata, displays release details, downloads with progress, installs, and controls relaunch behavior. | [`src/lib/updates.svelte.ts`](../src/lib/updates.svelte.ts), [`src/lib/updates.ts`](../src/lib/updates.ts) |
-| Release pipeline | Builds the application, signs updater artifacts, creates a GitHub Release, and uploads `latest.json` and signatures. | [`.github/workflows/release.yml`](../.github/workflows/release.yml) |
+| Release pipeline | Creates a draft GitHub Release first, builds the application locally, signs updater artifacts, and uploads `latest.json` and signatures. | [`scripts/release-local.mjs`](../../../scripts/release-local.mjs) |
 
 There is no custom update server in this setup. GitHub Releases hosts the
 static `latest.json` manifest and the installer assets. The Tauri runtime

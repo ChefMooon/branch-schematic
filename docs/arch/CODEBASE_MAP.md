@@ -20,8 +20,7 @@ branch-schematic/
 │   │   └── publish-release/
 │   │       └── SKILL.md
 │   └── workflows/
-│       ├── deploy-docs.yml
-│       └── release.yml
+│       └── deploy-docs.yml
 ├── .gitignore
 ├── .tanstack/
 │   └── tmp/
@@ -48,6 +47,9 @@ branch-schematic/
 │   ├── evaluate-rollout.js
 │   ├── extract-release-notes.ps1
 │   ├── prepare-release-config.mjs
+│   ├── release-local.mjs
+│   ├── test-release-config.mjs
+│   ├── test-release-local.mjs
 │   ├── test-updater-manifest.mjs
 │   ├── test-version-consistency.ps1
 │   └── validate-updater-manifest.mjs
@@ -115,6 +117,8 @@ branch-schematic/
 │   │   │   │   ├── RepositoryProfileAssignmentControl.test.tsx
 │   │   │   │   └── RepositoryProfileAssignmentControl.tsx
 │   │   │   ├── hooks/
+│   │   │   │   ├── oauthConfig.test.ts
+│   │   │   │   ├── oauthConfig.ts
 │   │   │   │   ├── useOAuthFlow.ts
 │   │   │   │   └── useProfileContext.ts
 │   │   │   ├── stores/
@@ -317,6 +321,7 @@ branch-schematic/
 │   │   └── workspace-update-sync.test.ts
 │   ├── test/
 │   │   └── setup.ts
+│   ├── theme.test.ts
 │   ├── theme.ts
 │   ├── types/
 │   │   └── git.ts

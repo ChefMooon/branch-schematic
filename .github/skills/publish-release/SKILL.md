@@ -1,100 +1,76 @@
 ---
 name: publish-release
-description: 'Prepare and publish a Branch Schematic Windows release. Use when bumping the application version, updating the changelog, creating a v<semver> tag, pushing the release workflow, validating Tauri updater assets, or rehearsing the Windows updater flow.'
+description: 'Prepare a Branch Schematic Windows release locally, create a draft GitHub release with the GitHub CLI, build and sign Tauri updater artifacts, upload validated assets, and rehearse the Windows updater flow.'
 ---
 
 # Branch Schematic Release Workflow
 
-## When to Use
-
 Use this skill for every Windows release, updater rehearsal, or version bump.
-The project publishes Windows NSIS artifacts through
-`.github/workflows/release.yml` when a stable `vX.Y.Z` tag is pushed.
-
-This project has two independent signing concerns:
-
-- **Windows Authenticode signing** signs the executable/NSIS installer and
-   identifies the Windows publisher. The release must not be treated as ready
-   until the configured Windows signing provider has signed the installer.
-- **Tauri updater signing** signs updater artifacts and adds a `signature`
-   value plus a `.sig` asset to `latest.json`. This release requires the
-   matching public key and private key credentials; do not disable it to make
-   a release pass.
-
-The release workflow creates a draft GitHub release. Do not publish it until
-the installer and updater manifest have been inspected.
+Production releases are created from a Windows maintainer machine with the
+GitHub CLI. There is no tag-triggered GitHub Actions build.
 
 ## Release Procedure
 
 1. Add or update the `## [X.Y.Z]` entry in `CHANGELOG.md` before changing the
-   version. It must contain at least one bullet point. The workflow extracts
-   this entry into the GitHub release body and updater `latest.json` notes.
-2. Synchronize the same stable SemVer value in:
-   - `package.json`
-   - `package-lock.json` root metadata
-   - `src-tauri/Cargo.toml`
-   - `src-tauri/Cargo.lock` application package entry
-   - `src-tauri/tauri.conf.json`
-3. Keep both the checked-in updater endpoint and the temporary release
-   configuration pointed at the stable `releases/latest/download/latest.json`
-   feed. The workflow's `scripts/prepare-release-config.mjs` injects
-   `TAURI_UPDATER_PUBLIC_KEY` and enables updater artifacts; do not commit its
-   generated `src-tauri/tauri.release.conf.json`. Keep this separate from the
-   Windows Authenticode signing step.
-4. Run the repository checks:
-   - `npm run test:version`
-   - `npm run test:updater-manifest`
-   - `npm test`
-   - `npm run build`
-   - `cargo fmt --manifest-path src-tauri/Cargo.toml -- --check`
-   - `cargo check --manifest-path src-tauri/Cargo.toml`
-   - `git diff --check`
-5. Verify the exact release tag and configuration as the workflow will:
-   - `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/check-version-consistency.ps1 -Tag vX.Y.Z`
-   - Set `TAURI_UPDATER_PUBLIC_KEY` from the repository Actions variable, then run `node scripts/prepare-release-config.mjs --tag vX.Y.Z --output src-tauri/tauri.release.conf.json`; inspect the stable endpoint and matching public key without printing the key.
-   - Remove the generated release config after inspection and never commit it.
-6. Commit the complete release change set with a Conventional Commit message,
-   create an annotated `vX.Y.Z` tag, and push the branch and tag.
-7. Wait for the Windows workflow to finish. Inspect the draft release's NSIS
-   installer and `latest.json`. Confirm that the installer has a valid
-   Authenticode signature from the intended publisher. Confirm that
-   `latest.json` has the expected version, changelog notes, HTTPS GitHub
-   download URL, Windows platform entry, non-empty updater signature, and
-   matching `.sig` asset.
-8. Publish the draft only after both the Windows installer-signing check and
-   the matching updater-manifest check pass. Keep the release non-prerelease.
+   version. It must contain at least one bullet point.
+2. Synchronize the stable version in `package.json`, `package-lock.json`,
+   `src-tauri/Cargo.toml`, `src-tauri/Cargo.lock`, and
+   `src-tauri/tauri.conf.json`.
+3. Commit and push the version change, then push the matching stable tag
+   `vX.Y.Z`.
+4. Confirm `gh auth status` succeeds and set these local PowerShell variables:
+   `TAURI_UPDATER_PUBLIC_KEY`, `TAURI_SIGNING_PRIVATE_KEY`, and
+   `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` when applicable.
+5. Run `npm run release:local -- --tag vX.Y.Z`. The runner validates the
+   version and notes, creates a GitHub draft first, generates a temporary
+   release config, builds NSIS updater artifacts locally, validates `latest.json`
+   and its matching `.sig`, uploads the assets, and verifies the draft.
+6. Inspect the draft and the ignored report under `.release-status/<run>/`.
+   Each run contains `status.json` and `status.md`.
+7. Publish the draft manually only after the installer and updater manifest pass
+   inspection.
 
-## Update Rehearsal
+The runner never publishes automatically. If a build or upload fails, the draft
+is intentionally left available for diagnosis. Resuming an existing draft
+requires explicit ownership confirmation and a release id:
 
-- The checked-in app and release builds use the stable `releases/latest`
-   endpoint. Confirm the generated configuration preserves the release version
-   and updater key while keeping this moving feed unchanged.
-- The existing `npm run test:updater-manifest` and
-   `scripts/validate-updater-manifest.mjs` validate the signed updater
-   manifest contract. They do not prove Authenticode signing. For a real
-   draft, download `latest.json` and the NSIS installer, validate the
-   manifest and `.sig` asset, and separately verify the installer's
-   Authenticode signature.
-- On Windows, verify the app's updater UX matches the current implementation:
-  the update downloads first, then offers installation and restart or deferral.
-  Confirm that deferral does not repeatedly notify for the same version and
-  that Settings can install a downloaded update.
-- Use `node scripts/evaluate-rollout.js diagnostics.json` only for rollout
-  diagnostics. A non-zero exit means the stale-state or registration-failure
-  threshold requires rollback or a documented mitigation.
+```powershell
+npm run release:local -- --tag vX.Y.Z --resume --release-id <release-id>
+```
 
-## Version and Credential Rules
+## Validation
 
-- Release tags must be stable `vX.Y.Z`; prerelease and build suffixes are
-  rejected by `scripts/check-version-consistency.ps1` and
-  `scripts/prepare-release-config.mjs`.
-- The release requires `TAURI_UPDATER_PUBLIC_KEY` as a repository Actions
-   variable, `TAURI_SIGNING_PRIVATE_KEY` as a GitHub Actions secret, and
-   `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` when the key is protected. Missing
-   values must fail the workflow; never use placeholders.
-- Windows Authenticode credentials must be supplied through the selected
-   signing provider's GitHub Actions secrets or identity, never committed or
-   printed. The workflow must fail closed when those credentials are absent.
-- Never commit generated release configuration, or release credentials.
-- Never commit updater private keys, passwords, Authenticode material, or
-   release credentials.
+The runner reuses these focused helpers:
+
+- `scripts/check-version-consistency.ps1` validates all application and
+  lockfile versions against the stable tag.
+- `scripts/prepare-release-config.mjs` injects the public key and enables NSIS
+  updater artifacts while preserving the stable `releases/latest` endpoint.
+- `scripts/extract-release-notes.ps1` extracts the matching changelog entry.
+- `scripts/validate-updater-manifest.mjs` validates the Windows x64 manifest,
+  installer URL, version, notes, signature, and local assets.
+
+Run the repository checks before a real release:
+
+```powershell
+npm run test:version
+npm run test:updater-manifest
+npm run test:release-config
+npm run test:release-local
+npm test
+npm run build
+cargo check --manifest-path src-tauri/Cargo.toml
+git diff --check
+```
+
+## Signing and Security
+
+Tauri updater signing is required. Never print, commit, or write the updater
+private key, password, or credential environment values to a report.
+
+Windows Authenticode signing is currently deferred. A successful local release
+must not be described as publisher-signed unless a separate signing provider
+has been configured and independently verified.
+
+Generated release configuration, changelog notes, installers, signatures, and
+the status directory are local artifacts and must not be committed.

@@ -20,18 +20,20 @@ function Assert-Fail([string]$Tag, [string]$Name) {
 try {
   New-Item -ItemType Directory -Path (Join-Path $fixturePath 'src-tauri') -Force | Out-Null
   Copy-Item (Join-Path $rootPath 'package.json') (Join-Path $fixturePath 'package.json')
+  Copy-Item (Join-Path $rootPath 'package-lock.json') (Join-Path $fixturePath 'package-lock.json')
   Copy-Item (Join-Path $rootPath 'src-tauri/tauri.conf.json') (Join-Path $fixturePath 'src-tauri/tauri.conf.json')
   Copy-Item (Join-Path $rootPath 'src-tauri/Cargo.toml') (Join-Path $fixturePath 'src-tauri/Cargo.toml')
+  Copy-Item (Join-Path $rootPath 'src-tauri/Cargo.lock') (Join-Path $fixturePath 'src-tauri/Cargo.lock')
 
-  Assert-Pass 'v0.1.0'
+  Assert-Pass 'v0.1.1'
 
   $packagePath = Join-Path $fixturePath 'package.json'
   $package = Get-Content -LiteralPath $packagePath -Raw | ConvertFrom-Json
-  $package.version = '0.1.1'
+  $package.version = '0.1.2'
   $package | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $packagePath
-  Assert-Fail 'v0.1.0' 'mismatched package version'
+  Assert-Fail 'v0.1.1' 'mismatched package version'
 
-  $package.version = '0.1.0'
+  $package.version = '0.1.1'
   $package | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $packagePath
   Assert-Fail 'v0.1.0-beta.1' 'prerelease tag'
   Assert-Fail '0.1.0' 'unprefixed tag'

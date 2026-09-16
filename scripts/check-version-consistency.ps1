@@ -24,21 +24,36 @@ if (-not $tagMatch.Success) {
 $tagVersion = Read-StrictVersion $tagMatch.Groups[1].Value 'Tag version'
 $tauriPath = Join-Path $RootPath 'src-tauri/tauri.conf.json'
 $packagePath = Join-Path $RootPath 'package.json'
+$packageLockPath = Join-Path $RootPath 'package-lock.json'
 $cargoPath = Join-Path $RootPath 'src-tauri/Cargo.toml'
+$cargoLockPath = Join-Path $RootPath 'src-tauri/Cargo.lock'
 
 $tauriVersion = Read-StrictVersion ((Get-Content -LiteralPath $tauriPath -Raw | ConvertFrom-Json).version) 'src-tauri/tauri.conf.json version'
 $packageVersion = Read-StrictVersion ((Get-Content -LiteralPath $packagePath -Raw | ConvertFrom-Json).version) 'package.json version'
+$packageLockContent = Get-Content -LiteralPath $packageLockPath -Raw
+$normalizedPackageLock = $packageLockContent -replace '("packages"\s*:\s*)\{\s*""\s*:', '$1{"root":'
+$packageLock = $normalizedPackageLock | ConvertFrom-Json
+$packageLockRoot = $packageLock.packages.root
+$packageLockVersion = Read-StrictVersion $packageLockRoot.version 'package-lock.json root version'
 $cargoContent = Get-Content -LiteralPath $cargoPath -Raw
 $cargoMatch = [regex]::Match($cargoContent, '(?ms)^\[package\].*?^version\s*=\s*"([^"]+)"\s*$')
 if (-not $cargoMatch.Success) {
   throw 'src-tauri/Cargo.toml is missing a [package] version.'
 }
 $cargoVersion = Read-StrictVersion $cargoMatch.Groups[1].Value 'src-tauri/Cargo.toml version'
+$cargoLockContent = Get-Content -LiteralPath $cargoLockPath -Raw
+$cargoLockMatch = [regex]::Match($cargoLockContent, '(?ms)\[\[package\]\]\s*name\s*=\s*"branch-schematic"\s*version\s*=\s*"([^"]+)"')
+if (-not $cargoLockMatch.Success) {
+  throw 'src-tauri/Cargo.lock is missing the branch-schematic package entry.'
+}
+$cargoLockVersion = Read-StrictVersion $cargoLockMatch.Groups[1].Value 'src-tauri/Cargo.lock version'
 
 $versions = [ordered]@{
   'src-tauri/tauri.conf.json' = $tauriVersion
   'package.json' = $packageVersion
+  'package-lock.json' = $packageLockVersion
   'src-tauri/Cargo.toml' = $cargoVersion
+  'src-tauri/Cargo.lock' = $cargoLockVersion
   tag = $tagVersion
 }
 $mismatches = @($versions.GetEnumerator() | Where-Object { $_.Value -ne $tagVersion })
