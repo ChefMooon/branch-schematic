@@ -35,14 +35,12 @@ the installer and updater manifest have been inspected.
    - `src-tauri/Cargo.toml`
    - `src-tauri/Cargo.lock` application package entry
    - `src-tauri/tauri.conf.json`
-3. Keep the checked-in updater endpoint in `src-tauri/tauri.conf.json` pointed
-   at the stable `releases/latest/download/latest.json` feed. The workflow's
-   `scripts/prepare-release-config.mjs` deliberately generates a temporary
-   `src-tauri/tauri.release.conf.json` with a tag-specific endpoint for the
-   release build; do not commit that generated file. The generated
-   configuration must inject `TAURI_UPDATER_PUBLIC_KEY`, enable updater
-   artifacts, and point to the tag-specific endpoint. Keep this separate from
-   the Windows Authenticode signing step.
+3. Keep both the checked-in updater endpoint and the temporary release
+   configuration pointed at the stable `releases/latest/download/latest.json`
+   feed. The workflow's `scripts/prepare-release-config.mjs` injects
+   `TAURI_UPDATER_PUBLIC_KEY` and enables updater artifacts; do not commit its
+   generated `src-tauri/tauri.release.conf.json`. Keep this separate from the
+   Windows Authenticode signing step.
 4. Run the repository checks:
    - `npm run test:version`
    - `npm run test:updater-manifest`
@@ -53,7 +51,7 @@ the installer and updater manifest have been inspected.
    - `git diff --check`
 5. Verify the exact release tag and configuration as the workflow will:
    - `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/check-version-consistency.ps1 -Tag vX.Y.Z`
-   - Set `TAURI_UPDATER_PUBLIC_KEY` from the repository Actions variable, then run `node scripts/prepare-release-config.mjs --tag vX.Y.Z --output src-tauri/tauri.release.conf.json`; inspect the tag-specific endpoint and matching public key without printing the key.
+   - Set `TAURI_UPDATER_PUBLIC_KEY` from the repository Actions variable, then run `node scripts/prepare-release-config.mjs --tag vX.Y.Z --output src-tauri/tauri.release.conf.json`; inspect the stable endpoint and matching public key without printing the key.
    - Remove the generated release config after inspection and never commit it.
 6. Commit the complete release change set with a Conventional Commit message,
    create an annotated `vX.Y.Z` tag, and push the branch and tag.
@@ -68,10 +66,9 @@ the installer and updater manifest have been inspected.
 
 ## Update Rehearsal
 
-- The checked-in app uses the stable `releases/latest` endpoint, while a
-  release build uses its tag-specific endpoint. Confirm both configurations
-  point to the same repository and that the generated release URL contains the
-  pushed `vX.Y.Z` tag.
+- The checked-in app and release builds use the stable `releases/latest`
+   endpoint. Confirm the generated configuration preserves the release version
+   and updater key while keeping this moving feed unchanged.
 - The existing `npm run test:updater-manifest` and
    `scripts/validate-updater-manifest.mjs` validate the signed updater
    manifest contract. They do not prove Authenticode signing. For a real

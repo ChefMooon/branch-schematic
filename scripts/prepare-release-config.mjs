@@ -15,37 +15,47 @@ function parseArgs(argv) {
   return options;
 }
 
-function versionFromTag(tag) {
+export function versionFromTag(tag) {
   const match = /^v((0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*))$/.exec(tag);
   if (!match) throw new Error(`Tag '${tag}' must match vX.Y.Z.`);
   return match[1];
 }
 
+export function createReleaseConfig(config, { tag, publicKey }) {
+  const version = versionFromTag(tag);
+
+  if (!publicKey?.trim()) throw new Error('TAURI_UPDATER_PUBLIC_KEY is required.');
+
+  return {
+    ...config,
+    bundle: { ...config.bundle, createUpdaterArtifacts: true, targets: ['nsis'] },
+    plugins: {
+      ...(config.plugins ?? {}),
+      updater: {
+        pubkey: publicKey.trim(),
+        endpoints: ['https://github.com/ChefMooon/branch-schematic/releases/latest/download/latest.json'],
+      },
+    },
+    version,
+  };
+}
+
 async function run() {
   const options = parseArgs(process.argv.slice(2));
-  const version = versionFromTag(options.tag);
 
   const rootPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
   const configPath = path.join(rootPath, 'src-tauri', 'tauri.conf.json');
   const config = JSON.parse(await fs.readFile(configPath, 'utf8'));
   const publicKey = process.env.TAURI_UPDATER_PUBLIC_KEY?.trim();
-  if (!publicKey) throw new Error('TAURI_UPDATER_PUBLIC_KEY is required.');
-
-  config.bundle = { ...config.bundle, createUpdaterArtifacts: true, targets: ['nsis'] };
-  config.plugins = {
-    ...(config.plugins ?? {}),
-    updater: {
-      pubkey: publicKey,
-      endpoints: [`https://github.com/ChefMooon/branch-schematic/releases/download/${options.tag}/latest.json`],
-    },
-  };
-  config.version = version;
+  const releaseConfig = createReleaseConfig(config, { tag: options.tag, publicKey });
 
   await fs.mkdir(path.dirname(path.resolve(options.output)), { recursive: true });
-  await fs.writeFile(path.resolve(options.output), `${JSON.stringify(config, null, 2)}\n`, 'utf8');
+  await fs.writeFile(path.resolve(options.output), `${JSON.stringify(releaseConfig, null, 2)}\n`, 'utf8');
 }
 
-run().catch((error) => {
-  console.error(error instanceof Error ? error.message : error);
-  process.exitCode = 1;
-});
+if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url))) {
+  run().catch((error) => {
+    console.error(error instanceof Error ? error.message : error);
+    process.exitCode = 1;
+  });
+}

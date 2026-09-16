@@ -12,6 +12,7 @@
     "test:coverage": "vitest run --coverage",
     "test:version": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-version-consistency.ps1",
     "test:updater-manifest": "node scripts/test-updater-manifest.mjs",
+    "test:release-config": "node scripts/test-release-config.mjs",
     "analyze:bundle": "npm run build && node scripts/analyze-bundle.js",
     "bench:repo-updates": "node scripts/benchmark-repository-update.js",
     "rollout:check": "node scripts/evaluate-rollout.js",
