@@ -25,7 +25,7 @@ try {
   Copy-Item (Join-Path $rootPath 'src-tauri/Cargo.toml') (Join-Path $fixturePath 'src-tauri/Cargo.toml')
   Copy-Item (Join-Path $rootPath 'src-tauri/Cargo.lock') (Join-Path $fixturePath 'src-tauri/Cargo.lock')
 
-  Assert-Pass 'v0.1.1'
+  Assert-Pass 'v0.1.2'
 
   $packagePath = Join-Path $fixturePath 'package.json'
   $package = Get-Content -LiteralPath $packagePath -Raw | ConvertFrom-Json
