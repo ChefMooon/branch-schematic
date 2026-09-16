@@ -27,6 +27,7 @@
   },
   "plugins": {
     "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDg3MDk0M0RCMDNDOTg4RjIKUldUeWlNa0QyME1KaDFzYkNUazV0VXYvTVlFN2VQS1JoN3orNVRqVUZyOXZaQUVNeU5jZW9TWEoK",
       "endpoints": [
         "https://github.com/ChefMooon/branch-schematic/releases/latest/download/latest.json"
       ]
