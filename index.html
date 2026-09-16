@@ -5,6 +5,27 @@
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Branch Schematic</title>
+    <script>
+      (() => {
+        const cacheKey = 'branch-schematic.theme-preference';
+        const cachedPreference = (() => {
+          try {
+            const value = window.localStorage.getItem(cacheKey);
+            return value === 'light' || value === 'dark' || value === 'system' ? value : 'system';
+          } catch {
+            return 'system';
+          }
+        })();
+        const resolvedTheme = cachedPreference === 'dark'
+          || (cachedPreference === 'system' && window.matchMedia?.('(prefers-color-scheme: dark)').matches)
+          ? 'dark'
+          : 'light';
+
+        document.documentElement.setAttribute('data-theme', resolvedTheme);
+        document.documentElement.style.colorScheme = resolvedTheme;
+        document.documentElement.style.backgroundColor = resolvedTheme === 'dark' ? '#1f1f1f' : '#f6f6f6';
+      })();
+    </script>
   </head>
 
   <body>

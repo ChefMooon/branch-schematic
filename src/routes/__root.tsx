@@ -13,8 +13,6 @@ const RootLayout = () => {
   const [theme, setTheme] = useState<ThemePreference>('system');
 
   useEffect(() => {
-    let mediaQuery: MediaQueryList | undefined;
-
     async function initializeTheme() {
       const savedTheme = await loadThemePreference();
       setTheme(savedTheme);
@@ -22,8 +20,10 @@ const RootLayout = () => {
     }
 
     initializeTheme();
+  }, []);
 
-    mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+  useEffect(() => {
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
     const handleSystemThemeChange = () => {
       if (theme === 'system') {
         applyTheme('system');
@@ -32,7 +32,7 @@ const RootLayout = () => {
 
     mediaQuery.addEventListener('change', handleSystemThemeChange);
     return () => {
-      mediaQuery?.removeEventListener('change', handleSystemThemeChange);
+      mediaQuery.removeEventListener('change', handleSystemThemeChange);
     };
   }, [theme]);
 
