@@ -1,4 +1,4 @@
-import { defineConfig } from "vite";
+import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react";
 import { tanstackRouter } from '@tanstack/router-plugin/vite';
 
@@ -6,7 +6,13 @@ import { tanstackRouter } from '@tanstack/router-plugin/vite';
 const host = process.env.TAURI_DEV_HOST;
 
 // https://vite.dev/config/
-export default defineConfig(async () => ({
+export default defineConfig(async ({ command, mode }) => {
+  const env = loadEnv(mode, process.cwd(), '');
+  if (command === 'build' && !env.VITE_GITHUB_CLIENT_ID?.trim() && !env.VITE_OAUTH_CLIENT_ID?.trim()) {
+    throw new Error('VITE_GITHUB_CLIENT_ID must be configured for production OAuth builds.');
+  }
+
+  return {
   plugins: [
     tanstackRouter({
       target: 'react',
@@ -36,4 +42,5 @@ export default defineConfig(async () => ({
       ignored: ["**/src-tauri/**", "**/website/**"],
     },
   },
-}));
+  };
+});

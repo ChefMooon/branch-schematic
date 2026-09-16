@@ -65,6 +65,7 @@ pub struct OAuthExchangePayload {
     pub code: String,
     pub redirect_uri: String,
     pub provider_url: Option<String>,
+    pub token_url: Option<String>,
     pub client_id: Option<String>,
     pub client_secret: Option<String>,
     pub code_verifier: Option<String>,
@@ -467,7 +468,10 @@ async fn exchange_code_with_provider(payload: &OAuthExchangePayload) -> Result<S
         return Err("Missing OAuth code".to_string());
     }
 
-    let provider_url = resolve_oauth_token_url(payload.provider_url.as_deref(), None);
+    let provider_url = resolve_oauth_token_url(
+        payload.token_url.as_deref(),
+        payload.provider_url.as_deref(),
+    );
     let client_id = resolve_oauth_client_id(payload.client_id.as_deref());
     let client_secret = resolve_oauth_client_secret(payload.client_secret.as_deref());
     let mut params = vec![
@@ -1324,6 +1328,17 @@ mod tests {
     fn resolves_github_token_endpoint_from_api_base_url() {
         assert_eq!(
             resolve_oauth_token_url(None, Some("https://api.github.com")),
+            "https://github.com/login/oauth/access_token"
+        );
+    }
+
+    #[test]
+    fn prefers_explicit_token_endpoint_over_provider_api_url() {
+        assert_eq!(
+            resolve_oauth_token_url(
+                Some("https://github.com/login/oauth/access_token"),
+                Some("https://api.github.com"),
+            ),
             "https://github.com/login/oauth/access_token"
         );
     }

@@ -5,6 +5,12 @@ import { open as openWithShell } from '@tauri-apps/plugin-shell';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { useProfileStore } from '../stores/profileStore';
 import type { UserProfile } from '../types';
+import {
+  resolveAuthorizationUrl,
+  resolveClientId,
+  resolveRedirectUri,
+  resolveTokenUrl,
+} from './oauthConfig';
 
 interface UseOAuthFlowOptions {
   profileId?: string;
@@ -17,54 +23,6 @@ interface OAuthFlowResult {
   email?: string | null;
   display_name?: string | null;
   avatar_url?: string | null;
-}
-
-function resolveAuthorizationUrl(baseUrl?: string) {
-  if (!baseUrl || !baseUrl.includes('http')) {
-    return 'https://github.com/login/oauth/authorize';
-  }
-
-  const trimmed = baseUrl.trim();
-  if (trimmed.includes('api.github.com')) {
-    return 'https://github.com/login/oauth/authorize';
-  }
-
-  try {
-    const parsed = new URL(trimmed);
-    return new URL('/login/oauth/authorize', parsed.origin).toString();
-  } catch {
-    return 'https://github.com/login/oauth/authorize';
-  }
-}
-
-function resolveTokenUrl(baseUrl?: string, overrideUrl?: string) {
-  if (overrideUrl && overrideUrl.includes('http')) {
-    return overrideUrl.trim();
-  }
-
-  if (!baseUrl || !baseUrl.includes('http')) {
-    return 'https://github.com/login/oauth/access_token';
-  }
-
-  const trimmed = baseUrl.trim();
-  if (trimmed.includes('api.github.com')) {
-    return 'https://github.com/login/oauth/access_token';
-  }
-
-  try {
-    const parsed = new URL(trimmed);
-    return new URL('/login/oauth/access_token', parsed.origin).toString();
-  } catch {
-    return 'https://github.com/login/oauth/access_token';
-  }
-}
-
-function resolveClientId() {
-  const configuredClientId = [import.meta.env.VITE_GITHUB_CLIENT_ID, import.meta.env.VITE_OAUTH_CLIENT_ID]
-    .map((value) => (typeof value === 'string' ? value.trim() : ''))
-    .find(Boolean);
-
-  return configuredClientId ?? 'branch-schematic';
 }
 
 function formatOAuthError(error: unknown) {
@@ -80,16 +38,6 @@ function formatOAuthError(error: unknown) {
   }
 
   return 'The authorization request could not be completed.';
-}
-
-const DEFAULT_OAUTH_REDIRECT_URI = 'http://127.0.0.1:3000/callback';
-
-function resolveRedirectUri(explicitRedirectUri?: string) {
-  const configuredRedirectUri = [explicitRedirectUri, import.meta.env.VITE_OAUTH_REDIRECT_URI, import.meta.env.VITE_GITHUB_REDIRECT_URI]
-    .map((value) => (typeof value === 'string' ? value.trim() : ''))
-    .find(Boolean);
-
-  return configuredRedirectUri ?? DEFAULT_OAUTH_REDIRECT_URI;
 }
 
 export function useOAuthFlow({ profileId, providerUrl, redirectUri }: UseOAuthFlowOptions = {}) {
@@ -113,7 +61,8 @@ export function useOAuthFlow({ profileId, providerUrl, redirectUri }: UseOAuthFl
       });
       const [resolvedProfileId, resolvedRedirectUri, state, codeVerifier, codeChallenge] = callbackPayload.split('|');
       const clientId = resolveClientId();
-      const tokenUrl = resolveTokenUrl(providerUrl ?? draft.api_base_url ?? undefined, providerUrl);
+      const apiBaseUrl = providerUrl ?? draft.api_base_url ?? undefined;
+      const tokenUrl = resolveTokenUrl(apiBaseUrl);
       const authorizationUrl = new URL(resolveAuthorizationUrl(providerUrl ?? draft.api_base_url ?? undefined));
       authorizationUrl.searchParams.set('client_id', clientId);
       const finalRedirectUri = resolvedRedirectUri || effectiveRedirectUri;
@@ -190,7 +139,8 @@ export function useOAuthFlow({ profileId, providerUrl, redirectUri }: UseOAuthFl
                 profileId: resolvedProfileId,
                 code,
                 redirectUri: resolvedRedirectUri,
-                providerUrl: tokenUrl,
+                providerUrl: apiBaseUrl,
+                tokenUrl,
                 clientId,
                 codeVerifier,
                 state,
