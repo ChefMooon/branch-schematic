@@ -8,6 +8,7 @@ import { openAppDatabase } from '../lib/db';
 import { useOnboarding } from '../features/onboarding/hooks/useOnboarding';
 import { useNotifications } from '../components/notifications/NotificationProvider';
 import { ApplicationImportRecoveryModal, type ImportRecoveryRepository } from '../features/repository/components/ApplicationImportRecoveryModal';
+import { AutoUpdatePanel } from '../features/auto-update/AutoUpdatePanel';
 
 export const Route = createFileRoute('/settings')({
   component: RouteComponent,
@@ -344,6 +345,8 @@ function RouteComponent() {
           </div>
         </div>
       </section>
+
+      <AutoUpdatePanel />
 
       <section className="settings-card" aria-labelledby="onboarding-settings-heading">
         <div className="settings-card-header">

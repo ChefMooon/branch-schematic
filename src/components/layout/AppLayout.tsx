@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState, useEffect, isValidElement, cloneElement, type ReactElement } from 'react';
+import { lazy, Suspense, useState, useEffect, useRef, isValidElement, cloneElement, type ReactElement } from 'react';
 import { useLocation, useNavigate } from '@tanstack/react-router';
 import {
   BellIcon,
@@ -25,6 +25,7 @@ import { ImportStatusOverlay } from '../../features/repository/components/Import
 import type { UserProfile } from '../../features/auth-profile/types';
 import { ONBOARDING_REQUEST_EVENT, type OnboardingRequestDetail } from '../../features/onboarding/types';
 import { useOnboarding } from '../../features/onboarding/hooks/useOnboarding';
+import { useAutoUpdate } from '../../features/auto-update/useAutoUpdate';
 
 interface AppLayoutProps {
   children: React.ReactNode;
@@ -114,6 +115,7 @@ export function AppLayout({ children }: AppLayoutProps) {
     repairHiddenRepositories,
   } = useWorkspaceStore();
   const {
+    addToast,
     inbox,
     unreadCount,
     markNotificationAsRead,
@@ -122,6 +124,8 @@ export function AppLayout({ children }: AppLayoutProps) {
     markAllNotificationsAsRead,
     archiveAllNotifications,
   } = useNotifications();
+  const { coordinator: updateCoordinator } = useAutoUpdate();
+  const notifiedUpdateVersion = useRef<string | null>(null);
   const {
     profiles,
     activeProfile,
@@ -131,6 +135,22 @@ export function AppLayout({ children }: AppLayoutProps) {
     updateProfile,
     deleteProfile,
   } = useProfileContext();
+
+  useEffect(() => {
+    void updateCoordinator.check({ startup: true }).then((snapshot) => {
+      const version = snapshot.metadata?.availableVersion;
+      if (snapshot.status !== 'available' || !version || notifiedUpdateVersion.current === version) return;
+
+      notifiedUpdateVersion.current = version;
+      addToast({
+        variant: 'info',
+        title: 'Desktop update available',
+        message: `Version ${version} is ready to review in About.`,
+        route: '/about',
+        target: 'both',
+      });
+    });
+  }, [addToast, updateCoordinator]);
 
   useEffect(() => {
     const handleOnboardingRequest = (event: Event) => {

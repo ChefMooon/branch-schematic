@@ -25,9 +25,20 @@
       "csp": null
     }
   },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDg3MDk0M0RCMDNDOTg4RjIKUldUeWlNa0QyME1KaDFzYkNUazV0VXYvTVlFN2VQS1JoN3orNVRqVUZyOXZaQUVNeU5jZW9TWEoK",
+      "endpoints": [
+        "https://github.com/ChefMooon/branch-schematic/releases/latest/download/latest.json"
+      ]
+    }
+  },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": [
+      "nsis"
+    ],
+    "createUpdaterArtifacts": false,
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
