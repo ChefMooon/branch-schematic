@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { createUpdaterManifest } from './create-updater-manifest.mjs';
 import { createStatusStore, discoverArtifacts, parseArgs, redact, runRelease } from './release-local.mjs';
 
 assert.deepEqual(parseArgs(['--tag', 'v1.2.3']), { tag: 'v1.2.3', resume: false, releaseId: null });
@@ -15,6 +16,20 @@ await fs.mkdir(assetRoot, { recursive: true });
 await fs.writeFile(path.join(assetRoot, 'latest.json'), '{}');
 await fs.writeFile(path.join(assetRoot, 'branch-schematic_1.2.3_x64-setup.exe'), 'installer');
 await fs.writeFile(path.join(assetRoot, 'branch-schematic_1.2.3_x64-setup.exe.sig'), 'signature');
+const notesPath = path.join(assetRoot, 'release-notes.md');
+const generatedManifestPath = path.join(assetRoot, 'generated-latest.json');
+await fs.writeFile(notesPath, '- Fixture release note.');
+await createUpdaterManifest({
+	tag: 'v1.2.3',
+	installerPath: path.join(assetRoot, 'branch-schematic_1.2.3_x64-setup.exe'),
+	signaturePath: path.join(assetRoot, 'branch-schematic_1.2.3_x64-setup.exe.sig'),
+	notesPath,
+	outputPath: generatedManifestPath,
+	now: new Date('2026-09-16T12:00:00.000Z'),
+});
+const generatedManifest = JSON.parse(await fs.readFile(generatedManifestPath, 'utf8'));
+assert.equal(generatedManifest.version, '1.2.3');
+assert.equal(generatedManifest.platforms['windows-x86_64'].signature, 'signature');
 const artifacts = await discoverArtifacts(assetRoot);
 assert.equal(path.basename(artifacts.manifest), 'latest.json');
 assert.match(artifacts.installer, /-setup\.exe$/);

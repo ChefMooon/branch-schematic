@@ -27,7 +27,7 @@ export function redact(value, secrets = []) {
   return secrets.filter(Boolean).reduce((result, secret) => result.split(secret).join('[REDACTED]'), String(value));
 }
 
-export async function discoverArtifacts(assetRoot) {
+export async function discoverArtifacts(assetRoot, version = null, { requireManifest = true } = {}) {
   const files = [];
   async function visit(directory) {
     for (const entry of await fs.readdir(directory, { withFileTypes: true })) {
@@ -39,8 +39,8 @@ export async function discoverArtifacts(assetRoot) {
 
   await visit(assetRoot);
   const manifest = files.find((file) => path.basename(file).toLowerCase() === 'latest.json');
-  const installer = files.find((file) => /-setup\.exe$/i.test(file));
-  if (!manifest) throw new Error(`Could not find latest.json under ${assetRoot}.`);
+  const installer = files.find((file) => /-setup\.exe$/i.test(file) && (!version || path.basename(file).includes(`_${version}_`)));
+  if (!manifest && requireManifest) throw new Error(`Could not find latest.json under ${assetRoot}.`);
   if (!installer) throw new Error(`Could not find an NSIS setup executable under ${assetRoot}.`);
   const signature = `${installer}.sig`;
   if (!files.includes(signature)) throw new Error(`Could not find updater signature ${signature}.`);
@@ -146,7 +146,19 @@ export async function runRelease({ tag, releaseId = null, resume = false, rootPa
     await fs.writeFile(path.join(runDirectory, 'status.json'), `${JSON.stringify(status.state, null, 2)}\n`, 'utf8');
     await executeStep(status, 'prepare-release-config', 'node', ['scripts/prepare-release-config.mjs', '--tag', tag, '--output', configPath], { executor, cwd: rootPath, env });
     await executeStep(status, 'build-tauri-artifacts', 'npm', ['run', 'tauri', 'build', '--', '--config', configPath, '--bundles', 'nsis'], { executor, cwd: rootPath, env });
-    const artifacts = await discoverArtifacts(path.join(rootPath, 'src-tauri', 'target', 'release', 'bundle'));
+    const assetRoot = path.join(rootPath, 'src-tauri', 'target', 'release', 'bundle');
+    const builtArtifacts = await discoverArtifacts(assetRoot, version, { requireManifest: false });
+    const installer = builtArtifacts.installer;
+    const signature = `${installer}.sig`;
+    await executeStep(status, 'create-updater-manifest', 'node', [
+      'scripts/create-updater-manifest.mjs',
+      '--tag', tag,
+      '--installer', installer,
+      '--signature', signature,
+      '--notes-file', notesPath,
+      '--output', path.join(path.dirname(installer), 'latest.json'),
+    ], { executor, cwd: rootPath, env });
+    const artifacts = await discoverArtifacts(assetRoot, version);
     status.state.artifacts = artifacts;
     await fs.writeFile(path.join(runDirectory, 'status.json'), `${JSON.stringify(status.state, null, 2)}\n`, 'utf8');
     await executeStep(status, 'validate-updater-manifest', 'node', ['scripts/validate-updater-manifest.mjs', '--manifest', artifacts.manifest, '--asset-dir', path.dirname(artifacts.installer), '--version', version], { executor, cwd: rootPath, env });
