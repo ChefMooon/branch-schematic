@@ -91,7 +91,8 @@ export function createStatusStore(statusPath, secrets = []) {
 
 export function runCommand(command, args, { cwd = ROOT_PATH, env = process.env } = {}) {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { cwd, env, shell: process.platform === 'win32' });
+    const executable = process.platform === 'win32' && command === 'npm' ? 'npm.cmd' : command;
+    const child = spawn(executable, args, { cwd, env });
     let stdout = '';
     let stderr = '';
     child.stdout?.on('data', (chunk) => { stdout += chunk; });
