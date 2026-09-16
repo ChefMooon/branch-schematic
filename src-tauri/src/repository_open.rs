@@ -39,7 +39,6 @@ pub enum FolderSupport {
 #[derive(Clone, Debug, Serialize)]
 pub enum EditorSource {
     Known,
-    Path,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -746,7 +745,7 @@ mod tests {
                 executable_path: "a".into(),
                 shell_command: None,
                 folder_support: FolderSupport::Unknown,
-                source: EditorSource::Path,
+                source: EditorSource::Known,
             },
             EditorDescriptor {
                 id: "test".into(),
@@ -754,7 +753,7 @@ mod tests {
                 executable_path: "a".into(),
                 shell_command: None,
                 folder_support: FolderSupport::Unknown,
-                source: EditorSource::Path,
+                source: EditorSource::Known,
             },
         ]);
         assert_eq!(editors.len(), 1);

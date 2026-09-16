@@ -368,69 +368,6 @@ fn ensure_remote_access(profile: &auth::RemoteAuthProfile) -> Result<String, Str
     Ok(token)
 }
 
-fn ensure_native_remote_access(
-    profile: Option<&auth::RemoteAuthProfile>,
-) -> Result<Option<String>, String> {
-    let Some(profile) = profile else {
-        return Err("Native remote operations require a configured authentication profile. Select a Local system or Full OAuth profile, then try again.".to_string());
-    };
-
-    match profile.auth_level.as_str() {
-        "local_system" => Ok(None),
-        "full_oauth" => profile
-            .token_value
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(str::to_string)
-            .ok_or_else(|| {
-                "Native remote operations require the Full OAuth profile to have an OAuth token. Reconnect the profile, then try again.".to_string()
-            })
-            .map(Some),
-        _ => Err(
-            "Basic profiles support local Git only. Select a Local system or Full OAuth profile for remote operations."
-                .to_string(),
-        ),
-    }
-}
-
-fn ensure_native_remote_access_for_url(
-    profile: Option<&auth::RemoteAuthProfile>,
-    remote_url: &str,
-) -> Result<Option<String>, String> {
-    let credentials = ensure_native_remote_access(profile)?;
-    if credentials.is_some() && classify_remote_url(remote_url)?.kind.is_ssh() {
-        return Err(
-            "Full OAuth profiles authenticate HTTPS remotes only. Configure an SSH key or agent for this remote, or switch the remote URL to HTTPS.".to_string(),
-        );
-    }
-
-    Ok(credentials)
-}
-
-fn describe_git_network_error(raw_error: &str) -> String {
-    let lowered = raw_error.to_lowercase();
-    if lowered.contains("authentication")
-        || lowered.contains("credential")
-        || lowered.contains("could not read username")
-        || lowered.contains("no authentication methods available")
-    {
-        return "Git could not authenticate with the configured remote. Check your OS-managed Git credentials or SSH agent, then try again.".to_string();
-    }
-
-    if lowered.contains("could not resolve host")
-        || lowered.contains("failed to connect")
-        || lowered.contains("network is unreachable")
-        || lowered.contains("timed out")
-    {
-        return "Git could not reach the configured remote. Check your network connection and try again."
-            .to_string();
-    }
-
-    "Git operation failed. Check the repository and remote configuration, then try again."
-        .to_string()
-}
-
 fn describe_git2_network_error(context: &str, error: git2::Error) -> String {
     let category = classify_git2_error(&error);
     let guidance = match category {
@@ -2949,7 +2886,7 @@ pub async fn get_commit_file_diff(
     let old_path = delta
         .old_file()
         .path()
-        .filter(|old| delta.status() != git2::Delta::Added)
+        .filter(|_| delta.status() != git2::Delta::Added)
         .map(|value| value.to_string_lossy().into_owned());
     if delta.flags().contains(git2::DiffFlags::BINARY) {
         return Ok(binary_unavailable(path, old_path));
@@ -4191,43 +4128,6 @@ mod tests {
     }
 
     #[test]
-    fn native_capabilities_match_onboarding_auth_levels() {
-        assert!(ensure_native_remote_access(Some(&test_profile("basic", None))).is_err());
-        assert_eq!(
-            ensure_native_remote_access(Some(&test_profile("local_system", None))).unwrap(),
-            None
-        );
-        assert_eq!(
-            ensure_native_remote_access(Some(&test_profile("full_oauth", Some("token")))).unwrap(),
-            Some("token".to_string())
-        );
-    }
-
-    #[test]
-    fn full_oauth_uses_token_for_https_remotes() {
-        assert_eq!(
-            ensure_native_remote_access_for_url(
-                Some(&test_profile("full_oauth", Some("token"))),
-                "https://github.com/example/repository.git",
-            )
-            .unwrap(),
-            Some("token".to_string())
-        );
-    }
-
-    #[test]
-    fn full_oauth_rejects_ssh_remotes_with_actionable_guidance() {
-        let error = ensure_native_remote_access_for_url(
-            Some(&test_profile("full_oauth", Some("token"))),
-            "git@github.com:example/repository.git",
-        )
-        .unwrap_err();
-
-        assert!(error.contains("HTTPS remotes only"));
-        assert!(error.contains("SSH key or agent"));
-    }
-
-    #[test]
     fn credential_strategy_covers_https_and_ssh_auth_matrix() {
         let oauth = test_profile("full_oauth", Some("token"));
         let local = test_profile("local_system", None);
@@ -4335,18 +4235,6 @@ mod tests {
         .unwrap_err();
         assert!(error.contains("no 'origin' remote"));
         fs::remove_dir_all(root).unwrap();
-    }
-
-    #[test]
-    fn local_system_keeps_os_credential_selection_for_ssh() {
-        assert_eq!(
-            ensure_native_remote_access_for_url(
-                Some(&test_profile("local_system", None)),
-                "git@github.com:example/repository.git",
-            )
-            .unwrap(),
-            None
-        );
     }
 
     #[test]
@@ -4511,14 +4399,6 @@ mod tests {
             ensure_remote_access(&test_profile("full_oauth", Some("token"))).unwrap(),
             "token"
         );
-    }
-
-    #[test]
-    fn native_errors_distinguish_credentials_and_network_failures() {
-        assert!(describe_git_network_error("authentication required")
-            .contains("OS-managed Git credentials"));
-        assert!(describe_git_network_error("failed to connect to remote")
-            .contains("network connection"));
     }
 
     #[test]
