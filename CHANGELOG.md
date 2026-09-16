@@ -2,6 +2,12 @@
 
 All notable changes to Branch Schematic will be documented here.
 
+## [0.1.2] - 2026-09-16
+
+### Fixed
+
+- Use the stable release feed for application updates.
+
 ## [0.1.1] - 2026-09-16
 
 ### Fixed
