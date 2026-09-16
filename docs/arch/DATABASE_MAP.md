@@ -131,6 +131,11 @@ erDiagram
         TEXT route_params_json
     }
 
+    profile_repo_scopes {
+        TEXT repo_path_id
+        TEXT profile_id
+    }
+
     repository_profile_assignments {
         TEXT repo_path_id PK
         TEXT profile_id
@@ -182,6 +187,7 @@ erDiagram
         DATETIME archived_at
     }
 
+    auth_profiles ||--o{ profile_repo_scopes : "profile_id"
     auth_profiles ||--o{ repository_profile_assignments : "profile_id"
     cached_git_branches ||--o{ cached_git_commit_branches : "branch_id"
     cached_git_branches ||--o{ cached_git_commits : "branch_id"
@@ -200,7 +206,8 @@ erDiagram
     tracked_paths ||--o{ canvas_manual_edges : "target_repo_id"
     tracked_paths ||--o{ canvas_view_cards : "repo_path_id"
     tracked_paths ||--o{ canvas_view_visible_paths : "repo_path_id"
-    tracked_paths ||--o| repository_profile_assignments : "repo_path_id"
+    tracked_paths ||--o{ profile_repo_scopes : "repo_path_id"
+    tracked_paths ||--o{ repository_profile_assignments : "repo_path_id"
     tracked_paths ||--o{ tracked_path_tags : "repo_path_id"
 ```
 
@@ -221,22 +228,9 @@ erDiagram
 | `custom_groups` | 4 |
 | `global_tags` | 3 |
 | `notifications` | 10 |
+| `profile_repo_scopes` | 2 |
 | `repository_profile_assignments` | 3 |
 | `settings` | 9 |
 | `tracked_path_tags` | 2 |
 | `tracked_paths` | 25 |
 
-## Profile assignment and alpha reset policy
-
-`repository_profile_assignments` contains at most one row per tracked repository. The
-assignment is authoritative and uses a restrictive profile foreign key: deleting a
-profile is blocked until its repositories are reassigned or explicitly cleared.
-Repositories without a row inherit the persisted active non-fallback profile, or
-`local-basic-profile` when no user profile exists. Clearing a row restores that
-inheritance.
-
-The former `profile_repo_scopes` data is intentionally not migrated. Alpha databases
-may contain ambiguous many-to-many mappings, so users must delete the SQLite database
-(including `-wal` and `-shm` files), launch once to recreate and migrate a blank
-database, and re-import repositories. Do not attempt to select a winner from legacy
-assignment rows.

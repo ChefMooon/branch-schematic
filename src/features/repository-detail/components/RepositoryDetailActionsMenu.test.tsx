@@ -106,6 +106,26 @@ describe('RepositoryDetailActionsMenu', () => {
     });
   });
 
+  it.each([
+    ['pull upstream', 'git_pull_operation'],
+    ['push changes', 'git_push_operation'],
+  ])('notifies history listeners after %s completes', async (label, command) => {
+    const onHistoryChanged = vi.fn();
+    render(<RepositoryDetailActionsMenu repo={{ ...baseRepo }} onClose={() => undefined} onHistoryChanged={onHistoryChanged} />);
+
+    await userEvent.click(screen.getByRole('button', { name: /repository actions/i }));
+    await userEvent.click(screen.getByRole('menuitem', { name: new RegExp(label, 'i') }));
+
+    await waitFor(() => {
+      expect(invokeMock).toHaveBeenCalledWith(command, expect.objectContaining({ pathId: 'repo-1' }));
+      expect(invokeMock).toHaveBeenCalledWith('refresh_repository_git_status', {
+        pathId: 'repo-1',
+        absolutePath: '/tmp/branch-schematic',
+      });
+      expect(onHistoryChanged).toHaveBeenCalledTimes(1);
+    });
+  });
+
   it('propagates backend push errors to the toast unchanged', async () => {
     const backendMessage = 'Git authentication [authentication]. The selected profile has no readable keyring token.';
     invokeMock.mockRejectedValueOnce(backendMessage);

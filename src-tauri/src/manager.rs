@@ -556,6 +556,26 @@ impl WatcherManager {
             .await
     }
 
+    pub async fn refresh_after_mutation(
+        &self,
+        path_id: &str,
+        trigger_reason: &str,
+    ) -> Result<RefreshOutcome, String> {
+        let absolute_path = self
+            .state
+            .entries
+            .lock()
+            .await
+            .get(path_id)
+            .map(|entry| entry.absolute_path.clone())
+            .ok_or_else(|| "Repository is not monitored".to_string())?;
+        let outcome = refresh_repository_full(&self.pool, &self.writer, path_id, &absolute_path)
+            .await?;
+        self.queue_workspace_updated(&outcome.path_id, trigger_reason)
+            .await;
+        Ok(outcome)
+    }
+
     pub async fn wait_for_changes_snapshot(
         &self,
         path_id: &str,

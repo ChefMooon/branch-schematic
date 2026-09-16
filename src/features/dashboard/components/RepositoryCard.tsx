@@ -90,9 +90,8 @@ export function RepositoryCard({ repo, onRefresh, onOpenManagement, onOpenManage
     if (isRepositoryVerifying) return;
     setLoadingAction("checkout");
     try {
-      // Matches the Rust implementation signature: execute_git_checkout(absolute_path, branch_name)
       await invoke("execute_git_checkout", {
-        absolutePath: repo.absolute_path,
+        pathId: repo.id,
         branchName: targetBranch,
       });
     } catch (err) {

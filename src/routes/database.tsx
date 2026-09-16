@@ -135,11 +135,11 @@ function DatabasePage() {
     }
   }
 
-  async function handleCheckout(absolutePath: string, branchName: string) {
+  async function handleCheckout(pathId: string, branchName: string) {
     try {
       setIsLoading(true);
       const res = await invoke<string>("execute_git_checkout", {
-        absolutePath,
+        pathId,
         branchName,
       });
       setMessage(res);
@@ -342,7 +342,7 @@ function DatabasePage() {
                     <td style={{ padding: "0.75rem", fontStyle: "italic", color: "#ccc" }}>"{branch.commit_message || "No message cached"}"</td>
                     <td style={{ padding: "0.75rem", textAlign: "right" }}>
                       <button
-                        onClick={() => parentRepo && handleCheckout(parentRepo.absolute_path, branch.branch_name)}
+                        onClick={() => parentRepo && handleCheckout(parentRepo.id, branch.branch_name)}
                         disabled={!!branch.is_head || isLoading}
                         style={{ fontSize: "0.8rem", padding: "0.3rem 0.6rem", background: branch.is_head ? "#444" : "#3b82f6", color: "#fff", border: "none", borderRadius: "4px", cursor: branch.is_head ? "default" : "pointer" }}
                       >

@@ -1174,8 +1174,7 @@ pub fn scan_local_repository(absolute_path: &str) -> Result<Vec<DiscoveredBranch
 }
 
 /// Safely executes a git checkout to switch to an existing local branch.
-#[tauri::command]
-pub fn execute_git_checkout(absolute_path: &str, branch_name: &str) -> Result<String, String> {
+fn execute_git_checkout_at_path(absolute_path: &str, branch_name: &str) -> Result<String, String> {
     let repo = Repository::open(absolute_path)
         .map_err(|e| format!("Failed to open Git repository: {}", e))?;
 
@@ -1199,6 +1198,23 @@ pub fn execute_git_checkout(absolute_path: &str, branch_name: &str) -> Result<St
         })?;
 
     Ok(format!("Successfully checked out branch '{}'", branch_name))
+}
+
+#[tauri::command]
+pub async fn execute_git_checkout(
+    state: tauri::State<'_, DbState>,
+    manager: tauri::State<'_, WatcherManager>,
+    path_id: String,
+    branch_name: String,
+) -> Result<String, String> {
+    let absolute_path = db::get_absolute_path_for_id(state.inner().pool(), &path_id)
+        .await
+        .map_err(|e| format!("Failed to resolve repository path: {}", e))?;
+    let result = execute_git_checkout_at_path(&absolute_path, &branch_name)?;
+    manager
+        .refresh_after_mutation(&path_id, "checkout")
+        .await?;
+    Ok(result)
 }
 
 /// Safely creates a new local branch pointing to the current tip/HEAD commit.
@@ -3878,6 +3894,7 @@ fn push_current_branch(
 #[tauri::command]
 pub async fn git_fetch_operation(
     state: tauri::State<'_, DbState>,
+    manager: tauri::State<'_, WatcherManager>,
     path_id: String,
 ) -> Result<String, String> {
     let absolute_path = db::get_absolute_path_for_id(state.inner().pool(), &path_id)
@@ -3890,9 +3907,11 @@ pub async fn git_fetch_operation(
     let resolved_profile = resolve_profile_for_repo(state.inner().pool(), &path_id).await?;
     let fetch_result = fetch_from_origin(&repo, Some(&resolved_profile.profile));
 
-    let _ = refresh_and_cache_git_status(state.inner().pool(), &path_id, &absolute_path).await;
-
-    fetch_result.map(|_| "Fetched the latest changes from origin.".to_string())
+    fetch_result?;
+    manager
+        .refresh_after_mutation(&path_id, "fetch")
+        .await?;
+    Ok("Fetched the latest changes from origin.".to_string())
 }
 
 /// Fetches from `origin`, then fast-forwards the current branch to its upstream tip
@@ -3901,6 +3920,7 @@ pub async fn git_fetch_operation(
 #[tauri::command]
 pub async fn git_pull_operation(
     state: tauri::State<'_, DbState>,
+    manager: tauri::State<'_, WatcherManager>,
     path_id: String,
 ) -> Result<String, String> {
     let absolute_path = db::get_absolute_path_for_id(state.inner().pool(), &path_id)
@@ -3978,14 +3998,17 @@ pub async fn git_pull_operation(
         ))
     })();
 
-    let _ = refresh_and_cache_git_status(state.inner().pool(), &path_id, &absolute_path).await;
-
-    pull_result
+    let result = pull_result?;
+    manager
+        .refresh_after_mutation(&path_id, "pull")
+        .await?;
+    Ok(result)
 }
 
 #[tauri::command]
 pub async fn git_push_operation(
     state: tauri::State<'_, DbState>,
+    manager: tauri::State<'_, WatcherManager>,
     path_id: String,
     replace_existing: Option<bool>,
 ) -> Result<GitPushResult, String> {
@@ -4013,9 +4036,11 @@ pub async fn git_push_operation(
         )
     })();
 
-    let _ = refresh_and_cache_git_status(state.inner().pool(), &path_id, &absolute_path).await;
-
-    push_result
+    let result = push_result?;
+    manager
+        .refresh_after_mutation(&path_id, "push")
+        .await?;
+    Ok(result)
 }
 
 // Tests start

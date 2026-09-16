@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { invoke } from '@tauri-apps/api/core';
 import { RepositoryCard } from './RepositoryCard';
@@ -81,7 +81,11 @@ vi.mock('./RepositoryCard/RepoThemeModal', () => ({
 }));
 
 vi.mock('./RepositoryCard/RepoBranchDropdown', () => ({
-  RepoBranchDropdown: () => <div data-testid="repo-branch-dropdown" />,
+  RepoBranchDropdown: ({ onSelect }: { onSelect: (branch: string) => void | Promise<void> }) => (
+    <button type="button" data-testid="repo-branch-dropdown" onClick={() => onSelect('feature')}>
+      Select feature
+    </button>
+  ),
 }));
 
 vi.mock('../../repository-detail/components/RepositoryDetail', () => ({
@@ -140,6 +144,35 @@ describe('RepositoryCard', () => {
     rerender(<RepositoryCard repo={nextRepo} onRefresh={() => {}} />);
 
     expect(screen.getByRole('button', { name: 'Locate' })).toBeInTheDocument();
+  });
+
+  it('checks out a branch and refreshes repository state afterwards', async () => {
+    const onRefresh = vi.fn();
+    const repo = {
+      id: 'repo-checkout',
+      display_name: 'Checkout Repo',
+      absolute_path: 'C:/repos/checkout-repo',
+      status: 'ready',
+      available_branches: ['main', 'feature'],
+      current_branch: 'main',
+      default_branch_name: 'main',
+      has_upstream: false,
+      ahead_count: 0,
+      behind_count: 0,
+      origin_type: 'LOCAL_ONLY',
+    } as unknown as TrackedPath;
+
+    render(<RepositoryCard repo={repo} onRefresh={onRefresh} />);
+
+    fireEvent.click(screen.getByTestId('repo-branch-dropdown'));
+
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith('execute_git_checkout', {
+        pathId: 'repo-checkout',
+        branchName: 'feature',
+      });
+      expect(onRefresh).toHaveBeenCalledTimes(1);
+    });
   });
 
   it('reattaches the existing tracked repository when locating a missing repository', async () => {

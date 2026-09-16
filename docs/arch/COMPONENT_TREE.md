@@ -66,9 +66,9 @@
 
 - **Path:** `src/components/layout/AppLayout.tsx`
 - **Architecture:** Shared component (Compliant)
-- **Lines:** 702
+- **Lines:** 722
 - **Child component imports:** AppSidebar, Button, ImportStatusOverlay, NotificationDropdown, NotificationProvider, ProfileDropdown, ProfileIndicator, RepositoryDropdown, WindowControls, useOnboarding
-- **Hooks consumed:** `useCanvasStore`, `useEffect`, `useLayoutThemeMode`, `useLocation`, `useNavigate`, `useNotifications`, `useOS`, `useOnboarding`, `useProfileContext`, `useState`, `useWorkspaceStore`
+- **Hooks consumed:** `useAutoUpdate`, `useCanvasStore`, `useEffect`, `useLayoutThemeMode`, `useLocation`, `useNavigate`, `useNotifications`, `useOS`, `useOnboarding`, `useProfileContext`, `useRef`, `useState`, `useWorkspaceStore`
 
 ### AppSidebar
 
@@ -180,9 +180,27 @@
 
 - **Path:** `src/features/auth-profile/components/ProfileManagementModal.tsx`
 - **Architecture:** Feature component (Compliant)
-- **Lines:** 904
+- **Lines:** 877
 - **Child component imports:** Button, CollapsiblePanel, ConfirmationModal, OAuthConnectButton, ProfileListItem
 - **Hooks consumed:** `useEffect`, `useMemo`, `useProfileStore`, `useState`
+
+### RepositoryProfileAssignmentControl
+
+- **Path:** `src/features/auth-profile/components/RepositoryProfileAssignmentControl.tsx`
+- **Architecture:** Feature component (Compliant)
+- **Lines:** 251
+- **Child component imports:** Button, ConfirmationModal
+- **Hooks consumed:** `useCallback`, `useClickOutside`, `useEffect`, `useProfileStore`, `useRef`, `useState`
+
+## auto-update
+
+### AutoUpdatePanel
+
+- **Path:** `src/features/auto-update/AutoUpdatePanel.tsx`
+- **Architecture:** Feature (misplaced) component (Violation)
+- **Lines:** 198
+- **Child component imports:** Button, ConfirmationModal
+- **Hooks consumed:** `useAutoUpdate`, `useState`
 
 ## branch-map
 
@@ -322,8 +340,8 @@
 
 - **Path:** `src/features/dashboard/components/RepositoryCard.tsx`
 - **Architecture:** Feature component (Compliant)
-- **Lines:** 634
-- **Child component imports:** Button, ConfirmationModal, NotificationProvider, PushStatusIndicator, RepoBranchDropdown, RepoCardHeader, RepoCardTags, RepoGroupMenu, RepoTagSelectionMenu, RepoThemeModal, RepositoryDetail
+- **Lines:** 710
+- **Child component imports:** Button, ConfirmationModal, NotificationProvider, PushStatusIndicator, RepoBranchDropdown, RepoCardHeader, RepoCardTags, RepoGroupMenu, RepoTagSelectionMenu, RepoThemeModal, RepositoryDetail, RepositoryProfileAssignmentControl
 - **Hooks consumed:** `useEffect`, `useLocation`, `useMemo`, `useNotifications`, `useRepoOriginBadgeState`, `useResolveRepoOrigin`, `useState`, `useWorkspaceStore`
 
 ### AliasEditPopover
@@ -346,7 +364,7 @@
 
 - **Path:** `src/features/dashboard/components/RepositoryCard/RepoCardActionMenu.tsx`
 - **Architecture:** Feature component (Compliant)
-- **Lines:** 416
+- **Lines:** 418
 - **Child component imports:** ConfirmationModal, NotificationProvider, OpenWithModal, RepoThemeModal
 - **Hooks consumed:** `useLayoutEffect`, `useNotifications`, `useRef`, `useRepositoryOpenActions`, `useState`
 
@@ -354,7 +372,7 @@
 
 - **Path:** `src/features/dashboard/components/RepositoryCard/RepoCardHeader.tsx`
 - **Architecture:** Feature component (Compliant)
-- **Lines:** 148
+- **Lines:** 151
 - **Child component imports:** AliasEditPopover, RepoCardActionMenu
 - **Hooks consumed:** None
 
@@ -458,7 +476,7 @@
 
 - **Path:** `src/features/repository/components/AddLocalRepositoryModal.tsx`
 - **Architecture:** Feature component (Compliant)
-- **Lines:** 154
+- **Lines:** 155
 - **Child component imports:** Button, NotificationProvider, RepositoryModalShell
 - **Hooks consumed:** `useEffect`, `useNotifications`, `useState`, `useWorkspaceStore`
 
@@ -482,7 +500,7 @@
 
 - **Path:** `src/features/repository/components/CloneRemoteRepositoryModal.tsx`
 - **Architecture:** Feature component (Compliant)
-- **Lines:** 1530
+- **Lines:** 1534
 - **Child component imports:** Button, NotificationProvider, RepositoryModalShell, SearchBar
 - **Hooks consumed:** `useCallback`, `useDebouncedValue`, `useEffect`, `useGithubRepositories`, `useMemo`, `useNotifications`, `useProfileContext`, `useRef`, `useState`, `useWorkspaceStore`
 
@@ -580,7 +598,7 @@
 
 - **Path:** `src/features/repository-detail/components/RepositoryDetailActionsMenu.tsx`
 - **Architecture:** Feature component (Compliant)
-- **Lines:** 522
+- **Lines:** 550
 - **Child component imports:** ConfirmationModal, NotificationProvider, OpenWithModal, RepoThemeModal, TextInputModal
 - **Hooks consumed:** `useClickOutside`, `useEffect`, `useNotifications`, `useRef`, `useRepositoryOpenActions`, `useState`, `useWorkspaceStore`
 
@@ -604,7 +622,7 @@
 
 - **Path:** `src/features/repository-detail/components/RepositoryDetailCommitsTab.tsx`
 - **Architecture:** Feature component (Compliant)
-- **Lines:** 200
+- **Lines:** 231
 - **Child component imports:** PushStatusIndicator, RepositoryCommitDiffPanel, RepositoryCommitFilesPanel, RepositoryDetail, ResizeDivider
 - **Hooks consumed:** `useCommitChangedFiles`, `useCommitFileDiff`, `useEffect`, `useResizablePanels`, `useState`
 
@@ -612,8 +630,8 @@
 
 - **Path:** `src/features/repository-detail/components/RepositoryDetailHeader.tsx`
 - **Architecture:** Feature component (Compliant)
-- **Lines:** 172
-- **Child component imports:** Button, RepositoryDetailActionsMenu, Tabs
+- **Lines:** 174
+- **Child component imports:** Button, RepositoryDetailActionsMenu, RepositoryProfileAssignmentControl, Tabs
 - **Hooks consumed:** `useClickOutside`, `useEffect`, `useRef`, `useState`
 
 ### RepositoryDiffPreview
@@ -648,6 +666,7 @@
 
 Components violating feature-boundary or placement conventions:
 
+- `src/features/auto-update/AutoUpdatePanel.tsx`: Feature (misplaced)
 - `src/features/branch-map/BranchMap.tsx`: Feature (misplaced)
 - `src/features/onboarding/hooks/useOnboarding.tsx`: Feature (misplaced)
 
@@ -662,6 +681,8 @@ Components over 150 lines or with more than 5 internal sub-imports:
 - `src/features/auth-profile/components/ProfileDropdown.tsx`: over 150 lines
 - `src/features/auth-profile/components/ProfileListItem.tsx`: over 150 lines
 - `src/features/auth-profile/components/ProfileManagementModal.tsx`: over 150 lines
+- `src/features/auth-profile/components/RepositoryProfileAssignmentControl.tsx`: over 150 lines
+- `src/features/auto-update/AutoUpdatePanel.tsx`: over 150 lines
 - `src/features/branch-map/BranchMap.tsx`: over 150 lines
 - `src/features/branch-map/components/BranchCard.tsx`: over 150 lines
 - `src/features/branch-map/components/CommitTimeline.tsx`: over 150 lines
@@ -678,6 +699,7 @@ Components over 150 lines or with more than 5 internal sub-imports:
 - `src/features/dashboard/components/RepositoryCard.tsx`: over 150 lines and over 5 internal sub-imports
 - `src/features/dashboard/components/RepositoryCard/RepoBranchDropdown.tsx`: over 150 lines
 - `src/features/dashboard/components/RepositoryCard/RepoCardActionMenu.tsx`: over 150 lines
+- `src/features/dashboard/components/RepositoryCard/RepoCardHeader.tsx`: over 150 lines
 - `src/features/dashboard/components/RepositoryCard/RepoCardTags.tsx`: over 150 lines
 - `src/features/dashboard/components/RepositoryCard/RepoGroupMenu.tsx`: over 150 lines
 - `src/features/dashboard/components/RepositoryCard/RepoTagSelectionMenu.tsx`: over 150 lines

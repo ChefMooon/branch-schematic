@@ -16,8 +16,12 @@ branch-schematic/
 ├── .env
 ├── .github/
 │   ├── copilot-instructions.md
+│   ├── skills/
+│   │   └── publish-release/
+│   │       └── SKILL.md
 │   └── workflows/
-│       └── deploy-docs.yml
+│       ├── deploy-docs.yml
+│       └── release.yml
 ├── .gitignore
 ├── .tanstack/
 │   └── tmp/
@@ -28,6 +32,7 @@ branch-schematic/
 │   └── tasks.json
 ├── arch-report.config.json
 ├── arch-snap.json
+├── CHANGELOG.md
 ├── img/
 │   └── dashboard.png
 ├── index.html
@@ -39,7 +44,13 @@ branch-schematic/
 ├── scripts/
 │   ├── analyze-bundle.js
 │   ├── benchmark-repository-update.js
-│   └── evaluate-rollout.js
+│   ├── check-version-consistency.ps1
+│   ├── evaluate-rollout.js
+│   ├── extract-release-notes.ps1
+│   ├── prepare-release-config.mjs
+│   ├── test-updater-manifest.mjs
+│   ├── test-version-consistency.ps1
+│   └── validate-updater-manifest.mjs
 ├── src/
 │   ├── App.css
 │   ├── assets/
@@ -99,7 +110,10 @@ branch-schematic/
 │   │   │   │   ├── ProfileListItem.test.tsx
 │   │   │   │   ├── ProfileListItem.tsx
 │   │   │   │   ├── ProfileManagementModal.test.tsx
-│   │   │   │   └── ProfileManagementModal.tsx
+│   │   │   │   ├── ProfileManagementModal.tsx
+│   │   │   │   ├── RepositoryProfileAssignmentControl.css
+│   │   │   │   ├── RepositoryProfileAssignmentControl.test.tsx
+│   │   │   │   └── RepositoryProfileAssignmentControl.tsx
 │   │   │   ├── hooks/
 │   │   │   │   ├── useOAuthFlow.ts
 │   │   │   │   └── useProfileContext.ts
@@ -110,6 +124,15 @@ branch-schematic/
 │   │   │   │   └── index.ts
 │   │   │   └── utils/
 │   │   │       └── profileAvatar.ts
+│   │   ├── auto-update/
+│   │   │   ├── auto-update.css
+│   │   │   ├── AutoUpdatePanel.test.tsx
+│   │   │   ├── AutoUpdatePanel.tsx
+│   │   │   ├── coordinator.test.ts
+│   │   │   ├── coordinator.ts
+│   │   │   ├── types.ts
+│   │   │   ├── updaterApi.ts
+│   │   │   └── useAutoUpdate.ts
 │   │   ├── branch-map/
 │   │   │   ├── BranchMap.tsx
 │   │   │   ├── components/
@@ -287,6 +310,7 @@ branch-schematic/
 │   │   └── settings.tsx
 │   ├── routeTree.gen.ts
 │   ├── stores/
+│   │   ├── canvas-store.test.ts
 │   │   ├── canvas-store.ts
 │   │   ├── workspace-store.test.ts
 │   │   ├── workspace-store.ts
