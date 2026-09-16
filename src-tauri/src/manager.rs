@@ -569,8 +569,8 @@ impl WatcherManager {
             .get(path_id)
             .map(|entry| entry.absolute_path.clone())
             .ok_or_else(|| "Repository is not monitored".to_string())?;
-        let outcome = refresh_repository_full(&self.pool, &self.writer, path_id, &absolute_path)
-            .await?;
+        let outcome =
+            refresh_repository_full(&self.pool, &self.writer, path_id, &absolute_path).await?;
         self.queue_workspace_updated(&outcome.path_id, trigger_reason)
             .await;
         Ok(outcome)

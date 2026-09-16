@@ -1245,8 +1245,8 @@ mod tests {
     use super::{
         choose_profile_resolution, determine_token_status, format_oauth_provider_error,
         generate_code_challenge, normalize_keyring_token, parse_access_token,
-        parse_github_user_profile,
-        resolve_oauth_redirect_uri, resolve_oauth_token_url, resolved_profile, RemoteAuthProfile,
+        parse_github_user_profile, resolve_oauth_redirect_uri, resolve_oauth_token_url,
+        resolved_profile, RemoteAuthProfile,
     };
 
     #[test]

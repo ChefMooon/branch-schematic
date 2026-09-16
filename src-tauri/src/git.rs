@@ -1211,9 +1211,7 @@ pub async fn execute_git_checkout(
         .await
         .map_err(|e| format!("Failed to resolve repository path: {}", e))?;
     let result = execute_git_checkout_at_path(&absolute_path, &branch_name)?;
-    manager
-        .refresh_after_mutation(&path_id, "checkout")
-        .await?;
+    manager.refresh_after_mutation(&path_id, "checkout").await?;
     Ok(result)
 }
 
@@ -3848,9 +3846,7 @@ fn push_current_branch(
             .map(|(_, remote_branch)| remote_branch)
             .filter(|remote_branch| !remote_branch.is_empty())
             .ok_or_else(|| format!("The upstream for '{branch_name}' could not be resolved."))?;
-        let refspec = format!(
-            "refs/heads/{branch_name}:refs/heads/{upstream_remote_branch}"
-        );
+        let refspec = format!("refs/heads/{branch_name}:refs/heads/{upstream_remote_branch}");
         push_branch_to_origin(repo, profile, &refspec)?;
         return Ok(GitPushResult {
             outcome: "pushed".to_string(),
@@ -3908,9 +3904,7 @@ pub async fn git_fetch_operation(
     let fetch_result = fetch_from_origin(&repo, Some(&resolved_profile.profile));
 
     fetch_result?;
-    manager
-        .refresh_after_mutation(&path_id, "fetch")
-        .await?;
+    manager.refresh_after_mutation(&path_id, "fetch").await?;
     Ok("Fetched the latest changes from origin.".to_string())
 }
 
@@ -3999,9 +3993,7 @@ pub async fn git_pull_operation(
     })();
 
     let result = pull_result?;
-    manager
-        .refresh_after_mutation(&path_id, "pull")
-        .await?;
+    manager.refresh_after_mutation(&path_id, "pull").await?;
     Ok(result)
 }
 
@@ -4037,9 +4029,7 @@ pub async fn git_push_operation(
     })();
 
     let result = push_result?;
-    manager
-        .refresh_after_mutation(&path_id, "push")
-        .await?;
+    manager.refresh_after_mutation(&path_id, "push").await?;
     Ok(result)
 }
 

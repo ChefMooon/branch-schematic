@@ -46,19 +46,16 @@ export async function validateManifest(manifest, { assetDir = null, expectedVers
     throw new Error(`windows-x86_64.url must target release tag v${expectedVersion}.`);
   }
   if (!parsedUrl.pathname.toLowerCase().endsWith('-setup.exe')) throw new Error('windows-x86_64.url must point to the NSIS setup executable.');
-  requireText(platform.signature, 'windows-x86_64.signature');
+  if ('signature' in platform) throw new Error('windows-x86_64.signature is not supported for unsigned releases.');
 
   if (assetDir) {
     const installerName = path.basename(parsedUrl.pathname);
-    const signatureName = `${installerName}.sig`;
-    for (const assetName of [installerName, signatureName]) {
-      const assetPath = path.join(assetDir, assetName);
-      if (!assetPath.startsWith(path.resolve(assetDir) + path.sep)) throw new Error('Updater asset path escaped the asset directory.');
-      try {
-        await fs.access(assetPath);
-      } catch {
-        throw new Error(`Missing updater asset: ${assetName}.`);
-      }
+    const assetPath = path.join(assetDir, installerName);
+    if (!assetPath.startsWith(path.resolve(assetDir) + path.sep)) throw new Error('Updater asset path escaped the asset directory.');
+    try {
+      await fs.access(assetPath);
+    } catch {
+      throw new Error(`Missing updater asset: ${installerName}.`);
     }
   }
 

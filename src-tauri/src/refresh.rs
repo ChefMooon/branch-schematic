@@ -149,9 +149,7 @@ pub async fn refresh_repository_full(
         Repository::open(path).map_err(|_| "Repository verification failed".to_string())?;
     if branches.is_empty()
         && !repository.is_empty().unwrap_or(false)
-        && repository
-            .head()
-            .is_ok_and(|head| head.target().is_none())
+        && repository.head().is_ok_and(|head| head.target().is_none())
     {
         let error = "Repository refresh failed: checked-out branch has no commit".to_string();
         let transition = health::verification_failed(
@@ -240,11 +238,19 @@ fn branch_sync_status(
         }
     };
     let Some(upstream_oid) = upstream.get().target() else {
-        return Err(format!("Upstream for branch '{}' has no commit", branch.name));
+        return Err(format!(
+            "Upstream for branch '{}' has no commit",
+            branch.name
+        ));
     };
     let (ahead_count, behind_count) = repository
         .graph_ahead_behind(local_oid, upstream_oid)
-        .map_err(|error| format!("Failed to compare branch '{}' with its upstream: {error}", branch.name))?;
+        .map_err(|error| {
+            format!(
+                "Failed to compare branch '{}' with its upstream: {error}",
+                branch.name
+            )
+        })?;
     Ok(BranchSyncStatus {
         ahead_count: ahead_count as i64,
         behind_count: behind_count as i64,
@@ -253,7 +259,9 @@ fn branch_sync_status(
 }
 
 fn missing_upstream_name(repository: &Repository, branch: &DiscoveredBranch) -> Option<String> {
-    let local_branch = repository.find_branch(&branch.name, git2::BranchType::Local).ok()?;
+    let local_branch = repository
+        .find_branch(&branch.name, git2::BranchType::Local)
+        .ok()?;
     local_branch.upstream().err()?;
     configured_upstream_name(repository, branch)
 }
@@ -551,13 +559,9 @@ mod tests {
                 "test upstream",
             )
             .unwrap();
-        repository
-            .set_head("refs/heads/tracked")
-            .unwrap();
+        repository.set_head("refs/heads/tracked").unwrap();
         let mut config = repository.config().unwrap();
-        config
-            .set_str("branch.tracked.remote", "origin")
-            .unwrap();
+        config.set_str("branch.tracked.remote", "origin").unwrap();
         config
             .set_str("branch.tracked.merge", "refs/heads/tracked")
             .unwrap();
@@ -589,9 +593,7 @@ mod tests {
             )
             .unwrap();
         let mut config = repository.config().unwrap();
-        config
-            .set_str("branch.missing.remote", "origin")
-            .unwrap();
+        config.set_str("branch.missing.remote", "origin").unwrap();
         config
             .set_str("branch.missing.merge", "refs/heads/missing")
             .unwrap();
@@ -645,9 +647,7 @@ mod tests {
             )
             .unwrap();
         let mut config = repository.config().unwrap();
-        config
-            .set_str("branch.master.remote", "origin")
-            .unwrap();
+        config.set_str("branch.master.remote", "origin").unwrap();
         config
             .set_str("branch.master.merge", "refs/heads/master")
             .unwrap();
@@ -668,7 +668,9 @@ mod tests {
         assert_eq!(outcome.branch_count, 1);
         assert_eq!(
             outcome.diagnostics,
-            vec!["Branch 'master' has configured upstream 'refs/heads/master' which is unavailable"]
+            vec![
+                "Branch 'master' has configured upstream 'refs/heads/master' which is unavailable"
+            ]
         );
         let status: (i64, i64, i64, String) = sqlx::query_as(
             "SELECT ahead_count, behind_count, has_upstream, last_commit_hash

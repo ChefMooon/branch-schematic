@@ -24,10 +24,6 @@ function versionFromTag(tag) {
 async function run() {
   const options = parseArgs(process.argv.slice(2));
   const version = versionFromTag(options.tag);
-  const publicKey = process.env.TAURI_UPDATER_PUBLIC_KEY?.trim();
-  if (!publicKey) {
-    throw new Error('TAURI_UPDATER_PUBLIC_KEY is required as a maintainer-provided Actions variable; no placeholder key is allowed.');
-  }
 
   const rootPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
   const configPath = path.join(rootPath, 'src-tauri', 'tauri.conf.json');
@@ -36,7 +32,6 @@ async function run() {
   config.plugins = {
     ...(config.plugins ?? {}),
     updater: {
-      pubkey: publicKey,
       endpoints: [`https://github.com/ChefMooon/branch-schematic/releases/download/${options.tag}/latest.json`],
     },
   };
