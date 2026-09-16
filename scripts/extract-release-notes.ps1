@@ -1,11 +1,15 @@
 param(
-  [string]$RootPath = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path,
+  [string]$RootPath,
   [string]$Tag = $env:GITHUB_REF_NAME,
   [Parameter(Mandatory = $true)]
   [string]$OutputPath
 )
 
 $ErrorActionPreference = 'Stop'
+
+if ([string]::IsNullOrWhiteSpace($RootPath)) {
+  $RootPath = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+}
 
 if ([string]::IsNullOrWhiteSpace($Tag)) {
   throw 'A vX.Y.Z release tag is required.'
